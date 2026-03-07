@@ -1,0 +1,57 @@
+﻿app/api/auth/[...nextauth]/route.ts(5,32): error TS2307: Cannot find module '@next-auth/mongodb-adapter' or its corresponding type declarations.
+app/api/auth/[...nextauth]/route.ts(7,10): error TS2305: Module '"@/lib/auth/otp"' has no exported member 'verifyOtp'.
+app/api/auth/[...nextauth]/route.ts(63,17): error TS7031: Binding element 'token' implicitly has an 'any' type.
+app/api/auth/[...nextauth]/route.ts(63,24): error TS7031: Binding element 'user' implicitly has an 'any' type.
+app/api/auth/[...nextauth]/route.ts(71,21): error TS7031: Binding element 'session' implicitly has an 'any' type.
+app/api/auth/[...nextauth]/route.ts(71,30): error TS7031: Binding element 'token' implicitly has an 'any' type.
+app/api/auth/[...nextauth]/route.ts(87,26): error TS2345: Argument of type '{ adapter: any; providers: (OAuthConfig<GoogleProfile> | OAuthConfig<AzureADProfile> | CredentialsConfig<{ email: { label: string; type: string; }; otp: { ...; }; }>)[]; session: { ...; }; callbacks: { ...; }; pages: { ...; }; secret: string | undefined; }' is not assignable to parameter of type 'AuthOptions'.
+  The types of 'session.strategy' are incompatible between these types.
+    Type 'string' is not assignable to type 'SessionStrategy | undefined'.
+app/api/auth/complete-profile/route.ts(3,18): error TS1149: File name 'C:/Users/USER/Desktop/Wed development/vellum/models/User.ts' differs from already included file name 'C:/Users/USER/Desktop/Wed development/vellum/models/user.ts' only in casing.
+  The file is in the program because:
+    Imported via "@/models/user" from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/[...nextauth]/route.ts'
+    Imported via '@/models/User' from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/complete-profile/route.ts'
+    Imported via '@/models/User' from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/verify-otp/route.ts'
+    Matched by include pattern '**/*.ts' in 'C:/Users/USER/Desktop/Wed development/vellum/tsconfig.json'
+app/api/auth/request-otp/route.ts(3,24): error TS7016: Could not find a declaration file for module 'nodemailer'. 'C:/Users/USER/Desktop/Wed development/vellum/node_modules/nodemailer/lib/nodemailer.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/nodemailer` if it exists or add a new declaration (.d.ts) file containing `declare module 'nodemailer';`
+app/api/auth/verify-otp/route.ts(2,10): error TS2305: Module '"@/lib/auth/otp"' has no exported member 'verifyOtp'.
+app/api/auth/verify-otp/route.ts(4,18): error TS1149: File name 'C:/Users/USER/Desktop/Wed development/vellum/models/User.ts' differs from already included file name 'C:/Users/USER/Desktop/Wed development/vellum/models/user.ts' only in casing.
+  The file is in the program because:
+    Imported via "@/models/user" from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/[...nextauth]/route.ts'
+    Imported via '@/models/User' from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/complete-profile/route.ts'
+    Imported via '@/models/User' from file 'C:/Users/USER/Desktop/Wed development/vellum/app/api/auth/verify-otp/route.ts'
+    Matched by include pattern '**/*.ts' in 'C:/Users/USER/Desktop/Wed development/vellum/tsconfig.json'
+app/api/convert/html-to-pdf/route.ts(15,7): error TS2353: Object literal may only specify known properties, and 'outputFileName' does not exist in type 'HtmlToPdfOptions'.
+app/api/convert/html-to-pdf/route.ts(18,29): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
+app/api/convert/image-to-pdf/route.ts(21,7): error TS2353: Object literal may only specify known properties, and 'outputFileName' does not exist in type 'ImageToPdfOptions'.
+app/api/convert/image-to-pdf/route.ts(24,29): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
+app/api/convert/jpeg-to-png/route.ts(18,7): error TS2353: Object literal may only specify known properties, and 'outputFileName' does not exist in type 'JpegToPngOptions'.
+app/api/convert/jpeg-to-png/route.ts(21,29): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
+app/api/convert/merge-pdf/route.ts(21,7): error TS2353: Object literal may only specify known properties, and 'outputFileName' does not exist in type 'MergePdfOptions'.
+app/api/convert/merge-pdf/route.ts(24,29): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
+app/api/convert/split-pdf/route.ts(31,13): error TS2488: Type '[string, Buffer<ArrayBufferLike>] | undefined' must have a '[Symbol.iterator]()' method that returns an iterator.
+lib/auth/verifyOtp.ts(1,17): error TS1149: File name 'C:/Users/USER/Desktop/Wed development/vellum/models/Otp.ts' differs from already included file name 'C:/Users/USER/Desktop/Wed development/vellum/models/otp.ts' only in casing.
+  The file is in the program because:
+    Imported via '@/models/otp' from file 'C:/Users/USER/Desktop/Wed development/vellum/lib/auth/otp.ts'
+    Imported via '@/models/Otp' from file 'C:/Users/USER/Desktop/Wed development/vellum/lib/auth/verifyOtp.ts'
+    Matched by include pattern '**/*.ts' in 'C:/Users/USER/Desktop/Wed development/vellum/tsconfig.json'
+lib/doc/to-pdf.ts(25,3): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/html/to-pdf.ts(28,3): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/image/to-pdf.ts(50,3): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/pdf/find.ts(1,8): error TS1192: Module '"C:/Users/USER/Desktop/Wed development/vellum/node_modules/pdf-parse/dist/pdf-parse/esm/index"' has no default export.
+lib/pdf/lock.ts(15,3): error TS2578: Unused '@ts-expect-error' directive.
+lib/pdf/lock.ts(17,5): error TS2353: Object literal may only specify known properties, and 'userPassword' does not exist in type 'SaveOptions'.
+lib/pdf/merge.ts(18,3): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/pdf/split.ts(25,91): error TS2345: Argument of type 'Uint8Array<ArrayBufferLike>' is not assignable to parameter of type 'Buffer<ArrayBufferLike>'.
+  Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/pdf/split.ts(34,92): error TS2345: Argument of type 'Uint8Array<ArrayBufferLike>' is not assignable to parameter of type 'Buffer<ArrayBufferLike>'.
+  Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/pdf/split.ts(42,66): error TS2345: Argument of type 'Uint8Array<ArrayBufferLike>' is not assignable to parameter of type 'Buffer<ArrayBufferLike>'.
+  Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+lib/store/store.ts(3,25): error TS2307: Cannot find module './slices/fileSlice' or its corresponding type declarations.
+lib/store/store.ts(4,23): error TS2307: Cannot find module './slices/uiSlice' or its corresponding type declarations.
