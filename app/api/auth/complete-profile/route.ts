@@ -81,13 +81,17 @@ export async function POST(req: NextRequest) {
           apiKey: process.env.BREVO_API_KEY as string 
         });
 
+        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const dashboardUrl = `${baseUrl}/dashboard`;
+
         await client.transactionalEmails.sendTransacEmail({
           subject: `Welcome to Vellum, ${user.name}!`,
-          htmlContent: getWelcomeEmailHtml(user.name || 'there'),
+          htmlContent: getWelcomeEmailHtml(user.name || 'there', dashboardUrl),
           sender: { name: "JFK from Vellum", email: process.env.EMAIL_USER as string },
           to: [{ email: user.email }],
         });
-      } catch (emailError) {
+
+      } catch (emailError: any) {
         console.error('Failed to send welcome email:', emailError);
         // We don't fail the whole request if email fails
       }

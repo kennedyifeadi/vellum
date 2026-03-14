@@ -1,4 +1,4 @@
-export const getWelcomeEmailHtml = (name: string) => `
+export const getWelcomeEmailHtml = (name: string, dashboardUrl: string) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -170,7 +170,7 @@ export const getWelcomeEmailHtml = (name: string) => `
 
             <p>We've combined the power of low-level file manipulation with a sophisticated, animation-rich interface to ensure your document management is both powerful and beautiful.</p>
 
-            <a href="http://localhost:3000/dashboard" class="cta-button">Go to your Dashboard</a>
+            <a href="${dashboardUrl}" class="cta-button">Go to your Dashboard</a>
 
             <div class="signature">
                 Best regards,<br>
