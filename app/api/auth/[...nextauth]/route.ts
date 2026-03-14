@@ -81,6 +81,12 @@ export const authOptions: AuthOptions = {
     signIn: "/login", // Custom sign-in page
     // You can define other custom pages like error, verifyRequest, newUser
   },
+  events: {
+    async createUser({ user }) {
+      // When a user is created via an adapter (Social Login), ensure isProfileComplete is false
+      await User.findByIdAndUpdate(user.id, { isProfileComplete: false, plan: 'Free' });
+    }
+  },
   secret: process.env.NEXTAUTH_SECRET,
 };
 
