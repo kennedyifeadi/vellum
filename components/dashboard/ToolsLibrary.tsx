@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useDashboard } from '@/app/dashboard/layout';
+
 
 // Define the tool type
 type Tool = {
@@ -19,6 +21,12 @@ export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All Tools');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const { openDrawer } = useDashboard();
+  const handleToolClick = (id: string) => {
+    openDrawer(null, id);
+  };
+
+
 
   // Categories list
   const categories = ['All Tools', 'PDF', 'Images', 'Documents', 'Security'];
@@ -152,7 +160,10 @@ export default function ToolsLibrary() {
 
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] p-6">
+
+
       {/* Header */}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[#111827]">Tools Library</h1>
@@ -219,8 +230,10 @@ export default function ToolsLibrary() {
         {filteredTools.map((tool) => (
           <motion.button
             key={tool.id}
+            onClick={() => handleToolClick(tool.id)}
             whileHover={{ y: -4, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
             className={`bg-white border border-[#eaedf3] rounded-2xl p-5 flex ${
+
               viewMode === 'grid' ? 'flex-col items-start' : 'items-center gap-4'
             } gap-4 hover:border-[#e0e7ff] text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)] relative`}
           >

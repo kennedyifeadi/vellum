@@ -29,7 +29,7 @@ export default function ActivityTable({ files = [] }: { files?: FileActivity[] }
               </svg>
             </div>
             <h3 className="text-sm font-semibold text-[#111827] mb-1">No recent activity</h3>
-            <p className="text-xs text-[#6b7280] max-w-sm mb-4">You haven't processed any files yet. Go to the tools library to start converting or merging documents.</p>
+            <p className="text-xs text-[#6b7280] max-w-sm mb-4">You haven&apos;t processed any files yet. Go to the tools library to start converting or merging documents.</p>
             <Link href="/dashboard/library" className="h-8 px-4 bg-[#6366f1] text-white text-xs font-medium rounded-lg shadow-sm shadow-[#6366f1]/20 hover:bg-[#4f46e5] flex items-center gap-1 transition-colors">
               Go to Tools Library
             </Link>
