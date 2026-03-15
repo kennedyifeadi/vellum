@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <DashboardContext.Provider value={{ user }}>
       <div className="flex h-screen bg-[#f4f7fb] p-4 gap-4 overflow-hidden text-[#111827]">
         <Sidebar user={user} onSignOut={handleSignOut} />
-        <main className="flex-1 bg-white rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col p-8 overflow-y-auto">
+        <main className="flex-1 bg-white rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col">
           {children}
         </main>
       </div>

@@ -9,8 +9,8 @@ export default function DashboardPage() {
   const { user } = useDashboard();
 
   return (
-    <div>
-      <header className="flex justify-between items-center mb-6">
+    <div className="flex flex-col rounded-2xl">
+      <header className="flex justify-between rounded-t-2xl items-center border-b border-[#eaedf3] mb-2 p-4 sticky top-0 z-10 bg-white">
         <div>
           <h1 className="text-2xl font-bold bg-linear-to-r from-[#111827] to-[#374151] bg-clip-text text-transparent"> Good morning, {user?.name?.split(' ')?.[0] || 'there'}!</h1>
           <p className="text-xs text-[#6b7280]">Ready to convert some files today?</p>
@@ -20,7 +20,7 @@ export default function DashboardPage() {
           <div className="relative">
             <input 
               type="text" 
-              placeholder="Search files..." 
+              placeholder="Search files, tools..." 
               className="h-9 w-52 bg-[#f4f7fb] border border-[#eaedf3] rounded-xl pl-8 pr-3 text-xs focus:outline-none focus:border-[#6366f1] transition-all"
             />
             <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -35,12 +35,13 @@ export default function DashboardPage() {
           </button>
         </div>
       </header>
-
+      <div className="p-8 h-[72%] overflow-y-auto">
       <DragAndDrop />
       <QuickTools />
       
       {/* Passing empty array to showcase empty-state design for new users setup node list bounds maps isolation frames bounding isolates grids maps layouts. */}
       <ActivityTable files={[]} />
+      </div>
     </div>
   );
 }
