@@ -1,73 +1,46 @@
 "use client";
 
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { AuthLayout, AuthCard, AuthButton } from "@/components/auth/AuthComponents";
+import DragAndDrop from "@/components/dashboard/DragAndDrop";
+import QuickTools from "@/components/dashboard/QuickTools";
+import ActivityTable from "@/components/dashboard/ActivityTable";
+import { useDashboard } from "./layout";
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
-
-  useEffect(() => {
-    // This is a secondary check, middleware handles the heavy lifting
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
-
-  if (status === "loading") {
-    return (
-      <AuthLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#6366f1]"></div>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  const handleSignOut = async () => {
-    try {
-      // 1. Clear backend cookies
-      await fetch("/api/auth/logout", { method: "POST" });
-      
-      // 2. Clear NextAuth session (client-side)
-      // Since we already cleared cookies, the middleware will handle the redirect
-      // but we push to login to be immediate.
-      router.push("/login");
-      router.refresh();
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  };
+  const { user } = useDashboard();
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-[#111827]">Dashboard</h1>
-            <p className="text-[#6b7280]">Welcome back, {session?.user?.name || "User"}</p>
-          </div>
-          <AuthButton className="w-auto px-6" onClick={handleSignOut}>
-            Sign Out
-          </AuthButton>
-        </header>
+    <div>
+      <header className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold bg-linear-to-r from-[#111827] to-[#374151] bg-clip-text text-transparent"> Good morning, {user?.name?.split(' ')?.[0] || 'there'}!</h1>
+          <p className="text-xs text-[#6b7280]">Ready to convert some files today?</p>
+        </div>
 
-        <AuthCard className="max-w-none">
-          <div className="text-center py-12">
-            <div className="w-20 h-20 bg-[#f3f4ff] rounded-full flex items-center justify-center mx-auto mb-6 text-[#6366f1]">
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-[#111827] mb-2">Workspace Ready</h2>
-            <p className="text-[#6b7280] max-w-md mx-auto">
-              You have successfully completed your profile. This is your dashboard where you can manage your projects and workflow.
-            </p>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <input 
+              type="text" 
+              placeholder="Search files..." 
+              className="h-9 w-52 bg-[#f4f7fb] border border-[#eaedf3] rounded-xl pl-8 pr-3 text-xs focus:outline-none focus:border-[#6366f1] transition-all"
+            />
+            <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
           </div>
-        </AuthCard>
-      </div>
+          <button className="relative w-9 h-9 rounded-xl border border-[#eaedf3] hover:bg-[#f9fafb] flex items-center justify-center transition-all text-[#6b7280]">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-[#ef4444] rounded-full" />
+          </button>
+        </div>
+      </header>
+
+      <DragAndDrop />
+      <QuickTools />
+      
+      {/* Passing empty array to showcase empty-state design for new users setup node list bounds maps isolation frames bounding isolates grids maps layouts. */}
+      <ActivityTable files={[]} />
     </div>
   );
 }
