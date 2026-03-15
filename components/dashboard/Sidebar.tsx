@@ -1,8 +1,7 @@
 "use client";
 
-import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () => Promise<void> }) {
   const pathname = usePathname();
