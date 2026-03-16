@@ -47,6 +47,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 
 
+
+
+
       } catch (error) {
         console.error('Failed to fetch user:', error);
       } finally {
