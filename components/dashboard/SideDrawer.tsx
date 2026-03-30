@@ -626,6 +626,57 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     } finally {
                       setIsProcessing(false);
                     }
+                  } else if (selectedTool === 'html-to-pdf') {
+                    setIsProcessing(true);
+                    try {
+                      let response: Response;
+
+                      if (htmlOptions.mode === 'url') {
+                        response = await fetch('/api/convert/html-to-pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ url: htmlOptions.url }),
+                        });
+                      } else {
+                        const formData = new FormData();
+                        formData.append('html', fileList[0]);
+                        response = await fetch('/api/convert/html-to-pdf', {
+                          method: 'POST',
+                          body: formData,
+                        });
+                      }
+
+                      if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Failed to convert HTML to PDF');
+                      }
+
+                      const disposition = response.headers.get('Content-Disposition') || '';
+                      const nameMatch = disposition.match(/filename="(.+?)"/);
+                      const downloadName = nameMatch ? nameMatch[1] : 'converted.pdf';
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = downloadName;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      showToast('HTML converted to PDF successfully!', 'success');
+                      window.dispatchEvent(new Event('activityUpdated'));
+                      onClose();
+                      setFileList([]);
+                      setHtmlOptions({ url: '', mode: 'file' });
+                    } catch (error) {
+                      console.error('HTML to PDF error:', error);
+                      const msg = error instanceof Error ? error.message : 'Error converting HTML to PDF.';
+                      showToast(msg, 'error');
+                    } finally {
+                      setIsProcessing(false);
+                    }
                   } else {
                     showToast('Processing started.', 'success');
                   }
