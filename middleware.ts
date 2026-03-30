@@ -32,10 +32,18 @@ export async function middleware(request: NextRequest) {
       const loginUrl = new URL('/login', request.url);
       return NextResponse.redirect(loginUrl);
     }
+
     if (!isProfileComplete) {
       const signupUrl = new URL('/signup-details', request.url);
       return NextResponse.redirect(signupUrl);
     }
+
+
+
+
+
+
+
   }
 
   // Guard Signup Details (must be authenticated but profile incomplete)
