@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { lockPdf } from '@/lib/pdf/lock';
+import { getAuthUserId } from '@/lib/auth/jwt';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +20,12 @@ export async function POST(req: NextRequest) {
       pdfBuffer,
       password,
     });
+
+    const userId = await getAuthUserId(req);
+    if (userId) {
+      const originalFileName = file?.name ? `locked_${file.name}` : 'locked.pdf';
+      await saveConversionRecord(userId, 'Lock PDF', originalFileName, Buffer.from(lockedPdfBuffer));
+    }
 
     return new NextResponse(lockedPdfBuffer as unknown as BodyInit, {
       headers: {

@@ -39,8 +39,8 @@ export default function DashboardPage() {
       <DragAndDrop />
       <QuickTools />
       
-      {/* Passing empty array to showcase empty-state design for new users setup node list bounds maps isolation frames bounding isolates grids maps layouts. */}
-      <ActivityTable files={[]} />
+      {/* ActivityTable seamlessly handles its own data fetching internals */}
+      <ActivityTable />
       </div>
     </div>
   );

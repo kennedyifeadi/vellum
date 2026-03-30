@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mergePdfs } from '@/lib/pdf/merge';
+import { getAuthUserId } from '@/lib/auth/jwt';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +21,12 @@ export async function POST(req: NextRequest) {
     const mergedPdfBuffer = await mergePdfs({
       pdfBuffers,
     });
+
+    const userId = await getAuthUserId(req);
+    if (userId) {
+      const originalFileName = files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf';
+      await saveConversionRecord(userId, 'Merge PDF', originalFileName, Buffer.from(mergedPdfBuffer));
+    }
 
     return new NextResponse(mergedPdfBuffer as unknown as BodyInit, {
       headers: {

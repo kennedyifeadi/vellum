@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
+import { getAuthUserId } from '@/lib/auth/jwt';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +21,12 @@ export async function POST(req: NextRequest) {
     const pdfBuffer = await convertImagesToPdf({
       imageBuffers,
     });
+
+    const userId = await getAuthUserId(req);
+    if (userId) {
+      const originalFileName = files[0]?.name ? `${files[0].name.split('.')[0]}.pdf` : 'converted_images.pdf';
+      await saveConversionRecord(userId, 'Image to PDF', originalFileName, Buffer.from(pdfBuffer));
+    }
 
     return new NextResponse(pdfBuffer as unknown as BodyInit, {
       headers: {

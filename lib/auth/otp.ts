@@ -8,7 +8,7 @@ export async function generateOtp(email: string) {
   await Otp.findOneAndUpdate(
     { email },
     { code, expiresAt },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 
   return code;

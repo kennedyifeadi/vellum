@@ -4,6 +4,7 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useState, useRef } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
+import ImageThumbnail from './ImageThumbnail';
 
 const PdfThumbnail = dynamic(() => import('./PdfThumbnail'), { ssr: false });
 
@@ -53,6 +54,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   // Tool-specific options states
   const [splitOptions, setSplitOptions] = useState({ startPage: 1, endPage: 1, splitEvery: false });
+  const [pdfPageCount, setPdfPageCount] = useState<number>(0);
   const [lockOptions, setLockOptions] = useState({ password: '', confirmPassword: '' });
   const [findOptions, setFindOptions] = useState({ searchTerm: '' });
   const [htmlOptions, setHtmlOptions] = useState({ url: '', mode: 'file' as 'file' | 'url' });
@@ -94,8 +96,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           errorShown = true;
           break;
         }
-        if (selectedTool === 'image-to-pdf' && updatedList.length >= 5) {
-          if (!errorShown) showToast("Free tier supports converting up to 5 images only.", "error");
+        if (selectedTool === 'image-to-pdf' && updatedList.length >= 3) {
+          if (!errorShown) showToast("Free tier supports converting up to 3 images only.", "error");
+          errorShown = true;
+          break;
+        }
+        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && updatedList.length >= 1) {
+          if (!errorShown) showToast("This tool only supports processing 1 file at a time.", "error");
           errorShown = true;
           break;
         }
@@ -130,8 +137,17 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 <input 
                   type="number" 
                   min="1"
+                  max={pdfPageCount || 1}
                   value={splitOptions.startPage}
-                  onChange={(e) => setSplitOptions(prev => ({ ...prev, startPage: parseInt(e.target.value) || 1 }))}
+                  onChange={(e) => {
+                    let val = parseInt(e.target.value) || 1;
+                    if (pdfPageCount && val > pdfPageCount) val = pdfPageCount;
+                    if (val > splitOptions.endPage) {
+                      setSplitOptions(prev => ({ ...prev, startPage: val, endPage: val }));
+                    } else {
+                      setSplitOptions(prev => ({ ...prev, startPage: val }));
+                    }
+                  }}
                   className="w-full h-9 bg-white border border-[#eaedf3] rounded-lg px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#6366f1]"
                 />
               </div>
@@ -140,8 +156,17 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 <input 
                   type="number" 
                   min={splitOptions.startPage}
+                  max={pdfPageCount || 1}
                   value={splitOptions.endPage}
-                  onChange={(e) => setSplitOptions(prev => ({ ...prev, endPage: parseInt(e.target.value) || 1 }))}
+                  onChange={(e) => {
+                    let val = parseInt(e.target.value) || 1;
+                    if (pdfPageCount && val > pdfPageCount) val = pdfPageCount;
+                    if (val < splitOptions.startPage) {
+                      setSplitOptions(prev => ({ ...prev, endPage: splitOptions.startPage }));
+                    } else {
+                      setSplitOptions(prev => ({ ...prev, endPage: val }));
+                    }
+                  }}
                   className="w-full h-9 bg-white border border-[#eaedf3] rounded-lg px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#6366f1]"
                 />
               </div>
@@ -362,10 +387,33 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                           </svg>
                         </div>
                         {f.type.includes('pdf') ? (
-                          <PdfThumbnail file={f} />
+                          selectedTool === 'split-pdf' && !splitOptions.splitEvery ? (
+                            <div className="flex gap-2 w-full justify-center px-4 overflow-x-auto">
+                              <PdfThumbnail 
+                                file={f} 
+                                pageNumber={splitOptions.startPage} 
+                                onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} 
+                              />
+                              {splitOptions.startPage !== splitOptions.endPage && (
+                                <>
+                                  <div className="flex flex-col justify-center text-[#94a3b8] font-medium text-xs">
+                                    <span>...</span>
+                                  </div>
+                                  <PdfThumbnail 
+                                    file={f} 
+                                    pageNumber={splitOptions.endPage} 
+                                  />
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <PdfThumbnail file={f} onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} />
+                          )
+                        ) : f.type.includes('image') ? (
+                          <ImageThumbnail file={f} />
                         ) : (
                           <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm">
-                            {f.type.includes('image') ? '🖼️' : '📁'}
+                            📁
                           </div>
                         )}
                         <div className="w-full text-center flex flex-col items-center">
@@ -464,37 +512,117 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
-                  if (selectedTool === 'merge-pdf') {
+                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf') {
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
-                      fileList.forEach(file => formData.append('pdfs', file));
+                      const fileKey = selectedTool === 'merge-pdf' ? 'pdfs' : 'images';
+                      fileList.forEach(file => formData.append(fileKey, file));
                       
-                      const response = await fetch('/api/convert/merge-pdf', {
+                      const apiUrl = selectedTool === 'merge-pdf' ? '/api/convert/merge-pdf' : '/api/convert/image-to-pdf';
+                      const response = await fetch(apiUrl, {
                         method: 'POST',
                         body: formData,
                       });
 
                       if (!response.ok) {
-                        throw new Error('Failed to merge PDFs');
+                        throw new Error(`Failed to process: ${selectedTool}`);
                       }
 
                       const blob = await response.blob();
                       const url = window.URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = 'merged.pdf';
+                      a.download = selectedTool === 'merge-pdf' ? 'merged.pdf' : 'converted_images.pdf';
                       document.body.appendChild(a);
                       a.click();
                       window.URL.revokeObjectURL(url);
                       document.body.removeChild(a);
                       
-                      showToast('PDFs merged successfully!', 'success');
+                      showToast(selectedTool === 'merge-pdf' ? 'PDFs merged successfully!' : 'Images converted successfully!', 'success');
+                      window.dispatchEvent(new Event('activityUpdated'));
                       onClose();
                       setFileList([]);
                     } catch (error) {
-                      console.error('Merge error:', error);
-                      showToast('Error merging PDFs. Please try again.', 'error');
+                      console.error('Process error:', error);
+                      showToast('Error processing files. Please try again.', 'error');
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  } else if (selectedTool === 'lock-pdf') {
+                    setIsProcessing(true);
+                    try {
+                      const formData = new FormData();
+                      formData.append('pdf', fileList[0]);
+                      formData.append('password', lockOptions.password);
+                      
+                      const response = await fetch('/api/convert/lock-pdf', {
+                        method: 'POST',
+                        body: formData,
+                      });
+
+                      if (!response.ok) {
+                        throw new Error(`Failed to process: ${selectedTool}`);
+                      }
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'locked.pdf';
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                      
+                      showToast('PDF locked successfully!', 'success');
+                      window.dispatchEvent(new Event('activityUpdated'));
+                      onClose();
+                      setFileList([]);
+                      setLockOptions({ password: '', confirmPassword: '' });
+                    } catch (error) {
+                      console.error('Process error:', error);
+                      showToast('Error locking PDF. Please try again.', 'error');
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  } else if (selectedTool === 'split-pdf') {
+                    setIsProcessing(true);
+                    try {
+                      const formData = new FormData();
+                      formData.append('pdf', fileList[0]);
+                      formData.append('startPage', splitOptions.startPage.toString());
+                      formData.append('endPage', splitOptions.endPage.toString());
+                      formData.append('splitEvery', splitOptions.splitEvery.toString());
+                      
+                      const response = await fetch('/api/convert/split-pdf', {
+                        method: 'POST',
+                        body: formData,
+                      });
+
+                      if (!response.ok) {
+                        throw new Error(`Failed to process: ${selectedTool}`);
+                      }
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      const isZip = response.headers.get('Content-Type') === 'application/zip';
+                      a.download = isZip ? 'split_documents.zip' : `split_document_pages_${splitOptions.startPage}_to_${splitOptions.endPage}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                      
+                      showToast('PDF split successfully!', 'success');
+                      window.dispatchEvent(new Event('activityUpdated'));
+                      onClose();
+                      setFileList([]);
+                      setSplitOptions({ startPage: 1, endPage: 1, splitEvery: false });
+                    } catch (error) {
+                      console.error('Process error:', error);
+                      showToast('Error splitting PDF. Please try again.', 'error');
                     } finally {
                       setIsProcessing(false);
                     }

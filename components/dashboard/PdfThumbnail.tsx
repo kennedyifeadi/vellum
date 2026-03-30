@@ -9,9 +9,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 interface PdfThumbnailProps {
   file: File;
+  pageNumber?: number;
+  onLoadSuccess?: (pdf: { numPages: number }) => void;
 }
 
-export default function PdfThumbnail({ file }: PdfThumbnailProps) {
+export default function PdfThumbnail({ file, pageNumber = 1, onLoadSuccess }: PdfThumbnailProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +37,7 @@ export default function PdfThumbnail({ file }: PdfThumbnailProps) {
         {fileUrl ? (
           <Document
             file={fileUrl}
+            onLoadSuccess={onLoadSuccess}
             className="flex justify-center w-full"
             loading={
               <div className="w-full aspect-3/4 flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
@@ -48,7 +51,7 @@ export default function PdfThumbnail({ file }: PdfThumbnailProps) {
             }
           >
             <Page 
-              pageNumber={1} 
+              pageNumber={pageNumber} 
               width={260} 
               renderTextLayer={false} 
               renderAnnotationLayer={false}
