@@ -1,8 +1,11 @@
 "use client";
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useState, useRef } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
+import dynamic from 'next/dynamic';
+
+const PdfThumbnail = dynamic(() => import('./PdfThumbnail'), { ssr: false });
 
 type SideDrawerProps = {
   isOpen: boolean;
@@ -29,6 +32,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   // Multi-file state array
   const [fileList, setFileList] = useState<File[]>([]);
   const [prevFile, setPrevFile] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   if (toolId !== prevToolId) {
     setPrevToolId(toolId);
@@ -67,29 +71,41 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+    if (!e.target.files || e.target.files.length === 0) return;
 
-    // Validate size (10MB max)
-    const MAX_SIZE = 10 * 1024 * 1024;
-    if (selectedFile.size > MAX_SIZE) {
-      showToast("File size exceeds 10MB free limit. Please upgrade or use a smaller file.", "error");
-      return;
-    }
-
-    // Check Multiple file limits
-    if (selectedTool === 'merge-pdf' && fileList.length >= 3) {
-      showToast("Free tier supports merging up to 3 PDFs only.", "error");
-      return;
-    }
-    if (selectedTool === 'image-to-pdf' && fileList.length >= 5) {
-      showToast("Free tier supports converting up to 5 images only.", "error");
-      return;
-    }
+    const newFiles = Array.from(e.target.files);
+    let errorShown = false;
 
     setFileList(prev => {
-      if (prev.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) return prev;
-      return [...prev, selectedFile];
+      const updatedList = [...prev];
+
+      for (const selectedFile of newFiles) {
+        // Validate size (10MB max)
+        const MAX_SIZE = 10 * 1024 * 1024;
+        if (selectedFile.size > MAX_SIZE) {
+          if (!errorShown) showToast("A file exceeds 10MB free limit. Skipped.", "error");
+          errorShown = true;
+          continue;
+        }
+
+        // Check Multiple file limits
+        if (selectedTool === 'merge-pdf' && updatedList.length >= 3) {
+          if (!errorShown) showToast("Free tier supports merging up to 3 PDFs only.", "error");
+          errorShown = true;
+          break;
+        }
+        if (selectedTool === 'image-to-pdf' && updatedList.length >= 5) {
+          if (!errorShown) showToast("Free tier supports converting up to 5 images only.", "error");
+          errorShown = true;
+          break;
+        }
+
+        if (updatedList.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) continue;
+        
+        updatedList.push(selectedFile);
+      }
+
+      return updatedList;
     });
 
     e.target.value = ''; // Reset
@@ -320,31 +336,53 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
             {/* Content body layout container isolated node context bounds. */}
             <div className="flex-1 p-5 overflow-y-auto space-y-5">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                onChange={handleFileChange}
+                accept={getAcceptAttribute()}
+                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || !selectedTool}
+              />
               {/* Selected File Preview Box Isolated Frames isolate bounds isolates */}
               {fileList.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
-                  <div className="space-y-2">
+                  <Reorder.Group axis="y" values={fileList} onReorder={setFileList} className="space-y-2">
                     {fileList.map((f, index) => (
-                      <div key={index} className="bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-3 flex items-center gap-3 relative group">
-                        <div className="w-10 h-10 bg-white rounded-lg border border-[#eaedf3] flex items-center justify-center overflow-hidden shrink-0 text-lg">
-                          {f.type.includes('pdf') ? '📄' : f.type.includes('image') ? '🖼️' : '📁'}
+                      <Reorder.Item 
+                        key={`${f.name}-${f.size}`} 
+                        value={f} 
+                        className="bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-4 flex flex-col items-center gap-4 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
+                      >
+                        {/* Drag indicator icon */}
+                        <div className="absolute top-3 left-3 w-7 h-7 rounded-lg bg-white/70 flex items-center justify-center text-[#94a3b8] opacity-0 group-hover:opacity-100 transition-opacity border border-[#e2e8f0] shadow-sm pointer-events-none">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" />
+                          </svg>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-[#111827] truncate">{f.name}</p>
-                          <p className="text-[10px] text-[#6b7280] mt-0.5">{formatBytes(f.size)}</p>
+                        {f.type.includes('pdf') ? (
+                          <PdfThumbnail file={f} />
+                        ) : (
+                          <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm">
+                            {f.type.includes('image') ? '🖼️' : '📁'}
+                          </div>
+                        )}
+                        <div className="w-full text-center flex flex-col items-center">
+                          <p className="text-sm font-semibold text-[#1e293b] truncate w-full max-w-[260px]">{f.name}</p>
+                          <p className="text-xs text-[#64748b] mt-1 font-medium bg-white px-2 py-0.5 rounded-full border border-[#e2e8f0] inline-block">{formatBytes(f.size)}</p>
                         </div>
                         <button 
                           onClick={() => setFileList(prev => prev.filter((_, i) => i !== index))}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ef4444] text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ef4444] text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                           </svg>
                         </button>
-                      </div>
+                      </Reorder.Item>
                     ))}
-                  </div>
+                  </Reorder.Group>
 
                   {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf') && (
                     <button 
@@ -376,15 +414,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     <p className="text-xs font-semibold text-[#111827]">Upload File</p>
                     <p className="text-[10px] text-[#6b7280] mt-0.5">Select from device or drop here</p>
                   </div>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    onChange={handleFileChange}
-                    accept={getAcceptAttribute()}
-                  />
-
-
                 </div>
               )}
 
@@ -433,18 +462,63 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             {/* Footer containing trigger isolated grids actions layout node bounds. */}
             <div className="p-5 border-t border-[#eaedf3] space-y-3">
               <button 
-                disabled={isActionDisabled()}
+                disabled={isActionDisabled() || isProcessing}
+                onClick={async () => {
+                  if (selectedTool === 'merge-pdf') {
+                    setIsProcessing(true);
+                    try {
+                      const formData = new FormData();
+                      fileList.forEach(file => formData.append('pdfs', file));
+                      
+                      const response = await fetch('/api/convert/merge-pdf', {
+                        method: 'POST',
+                        body: formData,
+                      });
 
+                      if (!response.ok) {
+                        throw new Error('Failed to merge PDFs');
+                      }
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'merged.pdf';
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                      
+                      showToast('PDFs merged successfully!', 'success');
+                      onClose();
+                      setFileList([]);
+                    } catch (error) {
+                      console.error('Merge error:', error);
+                      showToast('Error merging PDFs. Please try again.', 'error');
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  } else {
+                    showToast('Processing started.', 'success');
+                  }
+                }}
                 className={`w-full h-10 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                  selectedTool 
+                  selectedTool && !isProcessing
                     ? 'bg-[#6366f1] text-white hover:bg-[#4f46e5] shadow-sm shadow-[#6366f1]/20' 
                     : 'bg-[#f3f4f6] text-[#9ca3af] cursor-not-allowed'
                 }`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-                Process File
+                {isProcessing ? (
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-[#9ca3af]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                )}
+                {isProcessing ? 'Processing...' : 'Process File'}
               </button>
             </div>
           </motion.div>
