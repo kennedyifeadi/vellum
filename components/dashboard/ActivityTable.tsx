@@ -40,6 +40,42 @@ export default function ActivityTable() {
     } catch {}
   };
 
+  const getToolIcon = (tool: string) => {
+    const toolMap: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
+      'Merge PDF': {
+        bg: 'bg-[#dbeafe]', color: 'text-[#2563eb]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+      },
+      'Split PDF': {
+        bg: 'bg-[#fce7f3]', color: 'text-[#db2777]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+      },
+      'Lock PDF': {
+        bg: 'bg-[#d1fae5]', color: 'text-[#059669]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      },
+      'Image to PDF': {
+        bg: 'bg-[#ffedd5]', color: 'text-[#ea580c]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      },
+      'HTML to PDF': {
+        bg: 'bg-[#f3e8ff]', color: 'text-[#9333ea]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+      },
+    };
+
+    const config = toolMap[tool] ?? {
+      bg: 'bg-[#f3f4f6]', color: 'text-[#6b7280]',
+      icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    };
+
+    return (
+      <div className={`w-8 h-8 rounded-lg flex shrink-0 items-center justify-center ${config.bg} ${config.color}`}>
+        {config.icon}
+      </div>
+    );
+  };
+
   const getRelativeTime = (dateString: string) => {
     const elapsed = new Date(dateString).getTime() - Date.now();
     const days = Math.round(elapsed / (1000 * 60 * 60 * 24));
@@ -94,9 +130,7 @@ export default function ActivityTable() {
               {files.map((row) => (
                 <div key={row._id} className="h-14 px-4 flex items-center border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors text-xs">
                   <div className="w-[38%] pr-4 font-medium flex items-center gap-3 text-[#111827]">
-                    <div className={`w-8 h-8 rounded-lg flex shrink-0 items-center justify-center text-[13px] ${row.fileName.includes('.pdf') ? 'bg-[#fef2f2] text-[#ef4444]' : row.fileName.includes('.zip') ? 'bg-[#f5f3ff] text-[#8b5cf6]' : 'bg-[#f0fdfa] text-[#14b8a6]'}`}>
-                      {row.fileName.includes('.pdf') ? '📄' : row.fileName.includes('.zip') ? '🗂️' : '🖼️'}
-                    </div>
+                    {getToolIcon(row.toolUsed)}
                     <span className="truncate">{row.fileName}</span>
                   </div>
                   <div className="w-[22%] text-[#6b7280] text-[11px] truncate pr-4">{row.toolUsed}</div>
