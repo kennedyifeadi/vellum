@@ -1,42 +1,16 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
-
-interface FileActivity {
-  _id: string;
-  fileName: string;
-  toolUsed: string;
-  status: string;
-  createdAt: string;
-  outputUrl: string;
-}
+import { useDashboard } from '@/app/dashboard/layout';
 
 export default function ActivityTable() {
-  const [files, setFiles] = useState<FileActivity[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchActivity = async () => {
-    try {
-      const res = await fetch('/api/conversions');
-      if (res.ok) setFiles(await res.json());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchActivity();
-    
-    const handleUpdate = () => fetchActivity();
-    window.addEventListener('activityUpdated', handleUpdate);
-    return () => window.removeEventListener('activityUpdated', handleUpdate);
-  }, []);
+  const { recentActivity, refreshData } = useDashboard();
 
   const handleDelete = async (id: string) => {
     try {
       const res = await fetch(`/api/conversions?id=${id}`, { method: 'DELETE' });
-      if (res.ok) setFiles(prev => prev.filter(f => f._id !== id));
+      if (res.ok) refreshData('activity');
     } catch {}
   };
 
@@ -88,6 +62,9 @@ export default function ActivityTable() {
     return 'Just now';
   };
 
+  // Limit to top 5 for the dashboard summary
+  const tableData = recentActivity.slice(0, 5);
+
   return (
     <div className="mt-8 flex-1 flex flex-col">
       <div className="flex justify-between items-center mb-4">
@@ -98,12 +75,7 @@ export default function ActivityTable() {
       </div>
 
       <div className="border border-[#eaedf3] rounded-xl overflow-hidden flex-1 flex flex-col min-h-[300px]">
-        {loading ? (
-          <div className="flex-1 flex text-xs font-semibold text-[#6b7280] justify-center items-center">
-            <div className="w-5 h-5 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin mr-2"></div>
-            Loading history...
-          </div>
-        ) : files.length === 0 ? (
+        {recentActivity.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-[#fbfcfd]">
             <div className="w-16 h-16 rounded-full bg-[#f3f4f6] flex items-center justify-center text-[#9ca3af] mb-4">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
@@ -127,7 +99,7 @@ export default function ActivityTable() {
             </div>
             
             <div className="flex-1 overflow-y-auto">
-              {files.map((row) => (
+              {tableData.map((row) => (
                 <div key={row._id} className="h-14 px-4 flex items-center border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors text-xs">
                   <div className="w-[38%] pr-4 font-medium flex items-center gap-3 text-[#111827]">
                     {getToolIcon(row.toolUsed)}
@@ -155,11 +127,11 @@ export default function ActivityTable() {
             </div>
             
             <div className="bg-[#f8fafc] h-10 px-4 flex justify-between items-center border-t border-[#eaedf3] text-[11px] text-[#6b7280]">
-              <span>Showing {Math.min(3, files.length)} of {files.length} recent files</span>
-              <div className="flex gap-2">
-                 <button className="w-5 h-5 flex items-center justify-center hover:bg-[#eaedf3] rounded">&lt;</button>
-                 <button className="w-5 h-5 flex items-center justify-center hover:bg-[#eaedf3] rounded">&gt;</button>
-              </div>
+              <span>Showing {tableData.length} of {recentActivity.length} recent files</span>
+              <Link href="/dashboard/recent" className="flex items-center gap-1 hover:text-[#6366f1] transition-colors font-semibold">
+                 View All History
+                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+              </Link>
             </div>
           </>
         )}

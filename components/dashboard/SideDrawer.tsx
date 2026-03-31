@@ -22,12 +22,15 @@ const availableTools = [
   { id: 'split-pdf', name: 'Split PDF', color: 'bg-[#F3E8FF] text-[#d946ef]' },
   { id: 'docx-to-pdf', name: 'DOCX to PDF', color: 'bg-[#E0E7FF] text-[#3b82f6]' },
   { id: 'lock-pdf', name: 'Lock PDF', color: 'bg-[#D1FAE5] text-[#eab308]' },
+  { id: 'find-pdf', name: 'Find in PDF', color: 'bg-[#FFEDD5] text-[#ea580c]' },
+  { id: 'html-to-pdf', name: 'HTML to PDF', color: 'bg-[#F3F4F6] text-[#6366f1]' },
+  { id: 'jpg-to-png', name: 'JPEG to PNG', color: 'bg-[#FFF7ED] text-[#f97316]' },
 ];
 
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
-  const { openDrawer, showToast } = useDashboard();
+  const { showToast } = useDashboard();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-file state array
@@ -37,7 +40,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   if (toolId !== prevToolId) {
     setPrevToolId(toolId);
-    setSelectedTool(toolId || '');
+    // Standardize img-to-pdf to image-to-pdf
+    const finalId = toolId === 'img-to-pdf' ? 'image-to-pdf' : toolId;
+    setSelectedTool(finalId || '');
   }
 
   if (file !== prevFile) {
@@ -275,6 +280,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     switch (selectedTool) {
       case 'merge-pdf':
         return fileList.length < 2;
+      case 'image-to-pdf':
+        return fileList.length === 0;
       case 'split-pdf':
         return !splitOptions.startPage || !splitOptions.endPage;
       case 'lock-pdf':
@@ -283,7 +290,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return !findOptions.searchTerm.trim();
       case 'html-to-pdf':
         return htmlOptions.mode === 'url' ? !htmlOptions.url.trim() : fileList.length === 0;
-
+      case 'docx-to-pdf':
+      case 'jpg-to-png':
+        return fileList.length === 0;
       default:
         return false;
     }
@@ -512,40 +521,59 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
-                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf') {
+                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf') {
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
-                      const fileKey = selectedTool === 'merge-pdf' ? 'pdfs' : 'images';
+                      let fileKey = 'file';
+                      if (selectedTool === 'merge-pdf') fileKey = 'pdfs';
+                      else if (selectedTool === 'image-to-pdf') fileKey = 'images';
+                      else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
+                      else if (selectedTool === 'jpg-to-png') fileKey = 'images';
+                      else if (selectedTool === 'find-pdf') fileKey = 'pdf';
+
                       fileList.forEach(file => formData.append(fileKey, file));
                       
-                      const apiUrl = selectedTool === 'merge-pdf' ? '/api/convert/merge-pdf' : '/api/convert/image-to-pdf';
+                      if (selectedTool === 'find-pdf') {
+                        formData.append('searchTerm', findOptions.searchTerm);
+                      }
+                      
+                      const apiUrl = `/api/convert/${selectedTool}`;
                       const response = await fetch(apiUrl, {
                         method: 'POST',
                         body: formData,
                       });
 
                       if (!response.ok) {
-                        throw new Error(`Failed to process: ${selectedTool}`);
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || `Failed to process: ${selectedTool}`);
                       }
 
                       const blob = await response.blob();
                       const url = window.URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = selectedTool === 'merge-pdf' ? 'merged.pdf' : 'converted_images.pdf';
+                      
+                      let downloadName = 'processed.pdf';
+                      if (selectedTool === 'merge-pdf') downloadName = 'merged.pdf';
+                      else if (selectedTool === 'image-to-pdf') downloadName = 'converted_images.pdf';
+                      else if (selectedTool === 'docx-to-pdf') downloadName = 'converted.pdf';
+                      else if (selectedTool === 'jpg-to-png') downloadName = 'converted.png';
+
+                      a.download = downloadName;
                       document.body.appendChild(a);
                       a.click();
                       window.URL.revokeObjectURL(url);
                       document.body.removeChild(a);
                       
-                      showToast(selectedTool === 'merge-pdf' ? 'PDFs merged successfully!' : 'Images converted successfully!', 'success');
+                      showToast('File processed successfully!', 'success');
                       window.dispatchEvent(new Event('activityUpdated'));
                       onClose();
                       setFileList([]);
                     } catch (error) {
                       console.error('Process error:', error);
-                      showToast('Error processing files. Please try again.', 'error');
+                      const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';
+                      showToast(msg, 'error');
                     } finally {
                       setIsProcessing(false);
                     }

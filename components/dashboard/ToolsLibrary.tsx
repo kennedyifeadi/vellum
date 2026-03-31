@@ -21,7 +21,27 @@ export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All Tools');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [starredIds, setStarredIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = JSON.parse(localStorage.getItem('starredTools') || '[]');
+      return new Set(stored);
+    } catch { return new Set(); }
+  });
   const { openDrawer } = useDashboard();
+
+  const toggleStar = (e: React.MouseEvent, toolId: string) => {
+    e.stopPropagation();
+    setStarredIds(prev => {
+      const next = new Set(prev);
+      next.has(toolId) ? next.delete(toolId) : next.add(toolId);
+      const arr = Array.from(next);
+      localStorage.setItem('starredTools', JSON.stringify(arr));
+      window.dispatchEvent(new CustomEvent('starredToolsUpdated', { detail: arr }));
+      return next;
+    });
+  };
+
   const handleToolClick = (id: string) => {
     openDrawer(null, id);
   };
@@ -93,7 +113,7 @@ export default function ToolsLibrary() {
       ),
     },
     {
-      id: 'img-to-pdf',
+      id: 'image-to-pdf',
       name: 'Image to PDF',
       description: 'Convert one or more images into a single PDF.',
       categories: ['Images', 'PDF'],
@@ -238,8 +258,13 @@ export default function ToolsLibrary() {
             } gap-4 hover:border-[#e0e7ff] text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)] relative`}
           >
             {/* Star Icon */}
-            <div className="absolute top-4 right-4 text-[#9ca3af] hover:text-[#fbbf24] cursor-pointer">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div
+              onClick={(e) => toggleStar(e, tool.id)}
+              className={`absolute top-4 right-4 cursor-pointer transition-colors ${
+                starredIds.has(tool.id) ? 'text-[#fbbf24]' : 'text-[#d1d5db] hover:text-[#fbbf24]'
+              }`}
+            >
+              <svg className="w-4 h-4" fill={starredIds.has(tool.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.364 1.118l1.518 4.674c.3.921-.755 1.688-1.54 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.784.57-1.838-.197-1.539-1.118l1.518-4.674a1 1 0 00-.364-1.118L2.493 10.1c-.783-.57-.381-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
               </svg>
             </div>

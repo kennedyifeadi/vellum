@@ -4,15 +4,22 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/dashboard/Sidebar";
 
-// Create context to share user data easily across sub-pages
 // Create context to share user data and drawer state easily across sub-pages
 const DashboardContext = createContext<{
   user: any;
+  documents: any[];
+  recentActivity: any[];
+  storage: { usedBytes: number; limitBytes: number; plan: string } | null;
+  refreshData: (type?: 'all' | 'documents' | 'activity' | 'storage') => Promise<void>;
   openDrawer: (file: File | null, toolId: string | null) => void;
   closeDrawer: () => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }>({
   user: null,
+  documents: [],
+  recentActivity: [],
+  storage: null,
+  refreshData: async () => {},
   openDrawer: () => {},
   closeDrawer: () => {},
   showToast: () => {},
@@ -25,6 +32,9 @@ import SideDrawer from "@/components/dashboard/SideDrawer";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [storage, setStorage] = useState<any>(null);
   const router = useRouter();
 
   // Drawer & Toast States
@@ -33,30 +43,53 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  const refreshData = async (type: 'all' | 'documents' | 'activity' | 'storage' = 'all') => {
+    try {
+      const promises = [];
+      if (type === 'all' || type === 'documents') promises.push(fetch('/api/documents').then(r => r.ok ? r.json() : []));
+      if (type === 'all' || type === 'activity') promises.push(fetch('/api/conversions').then(r => r.ok ? r.json() : []));
+      if (type === 'all' || type === 'storage') promises.push(fetch('/api/storage').then(r => r.ok ? r.json() : null));
+
+      const results = await Promise.all(promises);
+      
+      let idx = 0;
+      if (type === 'all' || type === 'documents') setDocuments(results[idx++]);
+      if (type === 'all' || type === 'activity') setRecentActivity(results[idx++]);
+      if (type === 'all' || type === 'storage') setStorage(results[idx++]);
+    } catch (error) {
+      console.error('Failed to refresh dashboard data:', error);
+    }
+  };
+
   useEffect(() => {
-    async function fetchUser() {
+    async function initDashboard() {
       try {
         const res = await fetch('/api/auth/me');
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
+          // Initial load of dashboard data
+          refreshData();
         } else {
           router.push('/login');
         }
-
-
-
-
-
-
-
       } catch (error) {
-        console.error('Failed to fetch user:', error);
+        console.error('Failed to initialize dashboard:', error);
       } finally {
         setLoading(false);
       }
     }
-    fetchUser();
+    initDashboard();
+
+    // Listen for global update events
+    const handleUpdate = () => refreshData();
+    window.addEventListener('activityUpdated', handleUpdate);
+    window.addEventListener('starredToolsUpdated', handleUpdate);
+    
+    return () => {
+      window.removeEventListener('activityUpdated', handleUpdate);
+      window.removeEventListener('starredToolsUpdated', handleUpdate);
+    };
   }, [router]);
 
   const handleSignOut = async () => {
@@ -97,7 +130,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <DashboardContext.Provider value={{ user, openDrawer, closeDrawer, showToast }}>
+    <DashboardContext.Provider value={{ 
+      user, 
+      documents, 
+      recentActivity, 
+      storage, 
+      refreshData, 
+      openDrawer, 
+      closeDrawer, 
+      showToast 
+    }}>
       <div className="flex h-screen bg-[#f4f7fb] p-4 gap-4 overflow-hidden text-[#111827] relative">
         <Sidebar user={user} onSignOut={handleSignOut} />
         <main className="flex-1 bg-white rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
@@ -114,11 +156,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Global Toast */}
         {toast && (
-          <div className={`absolute bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 text-xs font-medium z-50 animate-bounce ${
-            toast.type === 'error' ? 'bg-[#fef2f2] text-[#ef4444] border border-[#fecaca]' :
-            toast.type === 'success' ? 'bg-[#f0fdf4] text-[#22c55e] border border-[#bbf7d0]' :
-            'bg-[#f0f9ff] text-[#0ea5e9] border border-[#bae6fd]'
+          <div className={`fixed bottom-8 right-8 px-5 py-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-[13px] font-semibold z-[100] border backdrop-blur-sm transition-all animate-in fade-in slide-in-from-bottom-5 ${
+            toast.type === 'error' ? 'bg-red-50/90 text-red-600 border-red-100 shadow-red-200/20' :
+            toast.type === 'success' ? 'bg-emerald-50/90 text-emerald-600 border-emerald-100 shadow-emerald-200/20' :
+            'bg-indigo-50/90 text-indigo-600 border-indigo-100 shadow-indigo-200/20'
           }`}>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${
+              toast.type === 'error' ? 'bg-red-400' :
+              toast.type === 'success' ? 'bg-emerald-400' :
+              'bg-indigo-400'
+            }`} />
             <span>{toast.message}</span>
           </div>
         )}
