@@ -4,6 +4,17 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/dashboard/Sidebar";
 
+// Types for Notifications
+export interface AppNotification {
+  id: string;
+  type: 'success' | 'warning' | 'error' | 'info';
+  title: string;
+  message: string;
+  timestamp: string;
+  isRead: boolean;
+  link?: string;
+}
+
 // Create context to share user data and drawer state easily across sub-pages
 const DashboardContext = createContext<{
   user: any;
@@ -14,6 +25,10 @@ const DashboardContext = createContext<{
   openDrawer: (file: File | null, toolId: string | null) => void;
   closeDrawer: () => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  notifications: AppNotification[];
+  addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => void;
+  markAllAsRead: () => void;
+  unreadCount: number;
 }>({
   user: null,
   documents: [],
@@ -23,6 +38,10 @@ const DashboardContext = createContext<{
   openDrawer: () => {},
   closeDrawer: () => {},
   showToast: () => {},
+  notifications: [],
+  addNotification: () => {},
+  markAllAsRead: () => {},
+  unreadCount: 0,
 });
 
 export const useDashboard = () => useContext(DashboardContext);
@@ -37,11 +56,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [storage, setStorage] = useState<any>(null);
   const router = useRouter();
 
+  // Notification State
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  
   // Drawer & Toast States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const addNotification = (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
+    const newNote: AppNotification = {
+      ...n,
+      id: Math.random().toString(36).substring(7),
+      timestamp: new Date().toISOString(),
+      isRead: false,
+    };
+    setNotifications(prev => {
+      const updated = [newNote, ...prev].slice(0, 50); // Keep last 50
+      localStorage.setItem('vellum_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => {
+      const updated = prev.map(n => ({ ...n, isRead: true }));
+      localStorage.setItem('vellum_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const refreshData = async (type: 'all' | 'documents' | 'activity' | 'storage' = 'all') => {
     try {
@@ -68,8 +114,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
-          // Initial load of dashboard data
           refreshData();
+          
+          // Load local notifications
+          const saved = localStorage.getItem('vellum_notifications');
+          if (saved) setNotifications(JSON.parse(saved));
         } else {
           router.push('/login');
         }
@@ -81,7 +130,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     initDashboard();
 
-    // Listen for global update events
     const handleUpdate = () => refreshData();
     window.addEventListener('activityUpdated', handleUpdate);
     window.addEventListener('starredToolsUpdated', handleUpdate);
@@ -91,6 +139,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       window.removeEventListener('starredToolsUpdated', handleUpdate);
     };
   }, [router]);
+
+  // Automated Storage Notifications
+  useEffect(() => {
+    if (!storage) return;
+    const percent = (storage.usedBytes / storage.limitBytes) * 100;
+    
+    const lastAlert = localStorage.getItem('vellum_storage_alert');
+    if (percent >= 100 && lastAlert !== 'full') {
+      addNotification({
+        type: 'error',
+        title: 'Storage Full',
+        message: 'You have reached your storage limit. Please delete some files or upgrade to Pro.',
+        link: '/dashboard/documents'
+      });
+      localStorage.setItem('vellum_storage_alert', 'full');
+    } else if (percent >= 50 && percent < 100 && lastAlert !== 'warning') {
+      addNotification({
+        type: 'warning',
+        title: 'Storage Warning',
+        message: `Your storage is ${Math.round(percent)}% full. Free users have a 50MB limit.`,
+        link: '/dashboard/documents'
+      });
+      localStorage.setItem('vellum_storage_alert', 'warning');
+    } else if (percent < 50) {
+      localStorage.removeItem('vellum_storage_alert');
+    }
+  }, [storage]);
 
   const handleSignOut = async () => {
     try {
@@ -138,7 +213,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       refreshData, 
       openDrawer, 
       closeDrawer, 
-      showToast 
+      showToast,
+      notifications,
+      addNotification,
+      markAllAsRead,
+      unreadCount
     }}>
       <div className="flex h-screen bg-[#f4f7fb] p-4 gap-4 overflow-hidden text-[#111827] relative">
         <Sidebar user={user} onSignOut={handleSignOut} />

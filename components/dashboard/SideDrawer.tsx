@@ -30,7 +30,7 @@ const availableTools = [
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
-  const { showToast } = useDashboard();
+  const { showToast, addNotification } = useDashboard();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-file state array
@@ -567,6 +567,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       document.body.removeChild(a);
                       
                       showToast('File processed successfully!', 'success');
+                      addNotification({
+                        type: 'success',
+                        title: 'Conversion Complete',
+                        message: `Your ${downloadName} is ready for download.`,
+                        link: '/dashboard/recent'
+                      });
                       window.dispatchEvent(new Event('activityUpdated'));
                       onClose();
                       setFileList([]);
@@ -604,6 +610,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       document.body.removeChild(a);
                       
                       showToast('PDF locked successfully!', 'success');
+                      addNotification({
+                        type: 'success',
+                        title: 'Lock Complete',
+                        message: 'Your PDF has been successfully password protected.',
+                        link: '/dashboard/recent'
+                      });
                       window.dispatchEvent(new Event('activityUpdated'));
                       onClose();
                       setFileList([]);

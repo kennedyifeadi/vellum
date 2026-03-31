@@ -1,29 +1,25 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useDashboard } from '@/app/dashboard/layout';
+import NotificationDropdown from '@/components/dashboard/NotificationDropdown';
 
 // ── Types ──
 interface StagedDoc {
   _id: string;
   fileName: string;
-  diskFileName: string;
-  fileSize: number;
-  mimeType: string;
+  size: number;
+  type: string;
+  lastModified: number;
   createdAt: string;
   expiresAt: string;
-}
-
-interface StorageInfo {
-  usedBytes: number;
-  limitBytes: number;
-  plan: string;
 }
 
 interface StarredTool {
   id: string;
   name: string;
+  color: string;
 }
 
 const ALL_TOOL_NAMES: Record<string, string> = {
@@ -56,8 +52,8 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function getExpiryLabel(expiresAt: string): { label: string; urgency: 'normal' | 'warn' | 'critical' } {
-  const ms = new Date(expiresAt).getTime() - Date.now();
+function getExpiryLabel(expiresAt: string, now: number): { label: string; urgency: 'normal' | 'warn' | 'critical' } {
+  const ms = new Date(expiresAt).getTime() - now;
   if (ms <= 0) return { label: 'Expired', urgency: 'critical' };
   const hours = ms / (1000 * 60 * 60);
   const days = Math.floor(hours / 24);
@@ -82,15 +78,22 @@ function fileIconColors(name: string) {
 
 // ── Component ──
 export default function DocumentsPage() {
-  const { documents, storage, refreshData, openDrawer, showToast } = useDashboard();
+  const { documents, storage, refreshData, addNotification, unreadCount, openDrawer, showToast } = useDashboard();
 
   const [uploading, setUploading] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const [starredTools, setStarredTools] = useState<StarredTool[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
       const ids: string[] = JSON.parse(localStorage.getItem('starredTools') || '[]');
-      return ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id }));
+      return ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id, color: '#fbbf24' }));
     } catch { return []; }
   });
 
@@ -106,7 +109,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     const onStar = (e: Event) => {
       const ids = (e as CustomEvent<string[]>).detail;
-      setStarredTools(ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id })));
+      setStarredTools(ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id, color: '#fbbf24' })));
     };
     window.addEventListener('starredToolsUpdated', onStar);
     return () => {
@@ -124,6 +127,12 @@ export default function DocumentsPage() {
       const res = await fetch('/api/documents/upload', { method: 'POST', body: formData });
       if (res.ok) {
         showToast('Files uploaded successfully!', 'success');
+        addNotification({
+          type: 'success',
+          title: 'Upload Complete',
+          message: `${e.target.files.length} file(s) successfully staged.`,
+          link: '/dashboard/documents'
+        });
         refreshData();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -141,6 +150,9 @@ export default function DocumentsPage() {
     if (res.ok) {
       refreshData();
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+      showToast('File deleted successfully!', 'success');
+    } else {
+      showToast('Failed to delete file.', 'error');
     }
   };
 
@@ -160,11 +172,11 @@ export default function DocumentsPage() {
       const res = await fetch(`/api/documents/download/${doc._id}`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const file = new File([blob], doc.fileName, { type: doc.mimeType });
+      const file = new File([blob], doc.fileName, { type: doc.type });
       
       openDrawer(file, toolId);
       showToast(`Opening ${ALL_TOOL_NAMES[toolId] ?? toolId} for "${doc.fileName}"`, 'info');
-    } catch (_error) {
+    } catch {
       showToast('Failed to load file for conversion.', 'error');
     }
   };
@@ -175,11 +187,11 @@ export default function DocumentsPage() {
       const res = await fetch(`/api/documents/download/${doc._id}`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const file = new File([blob], doc.fileName, { type: doc.mimeType });
+      const file = new File([blob], doc.fileName, { type: doc.type });
       
       openDrawer(file, toolId);
       showToast(`Opening ${ALL_TOOL_NAMES[toolId] ?? toolId} for "${doc.fileName}"`, 'info');
-    } catch (_error) {
+    } catch {
       showToast('Failed to load file for conversion.', 'error');
     }
   };
@@ -189,7 +201,7 @@ export default function DocumentsPage() {
     .filter((d: any) => d.fileName.toLowerCase().includes(search.toLowerCase()))
     .sort((a: any, b: any) => {
       if (sortBy === 'name') return a.fileName.localeCompare(b.fileName);
-      if (sortBy === 'size') return b.fileSize - a.fileSize;
+      if (sortBy === 'size') return b.size - a.size;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
@@ -197,7 +209,7 @@ export default function DocumentsPage() {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const totalDocsBytes = documents.reduce((s: number, d: any) => s + d.fileSize, 0);
+  const totalDocsBytes = documents.reduce((s: number, d: any) => s + d.size, 0);
   const totalUsedBytes = (storage?.usedBytes ?? 0) + totalDocsBytes;
   const limitBytes = storage?.limitBytes ?? 50 * 1024 * 1024;
   const storagePercent = Math.min(100, (totalUsedBytes / limitBytes) * 100);
@@ -215,10 +227,18 @@ export default function DocumentsPage() {
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files..." className="h-9 pl-9 pr-4 text-xs bg-[#f8fafc] border border-[#eaedf3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#6366f1] w-52 text-[#374151]"/>
           </div>
-          <button className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-[#f8fafc] border border-[#eaedf3] text-[#6b7280] hover:bg-[#f3f4f6]">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ef4444] rounded-full border border-white"/>
-          </button>
+          <div className="relative">
+            <button 
+              onClick={(e) => { e.stopPropagation(); setIsNotificationsOpen(!isNotificationsOpen); }}
+              className={`relative w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${isNotificationsOpen ? 'bg-[#f0f9ff] border-[#6366f1] text-[#6366f1]' : 'bg-[#f8fafc] border-[#eaedf3] text-[#6b7280] hover:bg-[#f3f4f6]'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ef4444] rounded-full border border-white animate-pulse shadow-[0_0_0_2px_rgba(239,68,68,0.2)]"/>
+              )}
+            </button>
+            <NotificationDropdown isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+          </div>
         </div>
       </div>
 
@@ -283,7 +303,7 @@ export default function DocumentsPage() {
                 <svg className={`w-4 h-4 text-[#9ca3af] transition-transform ${showStarredPanel ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
               </button>
               {showStarredPanel && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-white border border-[#eaedf3] rounded-xl shadow-lg overflow-hidden">
+                <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white border border-[#eaedf3] rounded-xl shadow-lg overflow-hidden">
                   {starredTools.length === 0 ? (
                     <div className="p-4 text-center">
                       <p className="text-xs text-[#6b7280] mb-2">No starred tools yet.</p>
@@ -305,7 +325,18 @@ export default function DocumentsPage() {
             </div>
 
             {/* Team Shared placeholder */}
-            <div className="bg-white border border-dashed border-[#eaedf3] rounded-xl p-4 flex items-center gap-3 opacity-50 cursor-not-allowed">
+            <div 
+              onClick={() => {
+                addNotification({
+                  type: 'info',
+                  title: 'New Feature Coming',
+                  message: 'Team Shared functionality is currently under development and will be available to Pro users soon.',
+                  link: '/dashboard/library'
+                });
+                showToast('Feature coming soon!', 'info');
+              }}
+              className="bg-white border border-dashed border-[#eaedf3] rounded-xl p-4 flex items-center gap-3 opacity-60 hover:opacity-100 hover:border-[#6366f1] transition-all cursor-pointer group"
+            >
               <div className="w-10 h-10 rounded-xl bg-[#eff6ff] text-[#3b82f6] flex items-center justify-center shrink-0">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
               </div>
@@ -363,7 +394,7 @@ export default function DocumentsPage() {
                 const { bg, color } = fileIconColors(doc.fileName);
                 const ext = fileExt(doc.fileName).toUpperCase();
                 const isSelected = selected.has(doc._id);
-                const expiry = getExpiryLabel(doc.expiresAt);
+                const expiry = getExpiryLabel(doc.expiresAt, now);
                 const tools = TOOL_MAP[fileExt(doc.fileName)]?.all ?? [];
                 return (
                   <div key={doc._id} onClick={() => toggleSelect(doc._id)} className={`relative bg-white border rounded-xl p-3 flex flex-col gap-2 cursor-pointer transition-all hover:shadow-md group ${isSelected ? 'border-[#6366f1] ring-2 ring-[#6366f1]/20' : 'border-[#eaedf3] hover:border-[#c7d2fe]'}`}>
@@ -381,7 +412,7 @@ export default function DocumentsPage() {
                     <div>
                       <p className="text-[11px] font-semibold text-[#111827] truncate">{doc.fileName}</p>
                       <div className="flex justify-between items-center mt-0.5">
-                        <span className="text-[10px] text-[#9ca3af]">{fmtBytes(doc.fileSize)}</span>
+                        <span className="text-[10px] text-[#9ca3af]">{fmtBytes(doc.size)}</span>
                         <span className="text-[10px] text-[#9ca3af]">{fmtDate(doc.createdAt)}</span>
                       </div>
                     </div>
@@ -436,7 +467,7 @@ export default function DocumentsPage() {
                 const { bg, color } = fileIconColors(doc.fileName);
                 const ext = fileExt(doc.fileName);
                 const isSelected = selected.has(doc._id);
-                const expiry = getExpiryLabel(doc.expiresAt);
+                const expiry = getExpiryLabel(doc.expiresAt, now);
                 const tools = TOOL_MAP[ext]?.all ?? [];
                 return (
                   <div key={doc._id} onClick={() => toggleSelect(doc._id)} className={`grid grid-cols-[auto_1fr_80px_100px_110px_130px] px-4 h-14 items-center border-b border-[#f8fafc] last:border-0 cursor-pointer transition-colors hover:bg-[#fafbff] ${isSelected ? 'bg-[#eef2ff]' : ''}`}>
@@ -448,7 +479,7 @@ export default function DocumentsPage() {
                       <span className="text-xs font-medium text-[#111827] truncate">{doc.fileName}</span>
                     </div>
                     <div className="text-xs font-semibold text-[#6b7280]">{ext.toUpperCase()}</div>
-                    <div className="text-xs text-[#6b7280]">{fmtBytes(doc.fileSize)}</div>
+                    <div className="text-xs text-[#6b7280]">{fmtBytes(doc.size)}</div>
                     <div><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${urgencyClass[expiry.urgency]}`}>{expiry.label}</span></div>
                     <div className="flex justify-end items-center gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleQuickConvert(doc)} className="h-7 px-2 flex items-center gap-1 bg-[#6366f1] text-white text-[10px] font-semibold rounded-lg hover:bg-[#4f46e5] transition-colors">

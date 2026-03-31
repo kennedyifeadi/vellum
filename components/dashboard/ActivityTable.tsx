@@ -1,11 +1,17 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useDashboard } from '@/app/dashboard/layout';
 
 export default function ActivityTable() {
   const { recentActivity, refreshData } = useDashboard();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDelete = async (id: string) => {
     try {
@@ -50,8 +56,8 @@ export default function ActivityTable() {
     );
   };
 
-  const getRelativeTime = (dateString: string) => {
-    const elapsed = new Date(dateString).getTime() - Date.now();
+  const getRelativeTime = (dateString: string, currentTime: number) => {
+    const elapsed = new Date(dateString).getTime() - currentTime;
     const days = Math.round(elapsed / (1000 * 60 * 60 * 24));
     const hours = Math.round(elapsed / (1000 * 60 * 60));
     const minutes = Math.round(elapsed / (1000 * 60));
@@ -66,15 +72,15 @@ export default function ActivityTable() {
   const tableData = recentActivity.slice(0, 5);
 
   return (
-    <div className="mt-8 flex-1 flex flex-col">
+    <div className="mt-8 flex flex-col">
       <div className="flex justify-between items-center mb-4">
         <p className="font-bold text-[15px] text-[#111827]">Recent Activity</p>
-        <button className="text-[#9ca3af] hover:text-[#4b5563]">
+        {/* <button className="text-[#9ca3af] hover:text-[#4b5563]">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"/></svg>
-        </button>
+        </button> */}
       </div>
 
-      <div className="border border-[#eaedf3] rounded-xl overflow-hidden flex-1 flex flex-col min-h-[300px]">
+      <div className="border border-[#eaedf3] rounded-xl overflow-hidden flex flex-col">
         {recentActivity.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-[#fbfcfd]">
             <div className="w-16 h-16 rounded-full bg-[#f3f4f6] flex items-center justify-center text-[#9ca3af] mb-4">
@@ -98,7 +104,7 @@ export default function ActivityTable() {
               <div className="w-[10%] text-right text-transparent select-none">Actions</div>
             </div>
             
-            <div className="flex-1 overflow-y-auto">
+            <div className="overflow-x-auto">
               {tableData.map((row) => (
                 <div key={row._id} className="h-14 px-4 flex items-center border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors text-xs">
                   <div className="w-[38%] pr-4 font-medium flex items-center gap-3 text-[#111827]">
@@ -113,7 +119,7 @@ export default function ActivityTable() {
                       {row.status}
                     </span>
                   </div>
-                  <div className="w-[15%] text-[#9ca3af] text-[11px] font-medium capitalize pr-2">{getRelativeTime(row.createdAt)}</div>
+                  <div className="w-[15%] text-[#9ca3af] text-[11px] font-medium capitalize pr-2">{getRelativeTime(row.createdAt, now)}</div>
                   <div className="w-[10%] flex justify-end gap-3 text-[#111827] font-semibold items-center">
                     <button onClick={() => window.location.href = row.outputUrl} className="text-[#6366f1] hover:text-[#4f46e5] transition-colors">
                       Download
