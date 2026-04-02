@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import Image from 'next/image';
 
 export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () => Promise<void> }) {
   const pathname = usePathname();
@@ -81,9 +82,15 @@ export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () 
       {/* Profile Card / Logout Container */}
       <div className="border-t border-[#eaedf3] pt-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#f3f4ff] flex items-center justify-center font-bold text-[#4f46e5] border border-[#e0e7ff] overflow-hidden">
+          <div className="w-9 h-9 rounded-full bg-[#f3f4ff] flex items-center justify-center font-bold text-[#4f46e5] border border-[#e0e7ff] overflow-hidden relative">
             {user?.image ? (
-              <img src={user.image} alt="Profile" className="w-full h-full object-cover" />
+              <Image 
+                src={user.image} 
+                alt="Profile" 
+                fill 
+                className="object-cover" 
+                sizes="36px"
+              />
             ) : (
               user?.name?.[0]?.toUpperCase() || 'U'
             )}

@@ -52,7 +52,7 @@ export default function ProfileTab() {
           const data = await res.json();
           setAvatar(data.image);
           showToast('Avatar updated successfully', 'success');
-          refreshData('all'); // Refresh global state to sync sidebar/header
+          refreshData('all');
         } else {
           showToast('Failed to update avatar', 'error');
         }
@@ -100,15 +100,22 @@ export default function ProfileTab() {
         {/* Avatar Section */}
         <div className="flex items-center gap-6">
           <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
-            <div className="w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-[#f8fafc] flex items-center justify-center">
+            <div className="w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-[#f8fafc] flex items-center justify-center relative">
               {avatar ? (
-                <Image src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+                <Image 
+                  src={avatar} 
+                  alt="Avatar" 
+                  fill 
+                  className="object-cover" 
+                  sizes="96px"
+                  priority 
+                />
               ) : (
                 <span className="text-2xl font-bold text-[#6366f1]">{user?.name?.charAt(0) || 'U'}</span>
               )}
               
               {uploading && (
-                <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
                   <div className="w-6 h-6 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
