@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
+import Image from 'next/image';
 
 export default function ProfileTab() {
   const { user, refreshData, showToast } = useDashboard();
@@ -101,7 +102,7 @@ export default function ProfileTab() {
           <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
             <div className="w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-[#f8fafc] flex items-center justify-center">
               {avatar ? (
-                <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+                <Image src={avatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <span className="text-2xl font-bold text-[#6366f1]">{user?.name?.charAt(0) || 'U'}</span>
               )}
