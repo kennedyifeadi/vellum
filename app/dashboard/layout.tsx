@@ -21,7 +21,7 @@ const DashboardContext = createContext<{
   documents: any[];
   recentActivity: any[];
   storage: { usedBytes: number; limitBytes: number; plan: string } | null;
-  refreshData: (type?: 'all' | 'documents' | 'activity' | 'storage') => Promise<void>;
+  refreshData: (type?: 'all' | 'documents' | 'activity' | 'storage' | 'user') => Promise<void>;
   openDrawer: (file: File | null, toolId: string | null) => void;
   closeDrawer: () => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
@@ -89,9 +89,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const refreshData = async (type: 'all' | 'documents' | 'activity' | 'storage' = 'all') => {
+  const refreshData = async (type: 'all' | 'documents' | 'activity' | 'storage' | 'user' = 'all') => {
     try {
       const promises = [];
+      if (type === 'all' || type === 'user') promises.push(fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.ok ? r.json() : null));
       if (type === 'all' || type === 'documents') promises.push(fetch('/api/documents').then(r => r.ok ? r.json() : []));
       if (type === 'all' || type === 'activity') promises.push(fetch('/api/conversions').then(r => r.ok ? r.json() : []));
       if (type === 'all' || type === 'storage') promises.push(fetch('/api/storage').then(r => r.ok ? r.json() : null));
@@ -99,6 +100,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const results = await Promise.all(promises);
       
       let idx = 0;
+      if (type === 'all' || type === 'user') {
+        const userData = results[idx++];
+        if (userData?.user) setUser(userData.user);
+      }
       if (type === 'all' || type === 'documents') setDocuments(results[idx++]);
       if (type === 'all' || type === 'activity') setRecentActivity(results[idx++]);
       if (type === 'all' || type === 'storage') setStorage(results[idx++]);
@@ -110,11 +115,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     async function initDashboard() {
       try {
-        const res = await fetch('/api/auth/me');
+        const res = await fetch('/api/auth/me', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
-          refreshData();
+          refreshData('all');
           
           // Load local notifications
           const saved = localStorage.getItem('vellum_notifications');
@@ -235,7 +240,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Global Toast */}
         {toast && (
-          <div className={`fixed bottom-8 right-8 px-5 py-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-[13px] font-semibold z-[100] border backdrop-blur-sm transition-all animate-in fade-in slide-in-from-bottom-5 ${
+          <div className={`fixed bottom-8 right-8 px-5 py-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-[13px] font-semibold z-100 border backdrop-blur-sm transition-all animate-in fade-in slide-in-from-bottom-5 ${
             toast.type === 'error' ? 'bg-red-50/90 text-red-600 border-red-100 shadow-red-200/20' :
             toast.type === 'success' ? 'bg-emerald-50/90 text-emerald-600 border-emerald-100 shadow-emerald-200/20' :
             'bg-indigo-50/90 text-indigo-600 border-indigo-100 shadow-indigo-200/20'

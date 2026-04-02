@@ -9,9 +9,8 @@ import NotificationDropdown from '@/components/dashboard/NotificationDropdown';
 interface StagedDoc {
   _id: string;
   fileName: string;
-  size: number;
-  type: string;
-  lastModified: number;
+  fileSize: number;
+  mimeType: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -44,8 +43,11 @@ const TOOL_MAP: Record<string, { primary: string; all: string[] }> = {
 // ── Helpers ──
 function fmtBytes(b: number) {
   if (b === 0) return '0 Bytes';
+  if (isNaN(b) || b < 0) return '0 Bytes';
   const k = 1024, i = Math.floor(Math.log(b) / Math.log(k));
-  return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + ['Bytes', 'KB', 'MB', 'GB'][i];
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  if (i < 0) return b + ' Bytes';
+  return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 function fmtDate(s: string) {
@@ -172,7 +174,7 @@ export default function DocumentsPage() {
       const res = await fetch(`/api/documents/download/${doc._id}`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const file = new File([blob], doc.fileName, { type: doc.type });
+      const file = new File([blob], doc.fileName, { type: doc.mimeType });
       
       openDrawer(file, toolId);
       showToast(`Opening ${ALL_TOOL_NAMES[toolId] ?? toolId} for "${doc.fileName}"`, 'info');
@@ -187,7 +189,7 @@ export default function DocumentsPage() {
       const res = await fetch(`/api/documents/download/${doc._id}`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const file = new File([blob], doc.fileName, { type: doc.type });
+      const file = new File([blob], doc.fileName, { type: doc.mimeType });
       
       openDrawer(file, toolId);
       showToast(`Opening ${ALL_TOOL_NAMES[toolId] ?? toolId} for "${doc.fileName}"`, 'info');
@@ -201,7 +203,7 @@ export default function DocumentsPage() {
     .filter((d: any) => d.fileName.toLowerCase().includes(search.toLowerCase()))
     .sort((a: any, b: any) => {
       if (sortBy === 'name') return a.fileName.localeCompare(b.fileName);
-      if (sortBy === 'size') return b.size - a.size;
+      if (sortBy === 'size') return (b.fileSize ?? 0) - (a.fileSize ?? 0);
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
@@ -209,7 +211,7 @@ export default function DocumentsPage() {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const totalDocsBytes = documents.reduce((s: number, d: any) => s + d.size, 0);
+  const totalDocsBytes = documents.reduce((s: number, d: any) => s + (d.fileSize ?? 0), 0);
   const totalUsedBytes = (storage?.usedBytes ?? 0) + totalDocsBytes;
   const limitBytes = storage?.limitBytes ?? 50 * 1024 * 1024;
   const storagePercent = Math.min(100, (totalUsedBytes / limitBytes) * 100);
@@ -402,9 +404,17 @@ export default function DocumentsPage() {
                     <div className={`absolute top-2 left-2 w-4 h-4 rounded border flex items-center justify-center z-10 transition-all ${isSelected ? 'bg-[#6366f1] border-[#6366f1]' : 'border-[#d1d5db] bg-white opacity-0 group-hover:opacity-100'}`}>
                       {isSelected && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}
                     </div>
-                    {/* File icon */}
-                    <div className={`w-full aspect-square flex items-center justify-center rounded-lg ${bg}`}>
-                      <span className={`text-2xl font-black ${color}`}>{ext}</span>
+                    {/* File icon/Thumbnail */}
+                    <div className={`w-full aspect-square flex items-center justify-center rounded-lg overflow-hidden ${bg}`}>
+                      {doc.mimeType?.includes('image') ? (
+                        <img 
+                          src={`/api/documents/download/${doc._id}`} 
+                          alt={doc.fileName}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        />
+                      ) : (
+                        <span className={`text-2xl font-black ${color}`}>{ext}</span>
+                      )}
                     </div>
                     {/* Expiry badge */}
                     <span className={`absolute top-2 right-2 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${urgencyClass[expiry.urgency]}`}>{expiry.label}</span>
@@ -412,7 +422,7 @@ export default function DocumentsPage() {
                     <div>
                       <p className="text-[11px] font-semibold text-[#111827] truncate">{doc.fileName}</p>
                       <div className="flex justify-between items-center mt-0.5">
-                        <span className="text-[10px] text-[#9ca3af]">{fmtBytes(doc.size)}</span>
+                        <span className="text-[10px] text-[#9ca3af]">{fmtBytes(doc.fileSize)}</span>
                         <span className="text-[10px] text-[#9ca3af]">{fmtDate(doc.createdAt)}</span>
                       </div>
                     </div>
@@ -475,11 +485,17 @@ export default function DocumentsPage() {
                       {isSelected && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}
                     </div>
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[9px] font-black ${bg} ${color}`}>{ext.toUpperCase()}</div>
+                      <div className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center overflow-hidden ${bg} ${color}`}>
+                        {doc.mimeType?.includes('image') ? (
+                          <img src={`/api/documents/download/${doc._id}`} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[9px] font-black">{ext.toUpperCase()}</span>
+                        )}
+                      </div>
                       <span className="text-xs font-medium text-[#111827] truncate">{doc.fileName}</span>
                     </div>
                     <div className="text-xs font-semibold text-[#6b7280]">{ext.toUpperCase()}</div>
-                    <div className="text-xs text-[#6b7280]">{fmtBytes(doc.size)}</div>
+                    <div className="text-xs text-[#6b7280]">{fmtBytes(doc.fileSize)}</div>
                     <div><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${urgencyClass[expiry.urgency]}`}>{expiry.label}</span></div>
                     <div className="flex justify-end items-center gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleQuickConvert(doc)} className="h-7 px-2 flex items-center gap-1 bg-[#6366f1] text-white text-[10px] font-semibold rounded-lg hover:bg-[#4f46e5] transition-colors">

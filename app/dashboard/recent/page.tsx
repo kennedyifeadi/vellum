@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useDashboard } from '@/app/dashboard/layout';
 import NotificationDropdown from '@/components/dashboard/NotificationDropdown';

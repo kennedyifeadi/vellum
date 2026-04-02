@@ -81,12 +81,16 @@ export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () 
       {/* Profile Card / Logout Container */}
       <div className="border-t border-[#eaedf3] pt-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#f3f4ff] flex items-center justify-center font-bold text-[#4f46e5] border border-[#e0e7ff]">
-            {user?.name?.[0]?.toUpperCase() || 'U'}
+          <div className="w-9 h-9 rounded-full bg-[#f3f4ff] flex items-center justify-center font-bold text-[#4f46e5] border border-[#e0e7ff] overflow-hidden">
+            {user?.image ? (
+              <img src={user.image} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              user?.name?.[0]?.toUpperCase() || 'U'
+            )}
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold truncate max-w-[120px]">{user?.name || 'User'}</span>
-            <span className="text-[10px] text-[#6b7280]">Free Plan</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold truncate max-w-[120px] text-[#111827]">{user?.name || 'User'}</span>
+            <span className="text-[10px] font-semibold text-[#6b7280]">{user?.plan || 'Free'} Plan</span>
           </div>
         </div>
         <button 
@@ -94,7 +98,7 @@ export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () 
           className="p-2 rounded-xl text-[#ef4444] hover:bg-[#fef2f2] transition-colors"
           title="Sign Out"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
         </button>
