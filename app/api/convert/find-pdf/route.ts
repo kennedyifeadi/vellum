@@ -4,12 +4,13 @@ import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { PDFDocument, rgb } from 'pdf-lib';
-import * as pdfjs from 'pdfjs-dist';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 // Use the legacy/CJS path for better node compatibility in serverless environments
 // If this fails, we can use the regular import and handle the worker
 // Using standard import but without worker for simple text extraction
-pdfjs.GlobalWorkerOptions.workerSrc = false;
+// In Node.js environment with pdfjs-dist/legacy, the worker is usually handled automatically 
+// or can be omitted for simple operations. setting it to false is invalid in v5+.
 
 interface Match {
   page: number;
@@ -38,10 +39,13 @@ export async function POST(req: NextRequest) {
     const maxPages = isPro ? 100 : 50;
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdfData = new Uint8Array(arrayBuffer);
+    // Slice a copy for each consumer — pdfjs.getDocument() detaches/transfers the
+    // underlying ArrayBuffer, so pdf-lib must have its own independent copy.
+    const pdfjsData = new Uint8Array(arrayBuffer.slice(0));
+    const pdfLibData = arrayBuffer.slice(0);
 
     // Initial load for page count check
-    const loadingTask = pdfjs.getDocument({ data: pdfData, useSystemFonts: true });
+    const loadingTask = pdfjs.getDocument({ data: pdfjsData, useSystemFonts: true });
     const pdf = await loadingTask.promise;
 
     if (pdf.numPages > maxPages) {
@@ -50,8 +54,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const pdfLibDoc = await PDFDocument.load(arrayBuffer);
+    const pdfLibDoc = await PDFDocument.load(pdfLibData);
     const matches: Match[] = [];
+    let totalMatchCount = 0; // counted for ALL users, not just Pro
 
     // Loop through pages
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -69,7 +74,8 @@ export async function POST(req: NextRequest) {
           // Find all occurrences in this item
           let index = text.indexOf(searchTerm);
           while (index !== -1) {
-            // Collect metadata for Pro Users
+            totalMatchCount++; // always count, regardless of plan
+            // Collect snippet metadata for Pro users only
             if (isPro) {
               const start = Math.max(0, index - 20);
               const end = Math.min(item.str.length, index + searchTerm.length + 20);
@@ -114,7 +120,7 @@ export async function POST(req: NextRequest) {
       fileName: file.name,
       fileSize: file.size,
       status: 'success',
-      metadata: { pages: pdf.numPages, matchesFound: matches.length, searchTerm },
+      metadata: { pages: pdf.numPages, matchesFound: totalMatchCount, searchTerm },
       expiresAt
     });
 
@@ -122,7 +128,7 @@ export async function POST(req: NextRequest) {
       success: true,
       pdfBase64,
       matches: isPro ? matches : [],
-      matchCount: matches.length
+      matchCount: totalMatchCount
     });
 
   } catch (error) {

@@ -31,6 +31,7 @@ const availableTools = [
   { id: 'find-pdf', name: 'Find in PDF', color: 'bg-[#FFEDD5] text-[#ea580c]' },
   { id: 'html-to-pdf', name: 'HTML to PDF', color: 'bg-[#F3F4F6] text-[#6366f1]' },
   { id: 'jpg-to-png', name: 'JPEG to PNG', color: 'bg-[#FFF7ED] text-[#f97316]' },
+  { id: 'compress-pdf', name: 'Compress PDF', color: 'bg-[#E0E7FF] text-[#4f46e5]' },
 ];
 
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
@@ -77,6 +78,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [findOptions, setFindOptions] = useState({ searchTerm: '' });
   const [htmlOptions, setHtmlOptions] = useState({ url: '', mode: 'file' as 'file' | 'url' });
   const [findResults, setFindResults] = useState<{ matches: FindMatch[], matchCount: number, pdfBase64?: string } | null>(null);
+  const [compressLevel, setCompressLevel] = useState<'low' | 'medium' | 'high'>('medium');
 
   // Format File Size helper
   const formatBytes = (bytes: number, decimals = 2) => {
@@ -282,6 +284,32 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             )}
           </div>
         );
+      case 'compress-pdf':
+        return (
+          <div className="space-y-3 bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-4">
+            <p className="text-xs font-semibold text-[#111827]">Compression Level</p>
+            <div className="grid grid-cols-3 gap-2">
+              {(['low', 'medium', 'high'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setCompressLevel(level)}
+                  className={`h-9 rounded-lg text-[10px] font-bold uppercase transition-all border ${
+                    compressLevel === level 
+                      ? 'bg-white border-[#6366f1] text-[#6366f1] shadow-sm' 
+                      : 'bg-[#f1f5f9] border-transparent text-[#64748b] hover:bg-[#e2e8f0]'
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-[#6b7280] italic px-1">
+              {compressLevel === 'low' && 'Best quality, minor size reduction.'}
+              {compressLevel === 'medium' && 'Balanced quality and file size.'}
+              {compressLevel === 'high' && 'Smallest file size, lower image quality.'}
+            </p>
+          </div>
+        );
 
       default:
         return null;
@@ -308,7 +336,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return htmlOptions.mode === 'url' ? !htmlOptions.url.trim() : fileList.length === 0;
       case 'docx-to-pdf':
         return fileList.length === 0;
-      case 'jpg-to-png':
+      case 'compress-pdf':
         return fileList.length === 0;
       default:
         return false;
@@ -330,6 +358,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return '.docx,.doc';
       case 'html-to-pdf':
         return '.html';
+      case 'compress-pdf':
+        return '.pdf';
       default:
         return '.pdf,.docx,.doc,.jpg,.jpeg,.png';
     }
@@ -451,7 +481,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     ))}
                   </Reorder.Group>
 
-                  {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png') && (
+                  {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'compress-pdf') && (
                     <button 
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#6366f1] hover:bg-[#6366f1]/5 transition-all mt-1"
@@ -559,7 +589,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
-                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf') {
+                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf') {
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
@@ -569,11 +599,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
                       else if (selectedTool === 'jpg-to-png') fileKey = 'images';
                       else if (selectedTool === 'find-pdf') fileKey = 'pdf';
+                      else if (selectedTool === 'compress-pdf') fileKey = 'pdf';
 
                       fileList.forEach(file => formData.append(fileKey, file));
                       
                       if (selectedTool === 'find-pdf') {
                         formData.append('searchTerm', findOptions.searchTerm);
+                      }
+                      if (selectedTool === 'compress-pdf') {
+                        formData.append('level', compressLevel);
                       }
                       
                       const apiUrl = `/api/convert/${selectedTool}`;
@@ -587,9 +621,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         throw new Error(err.error || `Failed to process: ${selectedTool}`);
                       }
 
-                      const data = await response.json();
-                      
                       if (selectedTool === 'find-pdf') {
+                        // find-pdf returns JSON (with base64 PDF inside)
+                        const data = await response.json();
                         setFindResults(data);
                         showToast(`Found ${data.matchCount} matches!`, 'success');
                         
@@ -603,23 +637,38 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
                       } else {
+                        // All other tools return a raw binary stream (PDF, ZIP, PNG, etc.)
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        
-                        let downloadName = 'processed.pdf';
-                        if (selectedTool === 'merge-pdf') downloadName = 'merged.pdf';
-                        else if (selectedTool === 'image-to-pdf') downloadName = 'converted_images.pdf';
-                        else if (selectedTool === 'docx-to-pdf') downloadName = 'converted.pdf';
-                        else if (selectedTool === 'jpg-to-png') downloadName = fileList.length > 1 ? 'converted_images.zip' : 'converted.png';
-
+                        const baseName = fileList[0].name.replace(/\.[^/.]+$/, "");
+                        const downloadName = selectedTool === 'compress-pdf' ? `compressed_${fileList[0].name}` : 
+                                           selectedTool === 'docx-to-pdf' || selectedTool === 'image-to-pdf' ? `${baseName}.pdf` :
+                                           selectedTool === 'jpg-to-png' && fileList.length > 1 ? 'images.zip' :
+                                           `processed_${fileList[0].name}`;
                         a.download = downloadName;
                         document.body.appendChild(a);
                         a.click();
                         window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
-                        showToast('File processed successfully!', 'success');
+
+                        if (selectedTool === 'compress-pdf') {
+                          const savedPct = response.headers.get('X-Saved-Percent');
+                          const origSize = response.headers.get('X-Original-Size');
+                          const compSize = response.headers.get('X-Compressed-Size');
+                          const savedKb = origSize && compSize
+                            ? (((parseInt(origSize) - parseInt(compSize)) / 1024)).toFixed(0)
+                            : null;
+                          const pct = savedPct ? parseInt(savedPct) : 0;
+                          if (pct > 0 && savedKb) {
+                            showToast(`Reduced by ${pct}% — ${savedKb} KB saved!`, 'success');
+                          } else {
+                            showToast('PDF optimised! File was already well-compressed.', 'success');
+                          }
+                        } else {
+                          showToast(`${currentToolInfo?.name || 'File'} processed successfully!`, 'success');
+                        }
                       }
                       
                       addNotification({

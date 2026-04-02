@@ -93,6 +93,10 @@ export default function RecentFilesPage() {
         bg: 'bg-[#e0e7ff]', color: 'text-[#4f46e5]',
         icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
       },
+      'Compress PDF': {
+        bg: 'bg-[#e0e7ff]', color: 'text-[#4f46e5]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 14l8-8 8 8m-8-8v12"/></svg>
+      },
     };
 
     const config = toolMap[tool] ?? {
@@ -147,12 +151,12 @@ export default function RecentFilesPage() {
       <div className="p-6 flex flex-col flex-1 min-h-0 bg-white">
         <div className="flex items-center gap-3 mb-6">
           <div className="flex flex-wrap items-center gap-2 bg-[#f8fafc] p-1 rounded-lg border border-[#eaedf3]">
-            {['All Types', 'Merge PDF', 'Split PDF', 'Image to PDF', 'Lock PDF', 'JPEG to PNG', 'Find in PDF', 'DOCX to PDF'].map((type) => (
+            {['All Tools', 'Merge PDF', 'Split PDF', 'Image to PDF', 'Lock PDF', 'JPEG to PNG', 'Find in PDF', 'DOCX to PDF', 'Compress PDF'].map((type) => (
               <button
                 key={type}
-                onClick={() => { setTypeFilter(type); setPage(1); }}
+                onClick={() => { setTypeFilter(type === 'All Tools' ? 'All Types' : type); setPage(1); }}
                 className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${
-                  typeFilter === type ? 'bg-white text-[#6366f1] shadow-sm' : 'text-[#6b7280] hover:text-[#374151]'
+                  (type === 'All Tools' ? typeFilter === 'All Types' : typeFilter === type) ? 'bg-white text-[#6366f1] shadow-sm' : 'text-[#6b7280] hover:text-[#374151]'
                 }`}
               >
                 {type}

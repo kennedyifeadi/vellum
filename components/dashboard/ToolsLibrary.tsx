@@ -36,7 +36,11 @@ export default function ToolsLibrary() {
     e.stopPropagation();
     setStarredIds(prev => {
       const next = new Set(prev);
-      next.has(toolId) ? next.delete(toolId) : next.add(toolId);
+      if (next.has(toolId)) {
+        next.delete(toolId);
+      } else {
+        next.add(toolId);
+      }
       const arr = Array.from(next);
       localStorage.setItem('starredTools', JSON.stringify(arr));
       window.dispatchEvent(new CustomEvent('starredToolsUpdated', { detail: arr }));
@@ -154,6 +158,20 @@ export default function ToolsLibrary() {
       icon: (
         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    {
+      id: 'compress-pdf',
+      name: 'Compress PDF',
+      description: 'Reduce the file size of your PDF documents while maintaining quality.',
+      categories: ['PDF'],
+      bgColor: 'bg-[#E0E7FF]',
+      iconColor: 'text-[#4f46e5]',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 14l8-8 8 8" />
+          <path d="M12 6v12" />
         </svg>
       ),
     },

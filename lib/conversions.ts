@@ -69,14 +69,21 @@ export async function cleanupStorage() {
   const validConversions = await Conversion.find({ diskFileName: { $exists: true } }, 'diskFileName');
   const validFileNames = new Set(validConversions.map(c => c.diskFileName).filter(Boolean));
 
-  const physicalFiles = fs.readdirSync(storageDir);
+  const physicalEntries = fs.readdirSync(storageDir);
 
-  for (const file of physicalFiles) {
-    if (!validFileNames.has(file)) {
+  for (const entry of physicalEntries) {
+    if (!validFileNames.has(entry)) {
+      const entryPath = path.join(storageDir, entry);
       try {
-        fs.unlinkSync(path.join(storageDir, file));
+        const stat = fs.statSync(entryPath);
+        if (stat.isDirectory()) {
+          // Subdirectories (e.g. tmp/storage/docs) must be removed recursively
+          fs.rmSync(entryPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(entryPath);
+        }
       } catch (err) {
-        console.error(`Failed to delete expired file ${file}:`, err);
+        console.error(`Failed to delete expired entry ${entry}:`, err);
       }
     }
   }
