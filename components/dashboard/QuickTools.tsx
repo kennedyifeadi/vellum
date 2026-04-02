@@ -29,7 +29,10 @@ export default function QuickTools() {
     { id: 'lock-pdf', title: 'Lock PDF', icon: <svg width="17" height="21" viewBox="0 0 17 21" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M14.0156 7.03125H13.0312V5.01562C13.0312 2.25 10.7812 0 8.01562 0C5.25 0 3 2.25 3 5.01562V7.03125H2.01562C0.9375 7.03125 0 7.92188 0 9V19.0312C0 20.1094 0.9375 21 2.01562 21H14.0156C15.0938 21 16.0312 20.1094 16.0312 19.0312V9C16.0312 7.92188 15.0938 7.03125 14.0156 7.03125ZM8.01562 16.0312C6.9375 16.0312 6 15.0938 6 14.0156C6 12.9375 6.9375 12 8.01562 12C9.09375 12 10.0312 12.9375 10.0312 14.0156C10.0312 15.0938 9.09375 16.0312 8.01562 16.0312ZM5.01562 7.03125V5.01562C5.01562 3.375 6.375 2.01562 8.01562 2.01562C9.65625 2.01562 11.0156 3.375 11.0156 5.01562V7.03125H5.01562Z" fill="#059669"/>
 </svg>
-, color: 'bg-[#D1FAE5] text-[#eab308]', desc: 'Add password protection' }
+, color: 'bg-[#D1FAE5] text-[#eab308]', desc: 'Add password protection' },
+    { id: 'find-pdf', title: 'Find in PDF', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>, color: 'bg-[#FFEDD5] text-[#ea580c]', desc: 'Search text strings' },
+    { id: 'html-to-pdf', title: 'HTML to PDF', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>, color: 'bg-[#FFFBEB] text-[#d97706]', desc: 'Webpage to document' },
+    { id: 'jpg-to-png', title: 'JPEG to PNG', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-5M14 6L9 11v11M21 3l-5 5-5-5"/></svg>, color: 'bg-[#ECFDF5] text-[#10b981]', desc: 'Image format swap' }
   ];
 
   const handleToolClick = (id: string) => {

@@ -1,9 +1,15 @@
 "use client";
 
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
+
+interface FindMatch {
+  page: number;
+  text: string;
+  snippet: string;
+}
 import ImageThumbnail from './ImageThumbnail';
 
 const PdfThumbnail = dynamic(() => import('./PdfThumbnail'), { ssr: false });
@@ -39,25 +45,30 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [isProcessing, setIsProcessing] = useState(false);
 
   const maxAllowedJpg = user?.plan === 'Pro' ? 10 : 5;
+  const maxAllowedMerge = user?.plan === 'Pro' ? 10 : 3;
+  const maxAllowedImage = user?.plan === 'Pro' ? 10 : 3;
 
-  if (toolId !== prevToolId) {
-    setPrevToolId(toolId);
-    // Standardize img-to-pdf to image-to-pdf
-    const finalId = toolId === 'img-to-pdf' ? 'image-to-pdf' : toolId;
-    setSelectedTool(finalId || '');
-  }
-
-  if (file !== prevFile) {
-    setPrevFile(file);
-    if (file) {
-      setFileList(prev => {
-        if (prev.find(f => f.name === file.name && f.size === file.size)) return prev;
-        return [...prev, file];
-      });
-    } else {
-      setFileList([]); // Clear if file goes null
+  useEffect(() => {
+    if (toolId !== prevToolId) {
+      setPrevToolId(toolId);
+      const finalId = toolId === 'img-to-pdf' ? 'image-to-pdf' : toolId;
+      setSelectedTool(finalId || '');
     }
-  }
+  }, [toolId, prevToolId]);
+
+  useEffect(() => {
+    if (file !== prevFile) {
+      setPrevFile(file);
+      if (file) {
+        setFileList(prev => {
+          if (prev.find(f => f.name === file.name && f.size === file.size)) return prev;
+          return [...prev, file];
+        });
+      } else {
+        setFileList([]);
+      }
+    }
+  }, [file, prevFile]);
 
   // Tool-specific options states
   const [splitOptions, setSplitOptions] = useState({ startPage: 1, endPage: 1, splitEvery: false });
@@ -65,11 +76,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [lockOptions, setLockOptions] = useState({ password: '', confirmPassword: '' });
   const [findOptions, setFindOptions] = useState({ searchTerm: '' });
   const [htmlOptions, setHtmlOptions] = useState({ url: '', mode: 'file' as 'file' | 'url' });
-
-
+  const [findResults, setFindResults] = useState<{ matches: FindMatch[], matchCount: number, pdfBase64?: string } | null>(null);
 
   // Format File Size helper
-
   const formatBytes = (bytes: number, decimals = 2) => {
     if (!bytes) return '0 Bytes';
     const k = 1024;
@@ -89,7 +98,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       const updatedList = [...prev];
 
       for (const selectedFile of newFiles) {
-        // Validate size (10MB max)
         const MAX_SIZE = 10 * 1024 * 1024;
         if (selectedFile.size > MAX_SIZE) {
           if (!errorShown) showToast("A file exceeds 10MB free limit. Skipped.", "error");
@@ -97,14 +105,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           continue;
         }
 
-        // Check Multiple file limits
-        if (selectedTool === 'merge-pdf' && updatedList.length >= 3) {
-          if (!errorShown) showToast("Free tier supports merging up to 3 PDFs only.", "error");
+        if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
+          if (!errorShown) showToast(`Your plan supports merging up to ${maxAllowedMerge} PDFs for this tool.`, "error");
           errorShown = true;
           break;
         }
-        if (selectedTool === 'image-to-pdf' && updatedList.length >= 3) {
-          if (!errorShown) showToast("Free tier supports converting up to 3 images only.", "error");
+        if (selectedTool === 'image-to-pdf' && updatedList.length >= maxAllowedImage) {
+          if (!errorShown) showToast(`Your plan supports converting up to ${maxAllowedImage} images for this tool.`, "error");
           errorShown = true;
           break;
         }
@@ -121,7 +128,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
         if (updatedList.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) continue;
         
-        // Check combined total size limit (10MB)
         const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
         if (currentTotalSize + selectedFile.size > MAX_SIZE) {
           if (!errorShown) showToast("Total combined size exceeds the 10MB limit.", "error");
@@ -135,14 +141,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       return updatedList;
     });
 
-    e.target.value = ''; // Reset
+    e.target.value = '';
   };
 
-
-  // Find Tool Info for Header Coloring
   const currentToolInfo = availableTools.find(t => t.id === selectedTool);
 
-  // Dynamic tool options inputs rendering layout Switch
   const renderToolInputs = () => {
     if (!selectedTool) return null;
 
@@ -284,11 +287,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return null;
     }
   };
-  // Validate action constraints
+
   const isActionDisabled = () => {
     if (!selectedTool) return true;
-    
-    // Ignore file list checking if in HTML URL mode
     const isHtmlUrl = selectedTool === 'html-to-pdf' && htmlOptions.mode === 'url';
     if (fileList.length === 0 && !isHtmlUrl) return true;
 
@@ -313,7 +314,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return false;
     }
   };
-  // Determine file types accepted based on selected tool
+
   const getAcceptAttribute = () => {
     switch (selectedTool) {
       case 'merge-pdf':
@@ -334,12 +335,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     }
   };
 
-
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop Overlay */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.25 }}
@@ -348,7 +347,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             className="absolute inset-0 bg-black z-40 cursor-pointer"
           />
 
-          {/* Side Drawer Panel */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -356,7 +354,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             transition={{ type: 'spring', damping: 20, stiffness: 200 }}
             className="absolute top-4 right-4 bottom-4 w-[400px] bg-white z-50 shadow-[-8px_0_24px_-10px_rgba(0,0,0,0.08)] flex flex-col rounded-l-3xl overflow-hidden border border-[#eaedf3]"
           >
-            {/* Header section themed with tool color scheme node isolate bounding isolation */}
             <div className={`p-5 border-b border-[#eaedf3] ${
               currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
             }`}>
@@ -384,7 +381,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               </div>
             </div>
 
-            {/* Content body layout container isolated node context bounds. */}
             <div className="flex-1 p-5 overflow-y-auto space-y-5">
               <input 
                 type="file" 
@@ -394,7 +390,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 accept={getAcceptAttribute()}
                 multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || !selectedTool}
               />
-              {/* Selected File Preview Box Isolated Frames isolate bounds isolates */}
               {fileList.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
@@ -405,7 +400,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         value={f} 
                         className="bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-4 flex flex-col items-center gap-4 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
                       >
-                        {/* Drag indicator icon */}
                         <div className="absolute top-3 left-3 w-7 h-7 rounded-lg bg-white/70 flex items-center justify-center text-[#94a3b8] opacity-0 group-hover:opacity-100 transition-opacity border border-[#e2e8f0] shadow-sm pointer-events-none">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" />
@@ -472,8 +466,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               )}
 
               {fileList.length === 0 && !(selectedTool === 'html-to-pdf' && htmlOptions.mode === 'url') && (
-
-
                 <div 
                   className="border-2 border-dashed border-[#eaedf3] rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#6366f1] hover:bg-[#6366f1]/5 transition-all group"
                   onClick={() => fileInputRef.current?.click()}
@@ -490,12 +482,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 </div>
               )}
 
-              {/* Dynamic Inputs Rendered options */}
               {renderToolInputs()}
 
-
-
-              {/* Tool Selector Dropdown for General items isolated node bounds frames. */}
               {!toolId && (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Select Tool</label>
@@ -517,7 +505,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 </div>
               )}
 
-              {/* Action options/description specific grids bounds maps layout. */}
               {selectedTool && (
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }} 
@@ -530,9 +517,44 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                   </p>
                 </motion.div>
               )}
+
+              {selectedTool === 'find-pdf' && findResults && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }} 
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="space-y-3"
+                >
+                  <div className="flex justify-between items-center px-1">
+                    <p className="text-[11px] font-bold text-[#4b5563] uppercase">Search Results ({findResults.matchCount})</p>
+                    <button 
+                      onClick={() => setFindResults(null)}
+                      className="text-[10px] text-[#6366f1] font-bold hover:underline"
+                    >
+                      Clear Results
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {findResults.matches.length > 0 ? (
+                      findResults.matches.map((match, idx) => (
+                        <div key={idx} className="bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-3 hover:border-[#6366f1]/30 transition-colors">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-[10px] font-bold text-[#6366f1] bg-[#6366f1]/5 px-2 py-0.5 rounded-full">Page {match.page}</span>
+                          </div>
+                          <p className="text-[11px] text-[#4b5563] italic line-clamp-2 leading-relaxed">
+                            {match.snippet}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 bg-[#f8fafc] border border-dashed border-[#eaedf3] rounded-xl">
+                        <p className="text-[11px] text-[#6b7280]">No text matches found in this document.</p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
             </div>
 
-            {/* Footer containing trigger isolated grids actions layout node bounds. */}
             <div className="p-5 border-t border-[#eaedf3] space-y-3">
               <button 
                 disabled={isActionDisabled() || isProcessing}
@@ -565,33 +587,52 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         throw new Error(err.error || `Failed to process: ${selectedTool}`);
                       }
 
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
+                      const data = await response.json();
                       
-                      let downloadName = 'processed.pdf';
-                      if (selectedTool === 'merge-pdf') downloadName = 'merged.pdf';
-                      else if (selectedTool === 'image-to-pdf') downloadName = 'converted_images.pdf';
-                      else if (selectedTool === 'docx-to-pdf') downloadName = 'converted.pdf';
-                      else if (selectedTool === 'jpg-to-png') downloadName = fileList.length > 1 ? 'converted_images.zip' : 'converted.png';
+                      if (selectedTool === 'find-pdf') {
+                        setFindResults(data);
+                        showToast(`Found ${data.matchCount} matches!`, 'success');
+                        
+                        const blob = await (await fetch(`data:application/pdf;base64,${data.pdfBase64}`)).blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `highlighted_${fileList[0].name}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      } else {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        
+                        let downloadName = 'processed.pdf';
+                        if (selectedTool === 'merge-pdf') downloadName = 'merged.pdf';
+                        else if (selectedTool === 'image-to-pdf') downloadName = 'converted_images.pdf';
+                        else if (selectedTool === 'docx-to-pdf') downloadName = 'converted.pdf';
+                        else if (selectedTool === 'jpg-to-png') downloadName = fileList.length > 1 ? 'converted_images.zip' : 'converted.png';
 
-                      a.download = downloadName;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
+                        a.download = downloadName;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        showToast('File processed successfully!', 'success');
+                      }
                       
-                      showToast('File processed successfully!', 'success');
                       addNotification({
                         type: 'success',
                         title: 'Conversion Complete',
-                        message: `Your ${downloadName} is ready for download.`,
+                        message: `Your file is ready.`,
                         link: '/dashboard/recent'
                       });
                       window.dispatchEvent(new Event('activityUpdated'));
-                      onClose();
-                      setFileList([]);
+                      if (selectedTool !== 'find-pdf') {
+                        onClose();
+                        setFileList([]);
+                      }
                     } catch (error) {
                       console.error('Process error:', error);
                       const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';

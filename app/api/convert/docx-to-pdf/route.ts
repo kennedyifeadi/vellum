@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertDocxToPdf } from '@/lib/doc/to-pdf';
+import { getAuthUserId } from '@/lib/auth/jwt';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,10 +19,16 @@ export async function POST(req: NextRequest) {
       docxBuffer,
     });
 
+    const userId = await getAuthUserId(req);
+    if (userId) {
+      const originalFileName = file.name.replace(/\.[^/.]+$/, "") + ".pdf";
+      await saveConversionRecord(userId, 'DOCX to PDF', originalFileName, Buffer.from(pdfBuffer));
+    }
+
     return new NextResponse(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="converted_document.pdf"',
+        'Content-Disposition': `attachment; filename="${file.name.replace(/\.[^/.]+$/, "")}.pdf"`,
       },
     });
   } catch (error) {

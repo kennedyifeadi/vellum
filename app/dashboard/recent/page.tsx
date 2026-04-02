@@ -81,6 +81,18 @@ export default function RecentFilesPage() {
         bg: 'bg-[#f3e8ff]', color: 'text-[#9333ea]',
         icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
       },
+      'JPEG to PNG': {
+        bg: 'bg-[#fff7ed]', color: 'text-[#f97316]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      },
+      'Find in PDF': {
+        bg: 'bg-[#fee2e2]', color: 'text-[#ef4444]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      },
+      'DOCX to PDF': {
+        bg: 'bg-[#e0e7ff]', color: 'text-[#4f46e5]',
+        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      },
     };
 
     const config = toolMap[tool] ?? {
@@ -134,8 +146,8 @@ export default function RecentFilesPage() {
 
       <div className="p-6 flex flex-col flex-1 min-h-0 bg-white">
         <div className="flex items-center gap-3 mb-6">
-          <div className="flex items-center gap-2 bg-[#f8fafc] p-1 rounded-lg border border-[#eaedf3]">
-            {['All Types', 'Merge PDF', 'Split PDF', 'Image to PDF', 'Lock PDF'].map((type) => (
+          <div className="flex flex-wrap items-center gap-2 bg-[#f8fafc] p-1 rounded-lg border border-[#eaedf3]">
+            {['All Types', 'Merge PDF', 'Split PDF', 'Image to PDF', 'Lock PDF', 'JPEG to PNG', 'Find in PDF', 'DOCX to PDF'].map((type) => (
               <button
                 key={type}
                 onClick={() => { setTypeFilter(type); setPage(1); }}
