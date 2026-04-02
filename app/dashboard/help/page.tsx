@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 
 const categories = [
@@ -12,24 +12,73 @@ const categories = [
   { id: 'api', title: 'API & Developers', description: 'Technical guides for Vellum integrations.', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4', color: 'bg-slate-50 text-slate-600' },
 ];
 
-const faqs = [
-  { q: "How long are my staged files kept?", a: "To ensure your privacy and manage storage, files are automatically deleted after 3 days for Free users and 5 days for Pro users." },
-  { q: "What is the maximum file size for conversion?", a: "Currently, our free tier supports files up to 10MB. Pro users can process files up to 100MB." },
-  { q: "Can I cancel my Pro subscription at any time?", a: "Yes, you can cancel your subscription from the Billing section in your account settings at any time." },
-  { q: "Where can I find my converted files?", a: "Your recently converted files are available in the 'Recent Files' section of your dashboard for a limited time." },
+const faqsData = [
+  // Getting Started
+  { q: "How do I start using Vellum?", a: "Simply upload your PDF or image files to the dashboard. You can then use our tools like 'Merge PDF' or 'Split PDF' to process them instantly.", category: 'getting-started' },
+  { q: "Is Vellum free to use?", a: "Yes, we offer a generous free tier that includes up to 5 conversions per day. For unlimited processing and larger file limits, check out our Pro plans.", category: 'getting-started' },
+  
+  // PDF Tools
+  { q: "What is the maximum file size for conversion?", a: "Free tier users can upload files up to 10MB. Pro users enjoy an increased limit of up to 100MB per file.", category: 'pdf-tools' },
+  { q: "Can I merge more than two PDFs?", a: "Absolutely! Our Merge tool allows you to combine multiple PDF files into a single document in just seconds.", category: 'pdf-tools' },
+  
+  // Storage
+  { q: "How long are my staged files kept?", a: "To ensure your privacy and manage storage, files are automatically deleted after 3 days for Free users and 5 days for Pro users.", category: 'storage' },
+  { q: "Where can I find my converted files?", a: "Your recently converted files are available in the 'Recent Files' section of your dashboard for a limited time.", category: 'storage' },
+  
+  // Billing
+  { q: "Can I cancel my Pro subscription at any time?", a: "Yes, you can cancel your subscription from the Billing section in your account settings at any time without any penalties.", category: 'billing' },
+  { q: "Do you offer refunds?", a: "We offer a 7-day money-back guarantee if you are not satisfied with our Pro features. Please contact support for assistance.", category: 'billing' },
+  
+  // Account
+  { q: "How do I update my profile picture?", a: "Go to Preferences > Profile and click on your current avatar to upload a new image. Supported formats include JPG, PNG, and GIF.", category: 'account' },
+  
+  // API
+  { q: "Do you have a developer API?", a: "We are currently in private beta for our Developer API. If you're interested in building with Vellum, please submit a support ticket.", category: 'api' },
 ];
 
 export default function HelpPage() {
   const { showToast } = useDashboard();
   const [search, setSearch] = useState('');
+  const [activeSearchTerm, setActiveSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const faqRef = useRef<HTMLElement>(null);
 
   const [formData, setFormData] = useState({
     subject: '',
     category: 'general',
     message: '',
   });
+
+  // Filter Logic
+  const filteredFaqs = useMemo(() => {
+    return faqsData.filter(faq => {
+      const matchesSearch = 
+        faq.q.toLowerCase().includes(activeSearchTerm.toLowerCase()) || 
+        faq.a.toLowerCase().includes(activeSearchTerm.toLowerCase());
+      const matchesCategory = !selectedCategory || faq.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [activeSearchTerm, selectedCategory]);
+
+  const handleSearchTrigger = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setActiveSearchTerm(search);
+    setSelectedCategory(null); // Clear category filter when performing a global search
+    
+    // Small delay to allow React to render the filtered list before scrolling
+    setTimeout(() => {
+      faqRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  const handleTopicClick = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    setSearch(''); 
+    setActiveSearchTerm(''); // Clear search when picking a category
+    faqRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,9 +108,9 @@ export default function HelpPage() {
     <div className="flex flex-col h-full bg-[#fbfcfd]">
       <header className="px-8 py-10 bg-white border-b border-[#eaedf3] text-center">
         <h1 className="text-3xl font-extrabold text-[#111827]">Help Center</h1>
-        <p className="text-[#6b7280] mt-2">Find answers, learn about Vellum, or get in touch with our team.</p>
+        <p className="text-[#6b7280] mt-2 text-sm">Find answers, learn about Vellum, or get in touch with our team.</p>
         
-        <div className="max-w-2xl mx-auto mt-8 relative group">
+        <form onSubmit={handleSearchTrigger} className="max-w-2xl mx-auto mt-8 relative group">
           <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#9ca3af] group-focus-within:text-[#6366f1] transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
           </div>
@@ -70,59 +119,128 @@ export default function HelpPage() {
             placeholder="Search for help topics..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-14 pl-12 pr-4 bg-[#f8fafc] border border-[#eaedf3] rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition-all"
+            className="w-full h-14 pl-12 pr-32 bg-[#f8fafc] border border-[#eaedf3] rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition-all"
           />
-        </div>
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            {search && (
+              <button 
+                type="button"
+                onClick={() => {setSearch(''); setActiveSearchTerm('');}}
+                className="p-2 text-[#9ca3af] hover:text-[#6366f1] transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            )}
+            <button 
+              type="submit"
+              className="h-10 px-6 bg-[#6366f1] text-white text-xs font-bold rounded-lg hover:bg-[#4f46e5] transition-all shadow-md shadow-indigo-500/10"
+            >
+              Search
+            </button>
+          </div>
+        </form>
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 space-y-16 pb-24">
         {/* Categories Grid */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wider">Browse by Topic</h2>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <div className="flex items-center gap-3">
+              <h2 className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wider">Browse by Topic</h2>
+              {selectedCategory && (
+                <button 
+                  onClick={() => setSelectedCategory(null)}
+                  className="text-[10px] font-bold text-[#6366f1] hover:underline flex items-center gap-1"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  Clear filter
+                </button>
+              )}
+            </div>
+            <div className="hidden md:flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="text-[11px] font-bold text-[#111827]">Systems Operational</span>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categories.map((cat) => (
-              <button key={cat.id} className="bg-white border border-[#eaedf3] p-6 rounded-2xl text-left hover:border-[#6366f1] hover:shadow-lg hover:shadow-indigo-500/5 transition-all group">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${cat.color} group-hover:scale-110 transition-transform`}>
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={cat.icon}/></svg>
-                </div>
-                <h3 className="text-sm font-bold text-[#111827] mb-1">{cat.title}</h3>
-                <p className="text-[12px] text-[#6b7280] leading-relaxed">{cat.description}</p>
-              </button>
-            ))}
+            {categories.map((cat) => {
+              const isActive = selectedCategory === cat.id;
+              return (
+                <button 
+                  key={cat.id} 
+                  onClick={() => handleTopicClick(cat.id)}
+                  className={`bg-white border p-6 rounded-2xl text-left transition-all group relative overflow-hidden ${
+                    isActive 
+                      ? 'border-[#6366f1] shadow-lg shadow-indigo-500/10 ring-1 ring-[#6366f1]' 
+                      : 'border-[#eaedf2] hover:border-[#6366f1] hover:shadow-md'
+                  }`}
+                >
+                  {isActive && (
+                    <div className="absolute top-0 right-0 p-2">
+                       <div className="w-2 h-2 rounded-full bg-[#6366f1]"></div>
+                    </div>
+                  )}
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${cat.color} group-hover:scale-110 transition-transform`}>
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={cat.icon}/></svg>
+                  </div>
+                  <h3 className="text-sm font-bold text-[#111827] mb-1">{cat.title}</h3>
+                  <p className="text-[12px] text-[#6b7280] leading-relaxed line-clamp-2">{cat.description}</p>
+                </button>
+              );
+            })}
           </div>
         </section>
 
         {/* FAQs and Support Form */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 pt-4">
           {/* FAQ Section */}
-          <section className="space-y-6">
-            <h2 className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wider">Frequently Asked Questions</h2>
-            <div className="space-y-3">
-              {faqs.map((faq, idx) => (
-                <div key={idx} className="bg-white border border-[#eaedf3] rounded-2xl overflow-hidden transition-all">
-                  <button 
-                    onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
-                    className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-[#f8fafc] transition-colors"
-                  >
-                    <span className="text-xs font-bold text-[#111827]">{faq.q}</span>
-                    <svg className={`w-4 h-4 text-[#9ca3af] transition-transform ${expandedFaq === idx ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                  </button>
-                  {expandedFaq === idx && (
-                    <div className="px-6 py-4 text-[12px] text-[#6b7280] leading-relaxed border-t border-[#eaedf3] animate-in fade-in slide-in-from-top-2 duration-300">
-                      {faq.a}
-                    </div>
-                  )}
-                </div>
-              ))}
+          <section ref={faqRef} className="space-y-6 scroll-mt-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wider">
+                {selectedCategory 
+                  ? `FAQs: ${categories.find(c => c.id === selectedCategory)?.title}` 
+                  : 'Frequently Asked Questions'}
+              </h2>
+              <span className="text-[10px] font-bold text-[#9ca3af]">{filteredFaqs.length} results</span>
             </div>
-            <div className="bg-indigo-50/50 rounded-2xl p-6 border border-indigo-100/50">
-              <p className="text-xs font-medium text-[#4f46e5] text-center italic">"The simplest way to manage your documents, supported by a team that cares."</p>
+            <div className="space-y-3">
+              {filteredFaqs.length > 0 ? (
+                filteredFaqs.map((faq, idx) => (
+                  <div key={idx} className="bg-white border border-[#eaedf3] rounded-2xl overflow-hidden transition-all hover:border-[#c7d2fe]">
+                    <button 
+                      onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
+                      className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-[#fafbff] transition-colors"
+                    >
+                      <span className="text-xs font-bold text-[#111827] pr-4">{faq.q}</span>
+                      <svg className={`w-4 h-4 text-[#9ca3af] shrink-0 transition-transform ${expandedFaq === idx ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    {expandedFaq === idx && (
+                      <div className="px-6 py-4 text-[12px] text-[#6b7280] leading-relaxed border-t border-[#eaedf3] bg-[#fdfdff] animate-in fade-in slide-in-from-top-2 duration-300">
+                        {faq.a}
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white border border-dashed border-[#eaedf3] rounded-2xl p-12 text-center">
+                  <div className="w-12 h-12 bg-[#f8fafc] rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-6 h-6 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  </div>
+                  <h3 className="text-sm font-bold text-[#111827]">No results found</h3>
+                  <p className="text-xs text-[#6b7280] mt-1 max-w-[240px] mx-auto">We couldn&apos;t find any FAQs matching your search. Try adjusting your terms or category.</p>
+                  <button 
+                    onClick={() => {setSearch(''); setSelectedCategory(null);}}
+                    className="mt-4 text-xs font-bold text-[#6366f1] hover:underline"
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="bg-linear-to-br from-indigo-50/80 to-blue-50/40 rounded-2xl p-6 border border-indigo-100/50">
+              <p className="text-xs font-medium text-[#4f46e5]/80 text-center italic leading-relaxed">
+                &quot;Finding answers should be as easy as processing a document. We&apos;re here to help.&quot;
+              </p>
             </div>
           </section>
 
