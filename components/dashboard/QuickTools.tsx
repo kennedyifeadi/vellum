@@ -1,50 +1,48 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useDashboard } from '@/app/dashboard/layout';
 import Link from 'next/link';
-
+import { ALL_TOOLS, Tool } from '@/lib/tools';
 
 export default function QuickTools() {
   const { openDrawer } = useDashboard();
+  const [displayTools, setDisplayTools] = useState<Tool[]>([]);
 
-  const tools = [
-    { id: 'image-to-pdf', title: 'Image to PDF', icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M18 15.9844V2.01562C18 0.890625 17.1094 0 15.9844 0H2.01562C0.890625 0 0 0.890625 0 2.01562V15.9844C0 17.1094 0.890625 18 2.01562 18H15.9844C17.1094 18 18 17.1094 18 15.9844ZM5.90625 10.9688L8.01562 13.5L11.1094 9.51562C11.2969 9.28125 11.7188 9.28125 11.9062 9.51562L15.4219 14.2031C15.6562 14.5312 15.4219 15 15 15H3C2.57812 15 2.39062 14.5312 2.625 14.2031L5.10938 11.0156C5.29688 10.7344 5.67188 10.7344 5.90625 10.9688Z" fill="#EA580C"/>
-</svg>
-, color: 'bg-[#FFEDD5] text-[#ef4444]', desc: 'Convert JPG/PNG files' },
-    { id: 'merge-pdf', title: 'Merge PDF', icon: <svg width="12" height="17" viewBox="0 0 12 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M11.7188 15.9844C12.0938 15.6094 12.0938 15 11.7188 14.5781L9 11.9062L7.59375 13.3125L10.3125 15.9844C10.6875 16.4062 11.2969 16.4062 11.7188 15.9844ZM2.71875 4.3125H5.01562V9.89062L0.28125 14.5781C-0.09375 15 -0.09375 15.6094 0.28125 15.9844C0.703125 16.4062 1.3125 16.4062 1.6875 15.9844L6.98438 10.6875V4.3125H9.28125C9.75 4.3125 9.9375 3.75 9.65625 3.46875L6.32812 0.140625C6.14062 -0.046875 5.85938 -0.046875 5.625 0.140625L2.34375 3.46875C2.0625 3.75 2.25 4.3125 2.71875 4.3125Z" fill="#2563EB"/>
-</svg>
-, color: 'bg-[#DBEAFE] text-[#22c55e]', desc: 'Combine multiple PDFs' },
-    { id: 'split-pdf', title: 'Split PDF', icon: <svg width="20" height="21" viewBox="0 0 20 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M7.65381 5.66053C7.93506 5.05115 8.07568 4.34803 7.98193 3.55115C7.79443 1.81678 6.43506 0.363652 4.70068 0.0824018C1.93506 -0.386348 -0.408694 1.9574 0.0600564 4.72303C0.341306 6.4574 1.79443 7.81678 3.52881 8.00428C4.32568 8.05115 5.02881 7.9574 5.63818 7.62928L7.98193 10.0199L5.63818 12.3637C5.02881 12.0824 4.32568 11.9418 3.52881 12.0355C1.79443 12.223 0.341306 13.5824 0.0600564 15.3168C-0.408694 18.0824 1.93506 20.4262 4.70068 19.9574C6.43506 19.6293 7.79443 18.1762 7.98193 16.4418C8.02881 15.6918 7.93506 14.9887 7.60693 14.3793L9.99756 12.0355L17.5913 19.6293C18.4819 20.5199 19.9819 19.8637 19.9819 18.598C19.9819 18.223 19.8413 17.848 19.6069 17.6137L7.65381 5.66053ZM3.99756 6.03553C2.91943 6.03553 1.98193 5.1449 1.98193 4.0199C1.98193 2.8949 2.91943 2.00428 3.99756 2.00428C5.07568 2.00428 6.01318 2.8949 6.01318 4.0199C6.01318 5.1449 5.07568 6.03553 3.99756 6.03553ZM3.99756 18.0355C2.91943 18.0355 1.98193 17.1449 1.98193 16.0199C1.98193 14.8949 2.91943 14.0043 3.99756 14.0043C5.07568 14.0043 6.01318 14.8949 6.01318 16.0199C6.01318 17.1449 5.07568 18.0355 3.99756 18.0355ZM9.99756 10.5355C9.71631 10.5355 9.48193 10.3012 9.48193 10.0199C9.48193 9.73865 9.71631 9.50428 9.99756 9.50428C10.2788 9.50428 10.5132 9.73865 10.5132 10.0199C10.5132 10.3012 10.2788 10.5355 9.99756 10.5355ZM17.5913 0.410527L10.9819 7.0199L12.9976 9.03553L19.6069 2.42615C19.8413 2.19178 19.9819 1.81678 19.9819 1.44178C19.9819 0.176152 18.4819 -0.480098 17.5913 0.410527Z" fill="#9333EA"/>
-</svg>
-, color: 'bg-[#F3E8FF] text-[#d946ef]', desc: 'Extract pages instantly' },
-    { id: 'docx-to-pdf', title: 'DOCX to PDF', 
-    icon: <svg width="17" height="20" viewBox="0 0 17 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M10.5938 0.5625C10.2188 0.1875 9.70312 0 9.1875 0H2.01562C0.9375 0 0 0.890625 0 1.96875V18C0 19.0781 0.890625 19.9688 2.01562 19.9688H14.0156C15.0938 19.9688 16.0312 19.0781 16.0312 18V6.79688C16.0312 6.28125 15.7969 5.76562 15.4219 5.39062L10.5938 0.5625ZM11.0156 15.9844H5.01562C4.45312 15.9844 4.03125 15.5156 4.03125 15C4.03125 14.4375 4.45312 13.9688 5.01562 13.9688H11.0156C11.5781 13.9688 12 14.4375 12 15C12 15.5156 11.5781 15.9844 11.0156 15.9844ZM11.0156 12H5.01562C4.45312 12 4.03125 11.5312 4.03125 10.9688C4.03125 10.4531 4.45312 9.98438 5.01562 9.98438H11.0156C11.5781 9.98438 12 10.4531 12 10.9688C12 11.5312 11.5781 12 11.0156 12ZM9 6V1.5L14.5312 6.98438H10.0312C9.46875 6.98438 9 6.51562 9 6Z" fill="#4F46E5"/>
-</svg>
-, color: 'bg-[#E0E7FF] text-[#3b82f6]', desc: 'Word to high-res PDF' },
-    { id: 'lock-pdf', title: 'Lock PDF', icon: <svg width="17" height="21" viewBox="0 0 17 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M14.0156 7.03125H13.0312V5.01562C13.0312 2.25 10.7812 0 8.01562 0C5.25 0 3 2.25 3 5.01562V7.03125H2.01562C0.9375 7.03125 0 7.92188 0 9V19.0312C0 20.1094 0.9375 21 2.01562 21H14.0156C15.0938 21 16.0312 20.1094 16.0312 19.0312V9C16.0312 7.92188 15.0938 7.03125 14.0156 7.03125ZM8.01562 16.0312C6.9375 16.0312 6 15.0938 6 14.0156C6 12.9375 6.9375 12 8.01562 12C9.09375 12 10.0312 12.9375 10.0312 14.0156C10.0312 15.0938 9.09375 16.0312 8.01562 16.0312ZM5.01562 7.03125V5.01562C5.01562 3.375 6.375 2.01562 8.01562 2.01562C9.65625 2.01562 11.0156 3.375 11.0156 5.01562V7.03125H5.01562Z" fill="#059669"/>
-</svg>
-, color: 'bg-[#D1FAE5] text-[#eab308]', desc: 'Add password protection' },
-    { id: 'compress-pdf', title: 'Compress PDF', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 14l8-8 8 8m-8-8v12"/></svg>, color: 'bg-[#E0E7FF] text-[#4f46e5]', desc: 'Reduce file size' },
-    { id: 'find-pdf', title: 'Find in PDF', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>, color: 'bg-[#FFEDD5] text-[#ea580c]', desc: 'Search text strings' },
-    { id: 'html-to-pdf', title: 'HTML to PDF', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>, color: 'bg-[#FFFBEB] text-[#d97706]', desc: 'Webpage to document' },
-    { id: 'jpg-to-png', title: 'JPEG to PNG', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-5M14 6L9 11v11M21 3l-5 5-5-5"/></svg>, color: 'bg-[#ECFDF5] text-[#10b981]', desc: 'Image format swap' }
-  ];
+  useEffect(() => {
+    const updateTools = () => {
+      if (typeof window === 'undefined') return;
+
+      // 1. Get starred tools from localStorage
+      const starredIds = JSON.parse(localStorage.getItem('starredTools') || '[]');
+      
+      // 2. Separate starred and unstarred
+      const starredTools = ALL_TOOLS.filter(t => starredIds.includes(t.id));
+      const unstarredTools = ALL_TOOLS.filter(t => !starredIds.includes(t.id));
+
+      // 3. Shuffle unstarred tools for "random" selection
+      const shuffledUnstarred = [...unstarredTools].sort(() => Math.random() - 0.5);
+
+      // 4. Combine: Starred first (up to 5), then fill with random up to 5
+      const combined = [...starredTools, ...shuffledUnstarred].slice(0, 5);
+      
+      setDisplayTools(combined);
+    };
+
+    updateTools();
+
+    // Listen for updates from Tools Library
+    window.addEventListener('starredToolsUpdated', updateTools);
+    return () => window.removeEventListener('starredToolsUpdated', updateTools);
+  }, []);
 
   const handleToolClick = (id: string) => {
     openDrawer(null, id);
   };
 
-
   return (
     <div className="mt-8">
-
-
       <div className="flex justify-between items-center mb-4">
         <p className="font-bold text-[15px] text-[#111827]">Quick Tools</p>
         <Link href="/dashboard/library" className="text-xs font-medium text-[#6366f1] hover:underline flex items-center gap-1">
@@ -53,7 +51,7 @@ export default function QuickTools() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {tools.map((tool) => (
+        {displayTools.map((tool) => (
           <motion.button
             key={tool.id}
             onClick={() => handleToolClick(tool.id)}
@@ -73,4 +71,3 @@ export default function QuickTools() {
     </div>
   );
 }
-

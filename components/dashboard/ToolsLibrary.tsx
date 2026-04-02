@@ -1,22 +1,10 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useDashboard } from '@/app/dashboard/layout';
 import NotificationDropdown from './NotificationDropdown';
-
-
-// Define the tool type
-type Tool = {
-  id: string;
-  name: string;
-  description: string;
-  categories: string[];
-  icon: React.ReactNode;
-  bgColor: string;
-  iconColor: string;
-  starred?: boolean;
-};
+import { ALL_TOOLS, Tool } from '@/lib/tools';
 
 export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,158 +40,20 @@ export default function ToolsLibrary() {
     openDrawer(null, id);
   };
 
-
-
   // Categories list
   const categories = ['All Tools', 'PDF', 'Images', 'Documents', 'Security'];
 
-  // Tools data based on User's working list
-  const tools: Tool[] = [
-    {
-      id: 'merge-pdf',
-      name: 'Merge PDF',
-      description: 'Combine multiple PDF files into a single document.',
-      categories: ['PDF'],
-      bgColor: 'bg-[#DBEAFE]',
-      iconColor: 'text-[#2563EB]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-          <path d="M14 2v6h6" />
-          <path d="M16 13a4 4 0 11-8 0 4 4 0 018 0z" />
-          <path d="M12 9v8" />
-        </svg>
-      ),
-    },
-    {
-      id: 'split-pdf',
-      name: 'Split PDF',
-      description: 'Divide a PDF into individual pages or specific ranges.',
-      categories: ['PDF'],
-      bgColor: 'bg-[#F3E8FF]',
-      iconColor: 'text-[#d946ef]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 6h18M3 12h18M3 18h18" />
-          <path d="M5 6v12M19 6v12" />
-        </svg>
-      ),
-    },
-    {
-      id: 'lock-pdf',
-      name: 'Lock PDF',
-      description: 'Add password protection to any PDF file.',
-      categories: ['PDF', 'Security'],
-      bgColor: 'bg-[#D1FAE5]',
-      iconColor: 'text-[#eab308]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-          <path d="M7 11V7a5 5 0 0110 0v4" />
-        </svg>
-      ),
-    },
-    {
-      id: 'find-pdf',
-      name: 'Find in PDF',
-      description: 'Search for specific text strings within a PDF.',
-      categories: ['PDF'],
-      bgColor: 'bg-[#FFEDD5]',
-      iconColor: 'text-[#ea580c]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" />
-          <path d="M21 21l-4.35-4.35" />
-          <path d="M12 11h.01" />
-        </svg>
-      ),
-    },
-    {
-      id: 'image-to-pdf',
-      name: 'Image to PDF',
-      description: 'Convert one or more images into a single PDF.',
-      categories: ['Images', 'PDF'],
-      bgColor: 'bg-[#FFE4E6]',
-      iconColor: 'text-[#e11d48]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
-      ),
-    },
-    {
-      id: 'jpg-to-png',
-      name: 'JPEG to PNG',
-      description: 'Change the format of a JPEG image to transparent PNG.',
-      categories: ['Images'],
-      bgColor: 'bg-[#ECFDF5]',
-      iconColor: 'text-[#10b981]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M16 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-5" />
-          <path d="M14 6L9 11v11" />
-          <path d="M21 3l-5 5-5-5" />
-        </svg>
-      ),
-    },
-    {
-      id: 'docx-to-pdf',
-      name: 'DOCX to PDF',
-      description: 'Convert Microsoft Word documents into professional PDFs.',
-      categories: ['Documents', 'PDF'],
-      bgColor: 'bg-[#E0E7FF]',
-      iconColor: 'text-[#4f46e5]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-        </svg>
-      ),
-    },
-    {
-      id: 'compress-pdf',
-      name: 'Compress PDF',
-      description: 'Reduce the file size of your PDF documents while maintaining quality.',
-      categories: ['PDF'],
-      bgColor: 'bg-[#E0E7FF]',
-      iconColor: 'text-[#4f46e5]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M4 14l8-8 8 8" />
-          <path d="M12 6v12" />
-        </svg>
-      ),
-    },
-    {
-      id: 'html-to-pdf',
-      name: 'HTML to PDF',
-      description: 'Convert raw HTML code or a live website URL into a PDF.',
-      categories: ['Documents', 'PDF'],
-      bgColor: 'bg-[#FFFBEB]',
-      iconColor: 'text-[#d97706]',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
-        </svg>
-      ),
-    },
-  ];
-
   // Filter logic
-  const filteredTools = tools.filter(tool => {
-    const matchesSearch = tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         tool.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = activeCategory === 'All Tools' || tool.categories.includes(activeCategory);
+  const filteredTools = ALL_TOOLS.filter(tool => {
+    const matchesSearch = tool.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         tool.desc.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = activeCategory === 'All Tools' || (tool.categories && tool.categories.includes(activeCategory));
     return matchesSearch && matchesCategory;
   });
 
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] p-6">
-
-
       {/* Header */}
-
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[#111827]">Tools Library</h1>
@@ -280,22 +130,21 @@ export default function ToolsLibrary() {
       </div>
 
       {/* Tools Grid / List */}
-      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-4`}>
+      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-4 overflow-y-auto pr-2`}>
         {filteredTools.map((tool) => (
           <motion.button
             key={tool.id}
             onClick={() => handleToolClick(tool.id)}
             whileHover={{ y: -4, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
             className={`bg-white border border-[#eaedf3] rounded-2xl p-5 flex ${
-
               viewMode === 'grid' ? 'flex-col items-start' : 'items-center gap-4'
-            } gap-4 hover:border-[#e0e7ff] text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)] relative`}
+            } gap-4 hover:border-[#6366f1]/30 text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)] relative group`}
           >
             {/* Star Icon */}
             <div
               onClick={(e) => toggleStar(e, tool.id)}
-              className={`absolute top-4 right-4 cursor-pointer transition-colors ${
-                starredIds.has(tool.id) ? 'text-[#fbbf24]' : 'text-[#d1d5db] hover:text-[#fbbf24]'
+              className={`absolute top-4 right-4 cursor-pointer transition-colors z-10 ${
+                starredIds.has(tool.id) ? 'text-[#fbbf24]' : 'text-[#d1d5db] hover:text-[#fbbf24] opacity-0 group-hover:opacity-100'
               }`}
             >
               <svg className="w-4 h-4" fill={starredIds.has(tool.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
@@ -307,8 +156,8 @@ export default function ToolsLibrary() {
               {tool.icon}
             </div>
             <div>
-              <p className="text-sm font-bold text-[#111827]">{tool.name}</p>
-              <p className="text-xs text-[#6b7280] mt-1 leading-normal">{tool.description}</p>
+              <p className="text-sm font-bold text-[#111827]">{tool.title}</p>
+              <p className="text-xs text-[#6b7280] mt-1 leading-normal">{tool.desc}</p>
             </div>
           </motion.button>
         ))}
@@ -319,15 +168,6 @@ export default function ToolsLibrary() {
         <div className="flex flex-col items-center justify-center py-12">
           <p className="text-sm font-medium text-[#4b5563]">No tools found</p>
           <p className="text-xs text-[#6b7280] mt-1">Try searching for something else or change filters.</p>
-        </div>
-      )}
-
-      {/* Load More Button */}
-      {filteredTools.length > 0 && (
-        <div className="flex justify-center mt-8">
-          <button className="h-10 px-6 rounded-xl border border-[#eaedf3] bg-white text-xs font-semibold text-[#4b5563] hover:bg-[#f3f4f6] transition-colors">
-            Load More Tools
-          </button>
         </div>
       )}
     </div>
