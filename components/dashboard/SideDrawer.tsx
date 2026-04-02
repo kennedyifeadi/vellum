@@ -30,13 +30,15 @@ const availableTools = [
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
-  const { showToast, addNotification } = useDashboard();
+  const { showToast, addNotification, user } = useDashboard();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-file state array
   const [fileList, setFileList] = useState<File[]>([]);
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const maxAllowedJpg = user?.plan === 'Pro' ? 10 : 5;
 
   if (toolId !== prevToolId) {
     setPrevToolId(toolId);
@@ -106,7 +108,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           errorShown = true;
           break;
         }
-        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && updatedList.length >= 1) {
+        if (selectedTool === 'jpg-to-png' && updatedList.length >= maxAllowedJpg) {
+          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedJpg} images for this tool.`, "error");
+          errorShown = true;
+          break;
+        }
+        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && selectedTool !== 'jpg-to-png' && updatedList.length >= 1) {
           if (!errorShown) showToast("This tool only supports processing 1 file at a time.", "error");
           errorShown = true;
           break;
@@ -114,6 +121,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
         if (updatedList.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) continue;
         
+        // Check combined total size limit (10MB)
+        const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
+        if (currentTotalSize + selectedFile.size > MAX_SIZE) {
+          if (!errorShown) showToast("Total combined size exceeds the 10MB limit.", "error");
+          errorShown = true;
+          break;
+        }
+
         updatedList.push(selectedFile);
       }
 
@@ -291,6 +306,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       case 'html-to-pdf':
         return htmlOptions.mode === 'url' ? !htmlOptions.url.trim() : fileList.length === 0;
       case 'docx-to-pdf':
+        return fileList.length === 0;
       case 'jpg-to-png':
         return fileList.length === 0;
       default:
@@ -307,7 +323,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return '.pdf';
       case 'image-to-pdf':
         return '.jpg,.jpeg,.png';
-      case 'jpeg-to-png':
+      case 'jpg-to-png':
         return '.jpg,.jpeg';
       case 'docx-to-pdf':
         return '.docx,.doc';
@@ -376,7 +392,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 className="hidden" 
                 onChange={handleFileChange}
                 accept={getAcceptAttribute()}
-                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || !selectedTool}
+                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || !selectedTool}
               />
               {/* Selected File Preview Box Isolated Frames isolate bounds isolates */}
               {fileList.length > 0 && (
@@ -441,7 +457,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     ))}
                   </Reorder.Group>
 
-                  {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf') && (
+                  {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png') && (
                     <button 
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#6366f1] hover:bg-[#6366f1]/5 transition-all mt-1"
@@ -558,7 +574,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       if (selectedTool === 'merge-pdf') downloadName = 'merged.pdf';
                       else if (selectedTool === 'image-to-pdf') downloadName = 'converted_images.pdf';
                       else if (selectedTool === 'docx-to-pdf') downloadName = 'converted.pdf';
-                      else if (selectedTool === 'jpg-to-png') downloadName = 'converted.png';
+                      else if (selectedTool === 'jpg-to-png') downloadName = fileList.length > 1 ? 'converted_images.zip' : 'converted.png';
 
                       a.download = downloadName;
                       document.body.appendChild(a);
