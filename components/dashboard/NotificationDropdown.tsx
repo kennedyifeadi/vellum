@@ -83,7 +83,7 @@ export default function NotificationDropdown({ isOpen, onClose }: NotificationDr
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.15, ease: "easeOut" }}
-          className="absolute top-12 right-0 w-80 bg-white/90 backdrop-blur-md border border-[#eaedf3] rounded-2xl shadow-2xl z-[110] overflow-hidden flex flex-col"
+          className="absolute top-12 right-0 w-80 bg-white/90 backdrop-blur-md border border-[#eaedf3] rounded-2xl shadow-2xl z-110 overflow-hidden flex flex-col"
         >
           <div className="p-4 border-b border-[#eaedf3] flex items-center justify-between">
             <h3 className="text-sm font-bold text-[#111827]">Notifications</h3>

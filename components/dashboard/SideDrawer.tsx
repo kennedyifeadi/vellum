@@ -100,9 +100,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       const updatedList = [...prev];
 
       for (const selectedFile of newFiles) {
-        const MAX_SIZE = 10 * 1024 * 1024;
+        const MAX_SIZE = 50 * 1024 * 1024;
         if (selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast("A file exceeds 10MB free limit. Skipped.", "error");
+          if (!errorShown) showToast("A file exceeds 50MB free limit. Skipped.", "error");
           errorShown = true;
           continue;
         }
@@ -132,7 +132,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         
         const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
         if (currentTotalSize + selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast("Total combined size exceeds the 10MB limit.", "error");
+          if (!errorShown) showToast("Total combined size exceeds the 50MB limit.", "error");
           errorShown = true;
           break;
         }
@@ -400,7 +400,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     <h2 className="text-sm font-bold text-[#111827]">
                       {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                     </h2>
-                    <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 10MB</p>
+                    <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 50MB</p>
                   </div>
                 </div>
                 <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">

@@ -18,7 +18,7 @@ const faqsData = [
   { q: "Is Vellum free to use?", a: "Yes, we offer a generous free tier that includes up to 5 conversions per day. For unlimited processing and larger file limits, check out our Pro plans.", category: 'getting-started' },
   
   // PDF Tools
-  { q: "What is the maximum file size for conversion?", a: "Free tier users can upload files up to 10MB. Pro users enjoy an increased limit of up to 100MB per file.", category: 'pdf-tools' },
+  { q: "What is the maximum file size for conversion?", a: "Free tier users can upload files up to 50MB. Pro users enjoy an increased limit of up to 100MB per file.", category: 'pdf-tools' },
   { q: "Can I merge more than two PDFs?", a: "Absolutely! Our Merge tool allows you to combine multiple PDF files into a single document in just seconds.", category: 'pdf-tools' },
   
   // Storage

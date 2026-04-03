@@ -14,10 +14,10 @@ export default function DragAndDrop() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate size (10MB max for Free Trial)
-    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    // Validate size (50MB max for Free Trial)
+    const MAX_SIZE = 50 * 1024 * 1024; // 50MB
     if (file.size > MAX_SIZE) {
-      showToast("File size exceeds 10MB free limit. Please upgrade or use a smaller file.", "error");
+      showToast("File size exceeds 50MB free limit. Please upgrade or use a smaller file.", "error");
       return;
     }
 
@@ -47,7 +47,7 @@ export default function DragAndDrop() {
         </svg>
       </div>
       <p className="text-sm font-semibold text-[#111827]">Drag & Drop files here</p>
-      <p className="text-[11px] text-[#6b7280]">Support for PDF, DOCX, JPG, PNG and more. Max file size 10MB.</p>
+      <p className="text-[11px] text-[#6b7280]">Support for PDF, DOCX, JPG, PNG and more. Max file size 50MB.</p>
       <div className="flex gap-2 mt-2">
         <button className="h-8 px-4 bg-[#6366f1] text-white text-xs font-medium rounded-lg shadow-sm shadow-[#6366f1]/20 hover:bg-[#4f46e5] transition-colors pointer-events-none">
           + Upload File
