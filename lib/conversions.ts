@@ -23,8 +23,14 @@ export async function saveConversionRecord(
   }
 
   const isPro = user.plan === 'Pro';
+  const autoDelete = user.preferences?.autoDelete === true;
+  
+  // If autoDelete is true, set expiresAt to basically immediately so cleanupStorage picks it up instantly.
+  // Otherwise, default to 5 days for Pro, 3 days for Free.
   const daysToKeep = isPro ? 5 : 3;
-  const expiresAt = new Date(Date.now() + daysToKeep * 24 * 60 * 60 * 1000);
+  const expiresAt = autoDelete 
+    ? new Date(Date.now() + 1000) // Expires in 1 second
+    : new Date(Date.now() + daysToKeep * 24 * 60 * 60 * 1000);
 
   const fileId = crypto.randomUUID();
   const extension = originalFileName.endsWith('.zip') ? '.zip' : '.pdf';

@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import Tabs from '@/components/dashboard/Tabs';
 import ProfileTab from '@/components/dashboard/ProfileTab';
+import SecurityTab from '@/components/dashboard/SecurityTab';
+import PreferencesTab from '@/components/dashboard/PreferencesTab';
+import BillingTab from '@/components/dashboard/BillingTab';
 import Link from 'next/link';
 
 export default function PreferencesPage() {
@@ -19,6 +22,12 @@ export default function PreferencesPage() {
     switch (activeTab) {
       case 'profile':
         return <ProfileTab />;
+      case 'security':
+        return <SecurityTab />;
+      case 'preferences':
+        return <PreferencesTab />;
+      case 'billing':
+        return <BillingTab />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full py-20 text-center animate-in fade-in zoom-in-95 duration-500">
