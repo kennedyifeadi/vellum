@@ -9,7 +9,17 @@ export interface IUser extends Document {
   isProfileComplete: boolean;
   plan: 'Free' | 'Pro';
   emailVerified?: Date;
-  accounts?: mongoose.Types.ObjectId[]; // For NextAuth.js accounts
+  accounts?: mongoose.Types.ObjectId[];
+  starredTools: string[];
+  notifications: Array<{
+    id: string;
+    type: 'success' | 'warning' | 'error' | 'info';
+    title: string;
+    message: string;
+    timestamp: string;
+    isRead: boolean;
+    link?: string;
+  }>;
   preferences: {
     theme: 'light' | 'dark' | 'system';
     autoDelete: boolean;
@@ -39,6 +49,19 @@ const UserSchema: Schema = new Schema({
   plan: { type: String, enum: ['Free', 'Pro'], default: 'Free' },
   emailVerified: { type: Date },
   accounts: [{ type: Schema.Types.ObjectId, ref: 'Account' }],
+  starredTools: { type: [String], default: [] },
+  notifications: {
+    type: [{
+      id: { type: String, required: true },
+      type: { type: String, enum: ['success', 'warning', 'error', 'info'], required: true },
+      title: { type: String, required: true },
+      message: { type: String, required: true },
+      timestamp: { type: String, required: true },
+      isRead: { type: Boolean, default: false },
+      link: { type: String },
+    }],
+    default: []
+  },
   preferences: {
     theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
     autoDelete: { type: Boolean, default: false },

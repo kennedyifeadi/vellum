@@ -7,34 +7,35 @@ import Link from 'next/link';
 import { ALL_TOOLS, Tool } from '@/lib/tools';
 
 export default function QuickTools() {
-  const { openDrawer } = useDashboard();
+  const { openDrawer, user } = useDashboard();
   const [displayTools, setDisplayTools] = useState<Tool[]>([]);
 
+  const buildDisplay = (starredIds: string[]) => {
+    const starred = ALL_TOOLS.filter(t => starredIds.includes(t.id));
+    const unstarred = ALL_TOOLS.filter(t => !starredIds.includes(t.id));
+    const shuffled = [...unstarred].sort(() => Math.random() - 0.5);
+    setDisplayTools([...starred, ...shuffled].slice(0, 5));
+  };
+
+  // Load from DB on mount when user is known
   useEffect(() => {
-    const updateTools = () => {
-      if (typeof window === 'undefined') return;
+    if (!user?._id) return;
+    fetch('/api/user/starred')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => buildDisplay(data?.starredTools ?? []))
+      .catch(() => buildDisplay([]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id]);
 
-      // 1. Get starred tools from localStorage
-      const starredIds = JSON.parse(localStorage.getItem('starredTools') || '[]');
-      
-      // 2. Separate starred and unstarred
-      const starredTools = ALL_TOOLS.filter(t => starredIds.includes(t.id));
-      const unstarredTools = ALL_TOOLS.filter(t => !starredIds.includes(t.id));
-
-      // 3. Shuffle unstarred tools for "random" selection
-      const shuffledUnstarred = [...unstarredTools].sort(() => Math.random() - 0.5);
-
-      // 4. Combine: Starred first (up to 5), then fill with random up to 5
-      const combined = [...starredTools, ...shuffledUnstarred].slice(0, 5);
-      
-      setDisplayTools(combined);
+  // Listen for live updates from Tools Library (same tab)
+  useEffect(() => {
+    const onUpdate = (e: Event) => {
+      const ids = (e as CustomEvent<string[]>).detail;
+      buildDisplay(ids);
     };
-
-    updateTools();
-
-    // Listen for updates from Tools Library
-    window.addEventListener('starredToolsUpdated', updateTools);
-    return () => window.removeEventListener('starredToolsUpdated', updateTools);
+    window.addEventListener('starredToolsUpdated', onUpdate);
+    return () => window.removeEventListener('starredToolsUpdated', onUpdate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleToolClick = (id: string) => {

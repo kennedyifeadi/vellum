@@ -80,7 +80,7 @@ function fileIconColors(name: string) {
 
 // ── Component ──
 export default function DocumentsPage() {
-  const { documents, storage, refreshData, addNotification, unreadCount, openDrawer, showToast } = useDashboard();
+  const { documents, storage, refreshData, addNotification, unreadCount, openDrawer, showToast, user } = useDashboard();
 
   const [uploading, setUploading] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -91,13 +91,7 @@ export default function DocumentsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const [starredTools, setStarredTools] = useState<StarredTool[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const ids: string[] = JSON.parse(localStorage.getItem('starredTools') || '[]');
-      return ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id, color: '#fbbf24' }));
-    } catch { return []; }
-  });
+  const [starredTools, setStarredTools] = useState<StarredTool[]>([]);
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
@@ -108,16 +102,28 @@ export default function DocumentsPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load starred tools from DB when user is known
+  useEffect(() => {
+    if (!user?._id) return;
+    fetch('/api/user/starred')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const ids: string[] = data?.starredTools ?? [];
+        setStarredTools(ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id, color: '#fbbf24' })));
+      })
+      .catch(console.error);
+  }, [user?._id]);
+
+  // Keep in sync when user stars/unstars on the same tab
   useEffect(() => {
     const onStar = (e: Event) => {
       const ids = (e as CustomEvent<string[]>).detail;
       setStarredTools(ids.map(id => ({ id, name: ALL_TOOL_NAMES[id] ?? id, color: '#fbbf24' })));
     };
     window.addEventListener('starredToolsUpdated', onStar);
-    return () => {
-      window.removeEventListener('starredToolsUpdated', onStar);
-    };
+    return () => window.removeEventListener('starredToolsUpdated', onStar);
   }, []);
+
 
   // ── Upload ──
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

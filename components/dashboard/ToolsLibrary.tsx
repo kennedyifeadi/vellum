@@ -10,30 +10,47 @@ export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All Tools');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [starredIds, setStarredIds] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    try {
-      const stored = JSON.parse(localStorage.getItem('starredTools') || '[]');
-      return new Set(stored);
-    } catch { return new Set(); }
-  });
-  const { openDrawer, unreadCount } = useDashboard();
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const { openDrawer, unreadCount, user } = useDashboard();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
-  const toggleStar = (e: React.MouseEvent, toolId: string) => {
+  // Load starred tools from DB when user is available
+  useEffect(() => {
+    if (!user?._id) return;
+    fetch('/api/user/starred')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.starredTools) setStarredIds(new Set(data.starredTools));
+      })
+      .catch(console.error);
+  }, [user?._id]);
+
+  const toggleStar = async (e: React.MouseEvent, toolId: string) => {
     e.stopPropagation();
+    // Optimistic update
     setStarredIds(prev => {
       const next = new Set(prev);
-      if (next.has(toolId)) {
-        next.delete(toolId);
-      } else {
-        next.add(toolId);
-      }
-      const arr = Array.from(next);
-      localStorage.setItem('starredTools', JSON.stringify(arr));
-      window.dispatchEvent(new CustomEvent('starredToolsUpdated', { detail: arr }));
+      if (next.has(toolId)) next.delete(toolId); else next.add(toolId);
+      // Dispatch so QuickTools / Documents page update immediately on same tab
+      window.dispatchEvent(new CustomEvent('starredToolsUpdated', { detail: Array.from(next) }));
       return next;
     });
+    // Persist to DB
+    try {
+      const res = await fetch('/api/user/starred', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toolId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updated = new Set<string>(data.starredTools);
+        setStarredIds(updated);
+        window.dispatchEvent(new CustomEvent('starredToolsUpdated', { detail: data.starredTools }));
+      }
+    } catch (err) {
+      console.error('Failed to toggle star:', err);
+    }
   };
 
   const handleToolClick = (id: string) => {

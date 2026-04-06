@@ -66,25 +66,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const addNotification = (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
+    // Optimistically update UI immediately
     const newNote: AppNotification = {
       ...n,
       id: Math.random().toString(36).substring(7),
       timestamp: new Date().toISOString(),
       isRead: false,
     };
-    setNotifications(prev => {
-      const updated = [newNote, ...prev].slice(0, 50); // Keep last 50
-      localStorage.setItem('vellum_notifications', JSON.stringify(updated));
-      return updated;
-    });
+    setNotifications(prev => [newNote, ...prev].slice(0, 50));
+
+    // Persist to DB in background (fire and forget)
+    fetch('/api/user/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(n),
+    }).catch(err => console.error('Failed to save notification:', err));
   };
 
   const markAllAsRead = () => {
-    setNotifications(prev => {
-      const updated = prev.map(n => ({ ...n, isRead: true }));
-      localStorage.setItem('vellum_notifications', JSON.stringify(updated));
-      return updated;
-    });
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    // Persist to DB in background
+    fetch('/api/user/notifications', { method: 'PATCH' })
+      .catch(err => console.error('Failed to mark notifications as read:', err));
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -120,10 +123,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           const data = await res.json();
           setUser(data.user);
           refreshData('all');
-          
-          // Load local notifications
-          const saved = localStorage.getItem('vellum_notifications');
-          if (saved) setNotifications(JSON.parse(saved));
+
+          // Load notifications from the database
+          const notifRes = await fetch('/api/user/notifications');
+          if (notifRes.ok) {
+            const notifData = await notifRes.json();
+            setNotifications(notifData.notifications ?? []);
+          }
         } else {
           router.push('/login');
         }
@@ -137,40 +143,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const handleUpdate = () => refreshData();
     window.addEventListener('activityUpdated', handleUpdate);
-    window.addEventListener('starredToolsUpdated', handleUpdate);
     
     return () => {
       window.removeEventListener('activityUpdated', handleUpdate);
-      window.removeEventListener('starredToolsUpdated', handleUpdate);
     };
   }, [router]);
 
-  // Automated Storage Notifications
+  // Automated Storage Notifications — use a ref to avoid re-triggering on every render
   useEffect(() => {
-    if (!storage) return;
+    if (!storage || !user?._id) return;
     const percent = (storage.usedBytes / storage.limitBytes) * 100;
-    
-    const lastAlert = localStorage.getItem('vellum_storage_alert');
-    if (percent >= 100 && lastAlert !== 'full') {
+
+    // Prevent duplicate storage alerts by checking if one already exists
+    const alreadyHasFull = notifications.some(n => n.title === 'Storage Full' && !n.isRead);
+    const alreadyHasWarning = notifications.some(n => n.title === 'Storage Warning' && !n.isRead);
+
+    if (percent >= 100 && !alreadyHasFull) {
       addNotification({
         type: 'error',
         title: 'Storage Full',
         message: 'You have reached your storage limit. Please delete some files or upgrade to Pro.',
         link: '/dashboard/documents'
       });
-      localStorage.setItem('vellum_storage_alert', 'full');
-    } else if (percent >= 50 && percent < 100 && lastAlert !== 'warning') {
+    } else if (percent >= 50 && percent < 100 && !alreadyHasWarning) {
       addNotification({
         type: 'warning',
         title: 'Storage Warning',
         message: `Your storage is ${Math.round(percent)}% full. Free users have a 50MB limit.`,
         link: '/dashboard/documents'
       });
-      localStorage.setItem('vellum_storage_alert', 'warning');
-    } else if (percent < 50) {
-      localStorage.removeItem('vellum_storage_alert');
     }
-  }, [storage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage, user?._id]);
 
   const handleSignOut = async () => {
     try {
