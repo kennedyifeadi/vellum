@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
 
 export const AuthLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
@@ -77,9 +78,9 @@ export const AuthButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>
 };
 
 export const VellumLogo = () => (
-    <div className="flex items-center gap-2 mb-6">
-        <div className="w-10 h-10 bg-[#6366f1] rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md">
-            V
+    <div className="flex items-center mb-6">
+        <div className="flex items-center justify-center">
+            <Image src="/vellum.png" alt="Vellum Logo" width={60} height={60} />
         </div>
         <span className="text-2xl font-bold text-[#1f2937]">Vellum</span>
     </div>

@@ -27,9 +27,9 @@ export default function Sidebar({ user, onSignOut }: { user: any, onSignOut: () 
   return (
     <aside className="w-64 bg-white rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col justify-between p-5">
       <div>
-        <div className="flex items-center gap-2 mb-8 px-1">
-          <div className="w-8 h-8 bg-[#6366f1] rounded-lg flex items-center justify-center text-white font-bold text-lg">
-            V
+        <div className="flex items-center mb-8 px-1">
+          <div className="">
+            <Image src="/vellum.png" alt="Vellum Logo" width={50} height={50} />
           </div>
           <span className="text-xl font-bold text-[#1f2937]">Vellum</span>
         </div>
