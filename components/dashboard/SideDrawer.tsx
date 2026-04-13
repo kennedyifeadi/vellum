@@ -32,6 +32,9 @@ const availableTools = [
   { id: 'html-to-pdf', name: 'HTML to PDF', color: 'bg-[#F3F4F6] text-[#6366f1]' },
   { id: 'jpg-to-png', name: 'JPEG to PNG', color: 'bg-[#FFF7ED] text-[#f97316]' },
   { id: 'compress-pdf', name: 'Compress PDF', color: 'bg-[#E0E7FF] text-[#4f46e5]' },
+  { id: 'image-compress', name: 'Compress Image', color: 'bg-[#F0FDF4] text-[#16a34a]' },
+  { id: 'video-compress', name: 'Compress Video', color: 'bg-[#FDF2F8] text-[#db2777]' },
+  { id: 'pdf-to-docx', name: 'PDF to DOCX', color: 'bg-[#EFF6FF] text-[#2563eb]' },
 ];
 
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
@@ -48,6 +51,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const maxAllowedJpg = user?.plan === 'Pro' ? 10 : 5;
   const maxAllowedMerge = user?.plan === 'Pro' ? 10 : 3;
   const maxAllowedImage = user?.plan === 'Pro' ? 10 : 3;
+  const maxAllowedImageCompress = user?.plan === 'Pro' ? 20 : 5;
 
   useEffect(() => {
     if (toolId !== prevToolId) {
@@ -79,6 +83,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [htmlOptions, setHtmlOptions] = useState({ url: '', mode: 'file' as 'file' | 'url' });
   const [findResults, setFindResults] = useState<{ matches: FindMatch[], matchCount: number, pdfBase64?: string } | null>(null);
   const [compressLevel, setCompressLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const [imageCompressLevel, setImageCompressLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const [videoCompressOptions, setVideoCompressOptions] = useState({ quality: 'Medium', resolution: 'Original' });
 
   // Format File Size helper
   const formatBytes = (bytes: number, decimals = 2) => {
@@ -100,9 +106,16 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       const updatedList = [...prev];
 
       for (const selectedFile of newFiles) {
-        const MAX_SIZE = 50 * 1024 * 1024;
+        let MAX_SIZE = 50 * 1024 * 1024;
+        
+        if (selectedTool === 'image-compress' || selectedTool === 'pdf-to-docx') {
+           MAX_SIZE = user?.plan === 'Pro' ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
+        } else if (selectedTool === 'video-compress') {
+           MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+        }
+
         if (selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast("A file exceeds 50MB free limit. Skipped.", "error");
+          if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
           errorShown = true;
           continue;
         }
@@ -122,7 +135,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           errorShown = true;
           break;
         }
-        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && selectedTool !== 'jpg-to-png' && updatedList.length >= 1) {
+        if (selectedTool === 'image-compress' && updatedList.length >= maxAllowedImageCompress) {
+          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedImageCompress} images.`, "error");
+          errorShown = true;
+          break;
+        }
+        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && selectedTool !== 'jpg-to-png' && selectedTool !== 'image-compress' && updatedList.length >= 1) {
           if (!errorShown) showToast("This tool only supports processing 1 file at a time.", "error");
           errorShown = true;
           break;
@@ -132,7 +150,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         
         const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
         if (currentTotalSize + selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast("Total combined size exceeds the 50MB limit.", "error");
+          if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
           errorShown = true;
           break;
         }
@@ -310,6 +328,64 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             </p>
           </div>
         );
+      case 'image-compress':
+        return (
+          <div className="space-y-3 bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-4">
+            <p className="text-xs font-semibold text-[#111827]">Compression Quality</p>
+            <div className="grid grid-cols-3 gap-2">
+              {(['low', 'medium', 'high'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setImageCompressLevel(level)}
+                  className={`h-9 rounded-lg text-[10px] font-bold uppercase transition-all border ${
+                    imageCompressLevel === level 
+                      ? 'bg-white border-[#6366f1] text-[#6366f1] shadow-sm' 
+                      : 'bg-[#f1f5f9] border-transparent text-[#64748b] hover:bg-[#e2e8f0]'
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-[#6b7280] italic px-1">
+              {imageCompressLevel === 'low' && 'Best quality, minor size reduction.'}
+              {imageCompressLevel === 'medium' && 'Balanced quality and file size.'}
+              {imageCompressLevel === 'high' && 'Smallest file size, lowest quality.'}
+            </p>
+          </div>
+        );
+      case 'video-compress':
+        return (
+          <div className="space-y-3 bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-4">
+            <p className="text-xs font-semibold text-[#111827]">Video Settings</p>
+            <div className="space-y-2">
+              <div>
+                <label className="text-[10px] font-medium text-[#6b7280]">Target Quality</label>
+                <select 
+                  value={videoCompressOptions.quality} 
+                  onChange={(e) => setVideoCompressOptions(prev => ({...prev, quality: e.target.value}))}
+                  className="w-full h-9 bg-white border border-[#eaedf3] rounded-lg px-2.5 text-xs mt-1"
+                >
+                  <option value="High">High (Larger size)</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low (Smaller size)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-[#6b7280]">Resolution</label>
+                <select 
+                  value={videoCompressOptions.resolution} 
+                  onChange={(e) => setVideoCompressOptions(prev => ({...prev, resolution: e.target.value}))}
+                  className="w-full h-9 bg-white border border-[#eaedf3] rounded-lg px-2.5 text-xs mt-1"
+                >
+                  <option value="Original">Original</option>
+                  <option value="720p">720p</option>
+                  <option value="480p">480p</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        );
 
       default:
         return null;
@@ -337,6 +413,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       case 'docx-to-pdf':
         return fileList.length === 0;
       case 'compress-pdf':
+      case 'image-compress':
+      case 'video-compress':
+      case 'pdf-to-docx':
         return fileList.length === 0;
       default:
         return false;
@@ -360,8 +439,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         return '.html';
       case 'compress-pdf':
         return '.pdf';
+      case 'image-compress':
+        return '.jpg,.jpeg,.png,.webp';
+      case 'video-compress':
+        return '.mp4,.mov,.avi';
+      case 'pdf-to-docx':
+        return '.pdf';
       default:
-        return '.pdf,.docx,.doc,.jpg,.jpeg,.png';
+        return '.pdf,.docx,.doc,.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi';
     }
   };
 
@@ -418,7 +503,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 className="hidden" 
                 onChange={handleFileChange}
                 accept={getAcceptAttribute()}
-                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || !selectedTool}
+                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool}
               />
               {fileList.length > 0 && (
                 <div className="space-y-3">
@@ -589,17 +674,16 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
-                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf') {
+                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf' || selectedTool === 'image-compress' || selectedTool === 'video-compress' || selectedTool === 'pdf-to-docx') {
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
                       let fileKey = 'file';
                       if (selectedTool === 'merge-pdf') fileKey = 'pdfs';
-                      else if (selectedTool === 'image-to-pdf') fileKey = 'images';
+                      else if (selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') fileKey = 'images';
+                      else if (selectedTool === 'video-compress') fileKey = 'video';
+                      else if (selectedTool === 'compress-pdf' || selectedTool === 'find-pdf' || selectedTool === 'pdf-to-docx') fileKey = 'pdf';
                       else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
-                      else if (selectedTool === 'jpg-to-png') fileKey = 'images';
-                      else if (selectedTool === 'find-pdf') fileKey = 'pdf';
-                      else if (selectedTool === 'compress-pdf') fileKey = 'pdf';
 
                       fileList.forEach(file => formData.append(fileKey, file));
                       
@@ -608,6 +692,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       }
                       if (selectedTool === 'compress-pdf') {
                         formData.append('level', compressLevel);
+                      }
+                      if (selectedTool === 'image-compress') {
+                        formData.append('level', imageCompressLevel);
+                      }
+                      if (selectedTool === 'video-compress') {
+                        formData.append('quality', videoCompressOptions.quality);
+                        formData.append('resolution', videoCompressOptions.resolution);
                       }
                       
                       const apiUrl = `/api/convert/${selectedTool}`;
@@ -643,9 +734,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         const a = document.createElement('a');
                         a.href = url;
                         const baseName = fileList[0].name.replace(/\.[^/.]+$/, "");
-                        const downloadName = selectedTool === 'compress-pdf' ? `compressed_${fileList[0].name}` : 
+                        const downloadName = selectedTool === 'compress-pdf' || selectedTool === 'video-compress' || (selectedTool === 'image-compress' && fileList.length === 1) ? `compressed_${fileList[0].name}` : 
                                            selectedTool === 'docx-to-pdf' || selectedTool === 'image-to-pdf' ? `${baseName}.pdf` :
-                                           selectedTool === 'jpg-to-png' && fileList.length > 1 ? 'images.zip' :
+                                           selectedTool === 'pdf-to-docx' ? `${baseName}.docx` :
+                                           (selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') && fileList.length > 1 ? 'images.zip' :
                                            `processed_${fileList[0].name}`;
                         a.download = downloadName;
                         document.body.appendChild(a);

@@ -1,6 +1,4 @@
-import * as pdfParseModule from 'pdf-parse';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+import { PDFParse } from 'pdf-parse';
 
 interface FindTextInPdfOptions {
   pdfBuffer: Buffer;
@@ -17,7 +15,9 @@ export async function findTextInPdf({
   pdfBuffer,
   searchText,
 }: FindTextInPdfOptions): Promise<TextSearchResult[]> {
-  const data = await pdfParse(pdfBuffer);
+  const pdfParser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+  const data = await pdfParser.getText();
+  await pdfParser.destroy();
   const results: TextSearchResult[] = [];
   const searchRegex = new RegExp(searchText, 'gi'); // Case-insensitive global search
 
