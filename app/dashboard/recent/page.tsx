@@ -2,15 +2,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
-import NotificationDropdown from '@/components/dashboard/NotificationDropdown';
-
+import DashboardHeader from '@/components/dashboard/DashboardHeader';
 export default function RecentFilesPage() {
   const { recentActivity, refreshData, unreadCount, openDrawer } = useDashboard();
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('Last 30 days');
   const [typeFilter, setTypeFilter] = useState('All Types');
   const [page, setPage] = useState(1);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -113,40 +111,13 @@ export default function RecentFilesPage() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#fbfcfd]">
-      <div className="flex justify-between items-center p-6 bg-white border-b border-[#eaedf3]">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="flex flex-col">
-            <h1 className="text-xl font-bold text-[#111827] tracking-tight">Recent Files</h1>
-            <p className="text-[11px] text-[#6b7280] font-medium">History of your processed documents</p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input 
-              type="text" 
-              value={search} 
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search history..." 
-              className="h-9 pl-9 pr-4 text-xs bg-[#f8fafc] border border-[#eaedf3] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#6366f1] w-52 text-[#374151]"
-            />
-          </div>
-          {/* Notification bell */}
-          <div className="relative">
-            <button 
-              onClick={(e) => { e.stopPropagation(); setIsNotificationsOpen(!isNotificationsOpen); }}
-              className={`relative w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${isNotificationsOpen ? 'bg-[#f0f9ff] border-[#6366f1] text-[#6366f1]' : 'bg-[#f8fafc] border-[#eaedf3] text-[#6b7280] hover:bg-[#f3f4f6]'}`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-              {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ef4444] rounded-full border border-white animate-pulse shadow-[0_0_0_2px_rgba(239,68,68,0.2)]"/>
-              )}
-            </button>
-            <NotificationDropdown isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
-          </div>
-        </div>
-      </div>
+      <DashboardHeader 
+        title="Recent Files" 
+        subtitle="History of your processed documents"
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search history..."
+      />
 
       <div className="p-6 flex flex-col flex-1 min-h-0 bg-white">
         <div className="flex items-center gap-3 mb-6">

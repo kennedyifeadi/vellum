@@ -3,16 +3,15 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useDashboard } from '@/app/dashboard/layout';
-import NotificationDropdown from './NotificationDropdown';
 import { ALL_TOOLS, Tool } from '@/lib/tools';
+import DashboardHeader from '@/components/dashboard/DashboardHeader';
 
 export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All Tools');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
-  const { openDrawer, unreadCount, user } = useDashboard();
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const { openDrawer, user } = useDashboard();
 
   // Load starred tools from DB when user is available
   useEffect(() => {
@@ -70,41 +69,13 @@ export default function ToolsLibrary() {
 
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#111827]">Tools Library</h1>
-          <p className="text-xs text-[#6b7280]">Manage, convert, and edit your files with ease.</p>
-        </div>
-        
-        {/* Search Bar */}
-        <div className="relative w-64">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search for a tool..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#eaedf3] bg-white text-xs text-[#1f2937] placeholder-[#9ca3af] focus:outline-none focus:ring-1 focus:ring-[#6366f1] focus:border-[#6366f1]"
-          />
-        </div>
-
-        {/* Notification bell */}
-        <div className="relative ml-2">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setIsNotificationsOpen(!isNotificationsOpen); }}
-            className={`relative w-10 h-10 flex items-center justify-center rounded-xl border transition-all ${isNotificationsOpen ? 'bg-[#f0f9ff] border-[#6366f1] text-[#6366f1]' : 'bg-white border-[#eaedf3] text-[#6b7280] hover:bg-[#f3f4f6]'}`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-            {unreadCount > 0 && (
-              <span className="absolute top-2 right-2 w-2 h-2 bg-[#ef4444] rounded-full border border-white animate-pulse" />
-            )}
-          </button>
-          <NotificationDropdown isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
-        </div>
-      </div>
+      <DashboardHeader 
+        title="Tools Library" 
+        subtitle="Manage, convert, and edit your files with ease."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search for a tool..."
+      />
 
       {/* Tabs / Filters */}
       <div className="flex items-center gap-2 mb-6 border-b border-[#eaedf3] pb-4">

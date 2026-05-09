@@ -48,10 +48,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const maxAllowedJpg = user?.plan === 'Pro' ? 10 : 5;
-  const maxAllowedMerge = user?.plan === 'Pro' ? 10 : 3;
-  const maxAllowedImage = user?.plan === 'Pro' ? 10 : 3;
-  const maxAllowedImageCompress = user?.plan === 'Pro' ? 20 : 5;
+  const maxAllowedJpg = user?.plan === 'Pro' ? 50 : 30;
+  const maxAllowedMerge = user?.plan === 'Pro' ? 50 : 30;
+  const maxAllowedImage = user?.plan === 'Pro' ? 50 : 30;
+  const maxAllowedImageCompress = user?.plan === 'Pro' ? 50 : 30;
 
   useEffect(() => {
     if (toolId !== prevToolId) {
@@ -106,13 +106,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       const updatedList = [...prev];
 
       for (const selectedFile of newFiles) {
-        let MAX_SIZE = 50 * 1024 * 1024;
-        
-        if (selectedTool === 'image-compress' || selectedTool === 'pdf-to-docx') {
-           MAX_SIZE = user?.plan === 'Pro' ? 100 * 1024 * 1024 : 50 * 1024 * 1024;
-        } else if (selectedTool === 'video-compress') {
-           MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
-        }
+        const MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
 
         if (selectedFile.size > MAX_SIZE) {
           if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
@@ -485,7 +479,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     <h2 className="text-sm font-bold text-[#111827]">
                       {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                     </h2>
-                    <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 50MB</p>
+                    <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
                   </div>
                 </div>
                 <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">

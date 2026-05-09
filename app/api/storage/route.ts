@@ -8,8 +8,8 @@ import mongoose from 'mongoose';
 export const dynamic = 'force-dynamic';
 
 const PLAN_LIMITS: Record<string, number> = {
-  Free: 50 * 1024 * 1024,   // 50 MB
-  Pro: 100 * 1024 * 1024,    // 100 MB
+  Free: 5 * 1024 * 1024 * 1024,   // 5 GB
+  Pro: 20 * 1024 * 1024 * 1024,   // 20 GB
 };
 
 export async function GET(req: NextRequest) {

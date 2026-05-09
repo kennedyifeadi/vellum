@@ -8,8 +8,11 @@ import PreferencesTab from '@/components/dashboard/PreferencesTab';
 import BillingTab from '@/components/dashboard/BillingTab';
 import Link from 'next/link';
 
+import DashboardHeader from '@/components/dashboard/DashboardHeader';
+
 export default function PreferencesPage() {
   const [activeTab, setActiveTab] = useState('profile');
+  const [search, setSearch] = useState('');
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg> },
@@ -43,10 +46,13 @@ export default function PreferencesPage() {
 
   return (
     <div className="flex flex-col h-full bg-[#fbfcfd]">
-      <header className="px-8 py-6 border-b border-[#eaedf3] bg-white">
-        <h1 className="text-2xl font-bold text-[#111827]">Preferences</h1>
-        <p className="text-sm text-[#6b7280] mt-1">Manage your account preferences and security.</p>
-      </header>
+      <DashboardHeader 
+        title="Preferences" 
+        subtitle="Manage your account preferences and security."
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search settings..."
+      />
 
       <div className="flex flex-1 min-h-0">
         <aside className="w-80 border-r border-[#eaedf3] bg-[#f8fafc]/50 p-6 flex flex-col justify-between">

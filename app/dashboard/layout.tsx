@@ -169,7 +169,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       addNotification({
         type: 'warning',
         title: 'Storage Warning',
-        message: `Your storage is ${Math.round(percent)}% full. Free users have a 50MB limit.`,
+        message: `Your storage is ${Math.round(percent)}% full. Free users have a 5GB limit.`,
         link: '/dashboard/documents'
       });
     }
