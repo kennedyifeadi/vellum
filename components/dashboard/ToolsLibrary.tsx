@@ -79,7 +79,7 @@ export default function ToolsLibrary() {
       />
 
       {/* Tabs / Filters */}
-      <div className="flex items-center gap-2 mb-6 py-4 px-6">
+      <div className="flex items-center gap-2 py-6 px-6">
         {categories.map((category) => (
           <button
             key={category}
