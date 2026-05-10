@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { convertHtmlToPdf } from '@/lib/html/to-pdf';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     if (contentType.includes('multipart/form-data')) {
       // File upload mode
       const formData = await req.formData();
-      const file = formData.get('html') as File | null;
+      const file = (await resolveFiles(formData, 'html'))[0] as File | null;
       if (!file) {
         return NextResponse.json({ error: 'No HTML file provided.' }, { status: 400 });
       }

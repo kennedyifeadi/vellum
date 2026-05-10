@@ -4,6 +4,24 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
+import Script from 'next/script';
+
+export interface DriveFile {
+  isDriveFile: true;
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  accessToken: string;
+}
+type VellumFile = File | DriveFile;
+
+declare global {
+  interface Window {
+    google: any;
+    gapi: any;
+  }
+}
 
 interface FindMatch {
   page: number;
@@ -44,7 +62,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-file state array
-  const [fileList, setFileList] = useState<File[]>([]);
+  const [fileList, setFileList] = useState<VellumFile[]>([]);
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -86,7 +104,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [imageCompressLevel, setImageCompressLevel] = useState<'low' | 'medium' | 'high'>('medium');
   const [videoCompressOptions, setVideoCompressOptions] = useState({ quality: 'Medium', resolution: 'Original' });
 
-  // Format File Size helper
   const formatBytes = (bytes: number, decimals = 2) => {
     if (!bytes) return '0 Bytes';
     const k = 1024;
@@ -94,6 +111,136 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  const getPickerMimeTypes = () => {
+    switch (selectedTool) {
+      case 'merge-pdf':
+      case 'split-pdf':
+      case 'lock-pdf':
+      case 'find-pdf':
+      case 'compress-pdf':
+      case 'pdf-to-docx':
+        return 'application/pdf';
+      case 'image-to-pdf':
+        return 'image/jpeg,image/png';
+      case 'jpg-to-png':
+        return 'image/jpeg';
+      case 'docx-to-pdf':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword';
+      case 'image-compress':
+        return 'image/jpeg,image/png,image/webp';
+      case 'video-compress':
+        return 'video/mp4,video/quicktime,video/x-msvideo';
+      default:
+        return 'application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4';
+    }
+  };
+
+  const createPicker = (accessToken: string) => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY!;
+    if (window.gapi && window.gapi.picker) {
+      const pickerBuilder = new window.gapi.picker.PickerBuilder()
+        .addView(new window.gapi.picker.DocsView().setMimeTypes(getPickerMimeTypes()).setIncludeFolders(true))
+        .setOAuthToken(accessToken)
+        .setDeveloperKey(apiKey)
+        .setCallback((data: any) => {
+          if (data.action === window.gapi.picker.Action.PICKED) {
+            const MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+            let errorShown = false;
+            
+            setFileList(prev => {
+              const updatedList = [...prev];
+              
+              for (const doc of data.docs) {
+                const newDriveFile: DriveFile = {
+                  isDriveFile: true,
+                  id: doc.id,
+                  name: doc.name,
+                  size: doc.sizeBytes || 1000,
+                  type: doc.mimeType,
+                  accessToken: accessToken
+                };
+
+                if (newDriveFile.size > MAX_SIZE) {
+                  if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
+                  errorShown = true;
+                  continue;
+                }
+                
+                if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
+                  if (!errorShown) showToast(`Limit reached.`, 'error');
+                  errorShown = true;
+                  break;
+                }
+                
+                if (updatedList.find(f => f.name === newDriveFile.name && f.size === newDriveFile.size)) continue;
+                
+                const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
+                if (currentTotalSize + newDriveFile.size > MAX_SIZE) {
+                  if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
+                  errorShown = true;
+                  break;
+                }
+                
+                updatedList.push(newDriveFile);
+              }
+              return updatedList;
+            });
+          }
+        });
+
+      if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool) {
+        pickerBuilder.enableFeature(window.gapi.picker.Feature.MULTISELECT_ENABLED);
+      }
+      
+      const picker = pickerBuilder.build();
+      picker.setVisible(true);
+      
+      setTimeout(() => {
+        const pickerElements = document.getElementsByClassName('picker-dialog');
+        for (let i=0; i<pickerElements.length; i++) {
+          (pickerElements[i] as HTMLElement).style.zIndex = '9999';
+        }
+        const bgElements = document.getElementsByClassName('picker-dialog-bg');
+        for (let i=0; i<bgElements.length; i++) {
+          (bgElements[i] as HTMLElement).style.zIndex = '9998';
+        }
+      }, 100);
+    } else {
+      window.gapi.load('picker', () => createPicker(accessToken));
+    }
+  };
+
+  const openGooglePicker = () => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    
+    if (!apiKey || !clientId) {
+      showToast('Google API Key or Client ID not configured.', 'error');
+      return;
+    }
+
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        callback: (response: any) => {
+          if (response.error !== undefined) {
+            throw response;
+          }
+          if (window.gapi) {
+            window.gapi.load('picker', () => createPicker(response.access_token));
+          } else {
+            showToast('Google API failed to load.', 'error');
+          }
+        },
+      });
+      tokenClient.requestAccessToken({ prompt: '' });
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to open Google Drive picker', 'error');
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -446,6 +593,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   return (
     <AnimatePresence>
+      <Script src="https://apis.google.com/js/api.js" strategy="lazyOnload" />
+      <Script src="https://accounts.google.com/gsi/client" strategy="lazyOnload" />
       {isOpen && (
         <>
           <motion.div
@@ -514,11 +663,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" />
                           </svg>
                         </div>
-                        {f.type.includes('pdf') ? (
+                        {f.type.includes('pdf') && !('isDriveFile' in f) ? (
                           selectedTool === 'split-pdf' && !splitOptions.splitEvery ? (
                             <div className="flex gap-2 w-full justify-center px-4 overflow-x-auto">
                               <PdfThumbnail 
-                                file={f} 
+                                file={f as File} 
                                 pageNumber={splitOptions.startPage} 
                                 onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} 
                               />
@@ -528,20 +677,29 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                                     <span>...</span>
                                   </div>
                                   <PdfThumbnail 
-                                    file={f} 
+                                    file={f as File} 
                                     pageNumber={splitOptions.endPage} 
                                   />
                                 </>
                               )}
                             </div>
                           ) : (
-                            <PdfThumbnail file={f} onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} />
+                            <PdfThumbnail file={f as File} onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} />
                           )
-                        ) : f.type.includes('image') ? (
-                          <ImageThumbnail file={f} />
+                        ) : f.type.includes('image') && !('isDriveFile' in f) ? (
+                          <ImageThumbnail file={f as File} />
                         ) : (
-                          <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm">
-                            📁
+                          <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm flex-col gap-3">
+                            {'isDriveFile' in f ? (
+                              <>
+                                <svg className="w-12 h-12 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
+                                </svg>
+                                <span className="text-[11px] font-bold text-[#64748b]">Google Drive File</span>
+                              </>
+                            ) : (
+                              <div className="text-6xl">📁</div>
+                            )}
                           </div>
                         )}
                         <div className="w-full text-center flex flex-col items-center">
@@ -561,33 +719,55 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                   </Reorder.Group>
 
                   {(selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'compress-pdf') && (
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#6366f1] hover:bg-[#6366f1]/5 transition-all mt-1"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                      Add more files
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#6366f1] hover:bg-[#6366f1]/5 transition-all mt-1"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Add more files
+                      </button>
+                      <button 
+                        onClick={() => openGooglePicker()}
+                        className="flex-1 h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#4b5563] hover:bg-[#f8fafc] transition-all mt-1"
+                      >
+                        <svg className="w-3.5 h-3.5 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
+                        </svg>
+                        Drive
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
 
               {fileList.length === 0 && !(selectedTool === 'html-to-pdf' && htmlOptions.mode === 'url') && (
-                <div 
-                  className="border-2 border-dashed border-[#eaedf3] rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#6366f1] hover:bg-[#6366f1]/5 transition-all group"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <div className="w-10 h-10 bg-[#f8fafc] group-hover:bg-white rounded-xl flex items-center justify-center text-[#6366f1] border border-[#eaedf3] shadow-sm transition-colors">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                <div className="space-y-2">
+                  <div 
+                    className="border-2 border-dashed border-[#eaedf3] rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#6366f1] hover:bg-[#6366f1]/5 transition-all group"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <div className="w-10 h-10 bg-[#f8fafc] group-hover:bg-white rounded-xl flex items-center justify-center text-[#6366f1] border border-[#eaedf3] shadow-sm transition-colors">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-semibold text-[#111827]">Upload File</p>
+                      <p className="text-[10px] text-[#6b7280] mt-0.5">Select from device or drop here</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => openGooglePicker()}
+                    className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
                     </svg>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs font-semibold text-[#111827]">Upload File</p>
-                    <p className="text-[10px] text-[#6b7280] mt-0.5">Select from device or drop here</p>
-                  </div>
+                    Browse Google Drive
+                  </button>
                 </div>
               )}
 
@@ -679,7 +859,17 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       else if (selectedTool === 'compress-pdf' || selectedTool === 'find-pdf' || selectedTool === 'pdf-to-docx') fileKey = 'pdf';
                       else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
 
-                      fileList.forEach(file => formData.append(fileKey, file));
+                      fileList.forEach(file => {
+                        if ('isDriveFile' in file) {
+                          formData.append('googleDriveFiles', JSON.stringify({
+                            id: file.id,
+                            accessToken: file.accessToken,
+                            name: file.name
+                          }));
+                        } else {
+                          formData.append(fileKey, file);
+                        }
+                      });
                       
                       if (selectedTool === 'find-pdf') {
                         formData.append('searchTerm', findOptions.searchTerm);
@@ -779,7 +969,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
-                      formData.append('pdf', fileList[0]);
+                      if ('isDriveFile' in fileList[0]) {
+                        formData.append('googleDriveFiles', JSON.stringify({
+                          id: fileList[0].id,
+                          accessToken: fileList[0].accessToken,
+                          name: fileList[0].name
+                        }));
+                      } else {
+                        formData.append('pdf', fileList[0]);
+                      }
                       formData.append('password', lockOptions.password);
                       
                       const response = await fetch('/api/convert/lock-pdf', {
@@ -822,7 +1020,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     setIsProcessing(true);
                     try {
                       const formData = new FormData();
-                      formData.append('pdf', fileList[0]);
+                      if ('isDriveFile' in fileList[0]) {
+                        formData.append('googleDriveFiles', JSON.stringify({
+                          id: fileList[0].id,
+                          accessToken: fileList[0].accessToken,
+                          name: fileList[0].name
+                        }));
+                      } else {
+                        formData.append('pdf', fileList[0]);
+                      }
                       formData.append('startPage', splitOptions.startPage.toString());
                       formData.append('endPage', splitOptions.endPage.toString());
                       formData.append('splitEvery', splitOptions.splitEvery.toString());
@@ -871,7 +1077,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         });
                       } else {
                         const formData = new FormData();
-                        formData.append('html', fileList[0]);
+                        if ('isDriveFile' in fileList[0]) {
+                          formData.append('googleDriveFiles', JSON.stringify({
+                            id: fileList[0].id,
+                            accessToken: fileList[0].accessToken,
+                            name: fileList[0].name
+                          }));
+                        } else {
+                          formData.append('html', fileList[0]);
+                        }
                         response = await fetch('/api/convert/html-to-pdf', {
                           method: 'POST',
                           body: formData,

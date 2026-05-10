@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mergePdfs } from '@/lib/pdf/merge';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const files = formData.getAll('pdfs') as File[];
+    const files = await resolveFiles(formData, 'pdfs');
 
     if (!files || files.length < 2) {
       return NextResponse.json({ error: 'Please provide at least two PDF files to merge.' }, { status: 400 });

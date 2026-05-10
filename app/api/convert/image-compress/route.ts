@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const images = formData.getAll('images') as File[];
+    const images = await resolveFiles(formData, 'images');
     const level = formData.get('level') as string || 'medium';
 
     if (!images || images.length === 0) {

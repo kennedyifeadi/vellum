@@ -8,6 +8,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import path from 'path';
 import fs from 'fs';
 import { tmpdir } from 'os';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 // Setup ffmpeg path
 if (ffmpegStatic) {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const video = formData.get('video') as File;
+    const video = (await resolveFiles(formData, 'video'))[0] as File;
     const quality = formData.get('quality') as string || 'Medium';
     const resolution = formData.get('resolution') as string || 'Original';
 

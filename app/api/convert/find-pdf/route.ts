@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
@@ -25,9 +26,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const formData = await Object.fromEntries(await req.formData());
-    const file = formData.pdf as File;
-    const searchTerm = (formData.searchTerm as string)?.toLowerCase();
+    const formData = await req.formData();
+    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    const searchTerm = (formData.get('searchTerm') as string)?.toLowerCase();
 
     if (!file || !searchTerm) {
       return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });

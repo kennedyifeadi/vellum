@@ -3,11 +3,13 @@ import { splitPdf } from '@/lib/pdf/split';
 import JSZip from 'jszip';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
+import { saveConversionRecord } from '@/lib/conversions';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get('pdf') as File;
+    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
     const startPage = parseInt(formData.get('startPage') as string, 10) || 1;
     const endPage = parseInt(formData.get('endPage') as string, 10) || 1;
     const splitEvery = formData.get('splitEvery') === 'true';

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const file = formData.get('pdf') as File;
+    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });

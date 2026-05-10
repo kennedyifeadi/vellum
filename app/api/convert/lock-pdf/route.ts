@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { lockPdf } from '@/lib/pdf/lock';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get('pdf') as File;
+    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
     const password = formData.get('password') as string;
 
     if (!file || !password) {

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { compressPdf } from '@/lib/pdf/compress';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get('pdf') as File;
-    const level = (formData.get('level') as 'low' | 'medium' | 'high') || 'medium';
+    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    const level = formData.get('level') as 'low' | 'medium' | 'high' || 'medium';
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });

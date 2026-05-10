@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const files = formData.getAll('images') as File[];
+    const files = await resolveFiles(formData, 'images');
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No image files provided.' }, { status: 400 });
