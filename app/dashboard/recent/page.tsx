@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import ToolIcon from '@/components/shared/ToolIcon';
+import { ALL_TOOLS } from '@/lib/tools';
 
 export default function RecentFilesPage() {
   const { recentActivity, refreshData, unreadCount, openDrawer } = useDashboard();
@@ -32,7 +33,12 @@ export default function RecentFilesPage() {
     if (days) result = result.filter(f => nowMs - new Date(f.createdAt).getTime() < days * 86400000);
 
     // Type filter
-    if (typeFilter !== 'All Types') result = result.filter(f => f.toolUsed === typeFilter);
+    if (typeFilter !== 'All Types') {
+      result = result.filter(f => {
+        const tool = ALL_TOOLS.find(t => t.title === f.toolUsed);
+        return tool?.categories?.includes(typeFilter);
+      });
+    }
 
     // Search filter
     if (search) {
@@ -71,18 +77,23 @@ export default function RecentFilesPage() {
 
       <div className="p-6 flex flex-col flex-1 min-h-0 bg-white">
         <div className="flex items-center gap-3 mb-6">
-          <div className="flex flex-wrap items-center gap-2 bg-[#f8fafc] p-1 rounded-lg border border-[#eaedf3]">
-            {['All Tools', 'Merge PDF', 'Split PDF', 'Image to PDF', 'Lock PDF', 'JPEG to PNG', 'Find in PDF', 'DOCX to PDF', 'Compress PDF'].map((type) => (
-              <button
-                key={type}
-                onClick={() => { setTypeFilter(type === 'All Tools' ? 'All Types' : type); setPage(1); }}
-                className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${
-                  (type === 'All Tools' ? typeFilter === 'All Types' : typeFilter === type) ? 'bg-white text-[#6366f1] shadow-sm' : 'text-[#6b7280] hover:text-[#374151]'
-                }`}
-              >
-                {type}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {['All Tools', 'PDF', 'Images', 'Documents', 'Security'].map((type) => {
+              const isActive = type === 'All Tools' ? typeFilter === 'All Types' : typeFilter === type;
+              return (
+                <button
+                  key={type}
+                  onClick={() => { setTypeFilter(type === 'All Tools' ? 'All Types' : type); setPage(1); }}
+                  className={`h-8 px-4 rounded-full text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-[#6366f1] text-white'
+                      : 'bg-white text-[#4b5563] border border-[#eaedf3] hover:bg-[#f3f4f6]'
+                  }`}
+                >
+                  {type}
+                </button>
+              );
+            })}
           </div>
           
           <select 
