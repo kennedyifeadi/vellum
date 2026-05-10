@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useDashboard } from '@/app/dashboard/layout';
-import { ALL_TOOLS, Tool } from '@/lib/tools';
+import { ALL_TOOLS } from '@/lib/tools';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import ToolIcon from '@/components/shared/ToolIcon';
 
 export default function ToolsLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -140,9 +141,11 @@ export default function ToolsLibrary() {
               </svg>
             </div>
 
-            <div className={`w-10 h-10 ${tool.bgColor} ${tool.iconColor} rounded-xl flex items-center justify-center text-lg`}>
-              {tool.icon}
-            </div>
+            <ToolIcon 
+              toolName={tool.title} 
+              containerClassName="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" 
+              iconClassName="w-5 h-5" 
+            />
             <div>
               <p className="text-sm font-bold text-[#111827]">{tool.title}</p>
               <p className="text-xs text-[#6b7280] mt-1 leading-normal">{tool.desc}</p>

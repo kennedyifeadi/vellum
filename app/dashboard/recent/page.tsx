@@ -3,6 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import ToolIcon from '@/components/shared/ToolIcon';
+
 export default function RecentFilesPage() {
   const { recentActivity, refreshData, unreadCount, openDrawer } = useDashboard();
   const [search, setSearch] = useState('');
@@ -55,58 +57,6 @@ export default function RecentFilesPage() {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     return `${diffDays} days ago`;
-  };
-
-  const getToolIcon = (tool: string) => {
-    const toolMap: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
-      'Merge PDF': {
-        bg: 'bg-[#dbeafe]', color: 'text-[#2563eb]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-      },
-      'Split PDF': {
-        bg: 'bg-[#fce7f3]', color: 'text-[#db2777]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-      },
-      'Lock PDF': {
-        bg: 'bg-[#d1fae5]', color: 'text-[#059669]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-      },
-      'Image to PDF': {
-        bg: 'bg-[#ffedd5]', color: 'text-[#ea580c]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      },
-      'HTML to PDF': {
-        bg: 'bg-[#f3e8ff]', color: 'text-[#9333ea]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-      },
-      'JPEG to PNG': {
-        bg: 'bg-[#fff7ed]', color: 'text-[#f97316]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      },
-      'Find in PDF': {
-        bg: 'bg-[#fee2e2]', color: 'text-[#ef4444]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-      },
-      'DOCX to PDF': {
-        bg: 'bg-[#e0e7ff]', color: 'text-[#4f46e5]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      },
-      'Compress PDF': {
-        bg: 'bg-[#e0e7ff]', color: 'text-[#4f46e5]',
-        icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 14l8-8 8 8m-8-8v12"/></svg>
-      },
-    };
-
-    const config = toolMap[tool] ?? {
-      bg: 'bg-[#f3f4f6]', color: 'text-[#6b7280]',
-      icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-    };
-
-    return (
-      <div className={`w-8 h-8 rounded-lg flex shrink-0 items-center justify-center ${config.bg} ${config.color}`}>
-        {config.icon}
-      </div>
-    );
   };
 
   return (
@@ -171,7 +121,7 @@ export default function RecentFilesPage() {
               paginatedActivity.map((file) => (
                 <div key={file._id} className="h-16 px-6 flex items-center border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors group">
                   <div className="w-[40%] pr-4 font-bold flex items-center gap-3 text-[#111827] text-xs">
-                    {getToolIcon(file.toolUsed)}
+                    <ToolIcon toolName={file.toolUsed} />
                     <span className="truncate group-hover:text-[#6366f1] transition-colors">{file.fileName}</span>
                   </div>
                   <div className="w-[20%] text-[#6b7280] text-[11px] font-medium truncate pr-4">{file.toolUsed}</div>

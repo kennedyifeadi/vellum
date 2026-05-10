@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useDashboard } from '@/app/dashboard/layout';
 import Link from 'next/link';
 import { ALL_TOOLS, Tool } from '@/lib/tools';
+import ToolIcon from '@/components/shared/ToolIcon';
 
 export default function QuickTools() {
   const { openDrawer, user } = useDashboard();
@@ -24,7 +25,6 @@ export default function QuickTools() {
       .then(r => r.ok ? r.json() : null)
       .then(data => buildDisplay(data?.starredTools ?? []))
       .catch(() => buildDisplay([]));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?._id]);
 
   // Listen for live updates from Tools Library (same tab)
@@ -35,7 +35,6 @@ export default function QuickTools() {
     };
     window.addEventListener('starredToolsUpdated', onUpdate);
     return () => window.removeEventListener('starredToolsUpdated', onUpdate);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleToolClick = (id: string) => {
@@ -59,9 +58,11 @@ export default function QuickTools() {
             whileHover={{ y: -4, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
             className="bg-white border border-[#edf1f7] rounded-xl p-4 flex flex-col items-start gap-2 hover:border-[#e0e7ff] text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)]"
           >
-            <div className={`w-9 h-9 ${tool.color} rounded-lg flex items-center justify-center text-lg`}>
-              {tool.icon}
-            </div>
+            <ToolIcon 
+              toolName={tool.title} 
+              containerClassName="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0" 
+              iconClassName="w-4.5 h-4.5" 
+            />
             <div>
               <p className="text-xs font-bold text-[#111827]">{tool.title}</p>
               <p className="text-[10px] text-[#6b7280] mt-0.5 leading-tight">{tool.desc}</p>
