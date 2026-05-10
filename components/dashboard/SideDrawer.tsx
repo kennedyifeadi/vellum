@@ -37,6 +37,7 @@ type SideDrawerProps = {
   onClose: () => void;
   file: File | null;
   toolId: string | null;
+  options?: { startWithGooglePicker?: boolean };
 };
 
 // Define available tools for dropdown selection (General Layout)
@@ -55,7 +56,7 @@ const availableTools = [
   { id: 'pdf-to-docx', name: 'PDF to DOCX', color: 'bg-[#EFF6FF] text-[#2563eb]' },
 ];
 
-export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
+export default function SideDrawer({ isOpen, onClose, file, toolId, options }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
   const { showToast, addNotification, user } = useDashboard();
@@ -138,14 +139,21 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   };
 
   const createPicker = (accessToken: string) => {
+    console.log('[GooglePicker] createPicker started. Access Token received.');
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY!;
-    if (window.gapi && window.gapi.picker) {
-      const pickerBuilder = new window.gapi.picker.PickerBuilder()
-        .addView(new window.gapi.picker.DocsView().setMimeTypes(getPickerMimeTypes()).setIncludeFolders(true))
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
+    const appId = clientId.split('-')[0];
+
+    if (window.google && window.google.picker && window.google.picker.PickerBuilder) {
+      console.log('[GooglePicker] PickerBuilder is available. Building picker...');
+      const pickerBuilder = new window.google.picker.PickerBuilder()
+        .addView(new window.google.picker.DocsView().setMimeTypes(getPickerMimeTypes()).setIncludeFolders(true))
         .setOAuthToken(accessToken)
         .setDeveloperKey(apiKey)
+        .setAppId(appId)
         .setCallback((data: any) => {
-          if (data.action === window.gapi.picker.Action.PICKED) {
+          console.log('[GooglePicker] Picker Callback Event:', data.action, data);
+          if (data.action === window.google.picker.Action.PICKED) {
             const MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
             let errorShown = false;
             
@@ -191,10 +199,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         });
 
       if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool) {
-        pickerBuilder.enableFeature(window.gapi.picker.Feature.MULTISELECT_ENABLED);
+        pickerBuilder.enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED);
       }
       
+      
+      console.log('[GooglePicker] Building picker...');
       const picker = pickerBuilder.build();
+      console.log('[GooglePicker] Setting picker visible...');
       picker.setVisible(true);
       
       setTimeout(() => {
@@ -208,37 +219,46 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         }
       }, 100);
     } else {
-      window.gapi.load('picker', () => createPicker(accessToken));
+      console.log('[GooglePicker] window.google.picker.PickerBuilder not found. Loading picker module...');
+      window.gapi.load('picker', { callback: () => createPicker(accessToken) });
     }
   };
 
   const openGooglePicker = () => {
+    console.log('[GooglePicker] openGooglePicker clicked');
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     
     if (!apiKey || !clientId) {
+      console.error('[GooglePicker] Missing API Key or Client ID', { apiKey: !!apiKey, clientId: !!clientId });
       showToast('Google API Key or Client ID not configured.', 'error');
       return;
     }
 
     try {
+      console.log('[GooglePicker] Initializing tokenClient...');
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.readonly',
         callback: (response: any) => {
+          console.log('[GooglePicker] tokenClient Callback received:', response);
           if (response.error !== undefined) {
+            console.error('[GooglePicker] Error from tokenClient:', response);
             throw response;
           }
           if (window.gapi) {
-            window.gapi.load('picker', () => createPicker(response.access_token));
+            console.log('[GooglePicker] Token successful. Loading gapi picker...');
+            window.gapi.load('picker', { callback: () => createPicker(response.access_token) });
           } else {
+            console.error('[GooglePicker] window.gapi is not defined');
             showToast('Google API failed to load.', 'error');
           }
         },
       });
+      console.log('[GooglePicker] Requesting Access Token...');
       tokenClient.requestAccessToken({ prompt: '' });
     } catch (e) {
-      console.error(e);
+      console.error('[GooglePicker] Failed to open Google Drive picker', e);
       showToast('Failed to open Google Drive picker', 'error');
     }
   };
@@ -592,12 +612,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   };
 
   return (
-    <AnimatePresence>
+    <>
       <Script src="https://apis.google.com/js/api.js" strategy="lazyOnload" />
       <Script src="https://accounts.google.com/gsi/client" strategy="lazyOnload" />
-      {isOpen && (
-        <>
-          <motion.div
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.25 }}
             exit={{ opacity: 0 }}
@@ -654,7 +675,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                   <Reorder.Group axis="y" values={fileList} onReorder={setFileList} className="space-y-2">
                     {fileList.map((f, index) => (
                       <Reorder.Item 
-                        key={`${f.name}-${f.size}`} 
+                        key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${f.lastModified}`} 
                         value={f} 
                         className="bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-4 flex flex-col items-center gap-4 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
                       >
@@ -692,8 +713,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                           <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm flex-col gap-3">
                             {'isDriveFile' in f ? (
                               <>
-                                <svg className="w-12 h-12 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
+                                <svg className="w-12 h-12" viewBox="0 0 87.3 78">
+                                  <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+                                  <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+                                  <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
                                 </svg>
                                 <span className="text-[11px] font-bold text-[#64748b]">Google Drive File</span>
                               </>
@@ -733,8 +756,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         onClick={() => openGooglePicker()}
                         className="flex-1 h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#4b5563] hover:bg-[#f8fafc] transition-all mt-1"
                       >
-                        <svg className="w-3.5 h-3.5 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 87.3 78">
+                          <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+                          <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+                          <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
                         </svg>
                         Drive
                       </button>
@@ -763,8 +788,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     onClick={() => openGooglePicker()}
                     className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
                   >
-                    <svg className="w-4 h-4 text-[#ea4335]" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12.01 2.505l-5.61 9.775L2.8 5.485A1.996 1.996 0 014.525 2.5h14.97c-.645 0-1.25.17-1.785.48L12.01 2.505zM21.2 5.485l-5.61 9.775 3.6 6.225a1.995 1.995 0 001.61-3.03l-7.2-12.47 7.6 9.5zm-14.8 16.01L2.8 15.27A1.996 1.996 0 004.525 21.5h14.95l-3.6-6.225H6.4z"/>
+                    <svg className="w-4 h-4" viewBox="0 0 87.3 78">
+                      <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+                      <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+                      <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
                     </svg>
                     Browse Google Drive
                   </button>
@@ -1149,6 +1176,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+      </AnimatePresence>
+    </>
   );
 }

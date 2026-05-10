@@ -10,6 +10,11 @@ export default function DragAndDrop() {
     fileInputRef.current?.click();
   };
 
+  const handleDriveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    openDrawer(null, null, { startWithGooglePicker: true });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -49,10 +54,21 @@ export default function DragAndDrop() {
       <p className="text-sm font-semibold text-[#111827]">Drag & Drop files here</p>
       <p className="text-[11px] text-[#6b7280]">Support for PDF, DOCX, JPG, PNG and more. Max file size 100MB.</p>
       <div className="flex gap-2 mt-2">
-        <button className="h-8 px-4 bg-[#6366f1] text-white text-xs font-medium rounded-lg shadow-sm shadow-[#6366f1]/20 hover:bg-[#4f46e5] transition-colors pointer-events-none">
+        <button 
+          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+          className="h-8 px-4 bg-[#6366f1] text-white text-xs font-medium rounded-lg shadow-sm shadow-[#6366f1]/20 hover:bg-[#4f46e5] transition-colors"
+        >
           + Upload File
         </button>
-        <button className="h-8 px-4 border border-[#e2e8f0] bg-white text-xs font-medium rounded-lg hover:bg-[#f9fafb] transition-colors pointer-events-none">
+        <button 
+          onClick={handleDriveClick}
+          className="h-8 px-4 border border-[#e2e8f0] bg-white text-xs font-medium rounded-lg hover:bg-[#f9fafb] transition-colors flex items-center gap-1.5"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 87.3 78">
+            <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+            <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+            <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
+          </svg>
           Browse Drive
         </button>
       </div>

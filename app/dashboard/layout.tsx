@@ -22,7 +22,7 @@ const DashboardContext = createContext<{
   recentActivity: any[];
   storage: { usedBytes: number; limitBytes: number; plan: string } | null;
   refreshData: (type?: 'all' | 'documents' | 'activity' | 'storage' | 'user') => Promise<void>;
-  openDrawer: (file: File | null, toolId: string | null) => void;
+  openDrawer: (file: File | null, toolId: string | null, options?: { startWithGooglePicker?: boolean }) => void;
   closeDrawer: () => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   notifications: AppNotification[];
@@ -63,6 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
+  const [drawerOptions, setDrawerOptions] = useState<{ startWithGooglePicker?: boolean }>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const addNotification = (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
@@ -186,9 +187,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   };
 
-  const openDrawer = (file: File | null, toolId: string | null) => {
+  const openDrawer = (file: File | null, toolId: string | null, options?: { startWithGooglePicker?: boolean }) => {
     setSelectedFile(file);
     setActiveToolId(toolId);
+    setDrawerOptions(options || {});
     setIsDrawerOpen(true);
   };
 
@@ -240,6 +242,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onClose={closeDrawer} 
           file={selectedFile} 
           toolId={activeToolId} 
+          options={drawerOptions}
         />
 
         {/* Global Toast */}
