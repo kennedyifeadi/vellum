@@ -69,7 +69,7 @@ export default function ToolsLibrary() {
   });
 
   return (
-    <div className="flex flex-col h-full bg-[#f8fafc] p-6">
+    <div className="flex flex-col h-full bg-white">
       <DashboardHeader 
         title="Tools Library" 
         subtitle="Manage, convert, and edit your files with ease."
@@ -79,7 +79,7 @@ export default function ToolsLibrary() {
       />
 
       {/* Tabs / Filters */}
-      <div className="flex items-center gap-2 mb-6 border-b border-[#eaedf3] pb-4">
+      <div className="flex items-center gap-2 mb-6 py-4 px-6">
         {categories.map((category) => (
           <button
             key={category}
@@ -96,7 +96,7 @@ export default function ToolsLibrary() {
       </div>
 
       {/* Available Tools Header with View Toggle */}
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 px-6">
         <p className="font-bold text-xs text-[#9ca3af] uppercase tracking-wider">Available Tools</p>
         <div className="flex items-center gap-1">
           <button 
@@ -119,7 +119,7 @@ export default function ToolsLibrary() {
       </div>
 
       {/* Tools Grid / List */}
-      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-4 overflow-y-auto pr-2`}>
+      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-4 overflow-y-auto px-6`}>
         {filteredTools.map((tool) => (
           <motion.button
             key={tool.id}

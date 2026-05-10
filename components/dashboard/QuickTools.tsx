@@ -7,15 +7,23 @@ import Link from 'next/link';
 import { ALL_TOOLS, Tool } from '@/lib/tools';
 import ToolIcon from '@/components/shared/ToolIcon';
 
+let stableShuffledIds: string[] | null = null;
+
 export default function QuickTools() {
   const { openDrawer, user } = useDashboard();
   const [displayTools, setDisplayTools] = useState<Tool[]>([]);
 
   const buildDisplay = (starredIds: string[]) => {
+    if (!stableShuffledIds) {
+      stableShuffledIds = ALL_TOOLS.map(t => t.id).sort(() => Math.random() - 0.5);
+    }
+
     const starred = ALL_TOOLS.filter(t => starredIds.includes(t.id));
-    const unstarred = ALL_TOOLS.filter(t => !starredIds.includes(t.id));
-    const shuffled = [...unstarred].sort(() => Math.random() - 0.5);
-    setDisplayTools([...starred, ...shuffled].slice(0, 5));
+    const unstarred = stableShuffledIds
+      .map(id => ALL_TOOLS.find(t => t.id === id)!)
+      .filter(t => t && !starredIds.includes(t.id));
+      
+    setDisplayTools([...starred, ...unstarred].slice(0, 5));
   };
 
   // Load from DB on mount when user is known
