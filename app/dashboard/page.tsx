@@ -4,7 +4,7 @@ import DragAndDrop from "@/components/dashboard/DragAndDrop";
 import QuickTools from "@/components/dashboard/QuickTools";
 import ActivityTable from "@/components/dashboard/ActivityTable";
 import { useDashboard } from "./layout";
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 export default function DashboardPage() {

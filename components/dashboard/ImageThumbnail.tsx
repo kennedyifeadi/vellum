@@ -24,7 +24,7 @@ export default function ImageThumbnail({ file }: ImageThumbnailProps) {
   }, [file]);
 
   return (
-    <div className="w-[260px] max-w-full bg-white rounded-xl border border-[#e2e8f0] overflow-hidden shrink-0 flex items-center justify-center relative shadow-md aspect-3/4">
+    <div className="w-[140px] max-w-full bg-white rounded-xl border border-[#e2e8f0] overflow-hidden shrink-0 flex items-center justify-center relative shadow-md aspect-square">
       {fileUrl ? (
         <img 
           src={fileUrl} 

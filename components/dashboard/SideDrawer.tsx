@@ -67,6 +67,39 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Resizable drawer state
+  const [drawerWidth, setDrawerWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
+  const minWidth = 400;
+  const maxWidth = 1000;
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handlePointerMove = (e: PointerEvent) => {
+      // Prevent text selection while dragging
+      e.preventDefault();
+      const newWidth = window.innerWidth - e.clientX - 16; // 16px for the right-4 margin
+      setDrawerWidth(Math.min(Math.max(newWidth, minWidth), maxWidth));
+    };
+    const handlePointerUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+    
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+  }, [isResizing]);
+
   const maxAllowedJpg = user?.plan === 'Pro' ? 50 : 30;
   const maxAllowedMerge = user?.plan === 'Pro' ? 50 : 30;
   const maxAllowedImage = user?.plan === 'Pro' ? 50 : 30;
@@ -631,9 +664,21 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-            className="absolute top-4 right-4 bottom-4 w-[400px] bg-white z-50 shadow-[-8px_0_24px_-10px_rgba(0,0,0,0.08)] flex flex-col rounded-l-3xl overflow-hidden border border-[#eaedf3]"
+            style={{ width: `${drawerWidth}px` }}
+            className="absolute top-4 right-4 bottom-4 bg-white z-50 shadow-[-8px_0_24px_-10px_rgba(0,0,0,0.08)] flex flex-col rounded-l-3xl border border-[#eaedf3]"
           >
-            <div className={`p-5 border-b border-[#eaedf3] ${
+            {/* Drag Handle */}
+            <div 
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setIsResizing(true);
+              }}
+              className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize hover:bg-[#6366f1]/10 flex items-center justify-center group z-50 transition-colors"
+            >
+              <div className="w-1 h-12 bg-[#cbd5e1] rounded-full group-hover:bg-[#6366f1]/50 transition-colors" />
+            </div>
+
+            <div className={`p-5 border-b border-[#eaedf3] pl-8 rounded-tl-3xl ${
               currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
             }`}>
               <div className="flex justify-between items-center">
@@ -660,7 +705,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
               </div>
             </div>
 
-            <div className="flex-1 p-5 overflow-y-auto space-y-5">
+            <div className="flex-1 p-5 pl-8 overflow-y-auto space-y-5">
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -672,14 +717,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
               {fileList.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
-                  <Reorder.Group axis="y" values={fileList} onReorder={setFileList} className="space-y-2">
+                  <Reorder.Group values={fileList} onReorder={setFileList} className="flex flex-wrap justify-center gap-4">
                     {fileList.map((f, index) => (
                       <Reorder.Item 
                         key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${f.lastModified}`} 
                         value={f} 
-                        className="bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-4 flex flex-col items-center gap-4 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
+                        className="w-[220px] max-w-full bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-3 flex flex-col items-center gap-2.5 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
                       >
-                        <div className="absolute top-3 left-3 w-7 h-7 rounded-lg bg-white/70 flex items-center justify-center text-[#94a3b8] opacity-0 group-hover:opacity-100 transition-opacity border border-[#e2e8f0] shadow-sm pointer-events-none">
+                        <div className="absolute top-2 left-2 w-6 h-6 rounded-lg bg-white/70 flex items-center justify-center text-[#94a3b8] opacity-0 group-hover:opacity-100 transition-opacity border border-[#e2e8f0] shadow-sm pointer-events-none">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" />
                           </svg>
@@ -710,10 +755,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                         ) : f.type.includes('image') && !('isDriveFile' in f) ? (
                           <ImageThumbnail file={f as File} />
                         ) : (
-                          <div className="w-[240px] aspect-3/4 max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-6xl shadow-sm flex-col gap-3">
+                          <div className="w-[140px] aspect-square max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-5xl shadow-sm flex-col gap-2">
                             {'isDriveFile' in f ? (
                               <>
-                                <svg className="w-12 h-12" viewBox="0 0 87.3 78">
+                                <svg className="w-10 h-10" viewBox="0 0 87.3 78">
                                   <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
                                   <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
                                   <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
@@ -721,7 +766,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                                 <span className="text-[11px] font-bold text-[#64748b]">Google Drive File</span>
                               </>
                             ) : (
-                              <div className="text-6xl">📁</div>
+                              <div className="text-5xl">📁</div>
                             )}
                           </div>
                         )}
@@ -871,7 +916,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
               )}
             </div>
 
-            <div className="p-5 border-t border-[#eaedf3] space-y-3">
+            <div className="p-5 pl-8 border-t border-[#eaedf3] bg-white rounded-bl-3xl space-y-3">
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {

@@ -32,7 +32,7 @@ export default function PdfThumbnail({ file, pageNumber = 1, onLoadSuccess }: Pd
   }, [file]);
 
   return (
-    <div className="w-[260px] max-w-full bg-white rounded-xl border border-[#e2e8f0] overflow-hidden shrink-0 flex flex-col items-center justify-center relative shadow-md">
+    <div className="w-[140px] max-w-full bg-white rounded-xl border border-[#e2e8f0] overflow-hidden shrink-0 flex flex-col items-center justify-center relative shadow-md">
       <div className="pointer-events-none w-full flex justify-center">
         {fileUrl ? (
           <Document
@@ -40,26 +40,26 @@ export default function PdfThumbnail({ file, pageNumber = 1, onLoadSuccess }: Pd
             onLoadSuccess={onLoadSuccess}
             className="flex justify-center w-full"
             loading={
-              <div className="w-full aspect-3/4 flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
+              <div className="w-full aspect-square flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
                 Loading preview...
               </div>
             }
             error={
-              <div className="w-full aspect-3/4 flex items-center justify-center text-xs text-[#ef4444] font-medium bg-[#fef2f2]">
+              <div className="w-full aspect-square flex items-center justify-center text-xs text-[#ef4444] font-medium bg-[#fef2f2]">
                 Preview Error
               </div>
             }
           >
             <Page 
               pageNumber={pageNumber} 
-              width={260} 
+              width={140} 
               renderTextLayer={false} 
               renderAnnotationLayer={false}
               className="transition-opacity duration-300 shadow-sm"
             />
           </Document>
         ) : (
-          <div className="w-full aspect-3/4 flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
+          <div className="w-full aspect-square flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
             Loading preview...
           </div>
         )}
