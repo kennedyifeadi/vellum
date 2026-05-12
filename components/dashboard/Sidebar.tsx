@@ -3,18 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Sidebar({
   user,
   onSignOut,
+  mobileOpen,
+  setMobileOpen,
 }: {
   user: any;
   onSignOut: () => Promise<void>;
+  mobileOpen: boolean;
+  setMobileOpen: (v: boolean) => void;
 }) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const menuItems = [
     {
@@ -243,28 +245,6 @@ export default function Sidebar({
           </button>
         </div>
       </aside>
-
-      {/* ── MOBILE HAMBURGER BUTTON (visible only on mobile) ── */}
-      {/* This is rendered inside the main layout header area — injected via layout.tsx */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-50 w-10 h-10 bg-white border border-[#eaedf3] rounded-xl shadow-sm flex items-center justify-center text-[#4b5563]"
-        aria-label="Open menu"
-      >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M4 6h16M4 12h16M4 18h16"
-          />
-        </svg>
-      </button>
 
       {/* ── MOBILE OVERLAY MENU ── */}
       <AnimatePresence>

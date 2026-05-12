@@ -19,21 +19,34 @@ export default function DashboardHeader({
   onSearchChange,
   searchPlaceholder = 'Search...'
 }: DashboardHeaderProps) {
-  const { unreadCount } = useDashboard();
+  const { unreadCount, openMobileNav } = useDashboard();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <div className="px-4 md:px-6 py-4 md:py-5 bg-white border-b border-[#eaedf3] flex flex-col gap-3 shrink-0">
-      {/* Top row: title + actions */}
+      {/* Top row: hamburger (mobile only) + title + actions */}
       <div className="flex justify-between items-center">
-        <div className="flex flex-col min-w-0 pl-8 md:pl-0">
-          {typeof title === 'string' ? (
-            <h1 className="text-lg md:text-xl font-bold text-[#111827] tracking-tight truncate">{title}</h1>
-          ) : (
-            title
-          )}
-          {subtitle && <p className="text-[10px] md:text-[11px] text-[#6b7280] font-medium">{subtitle}</p>}
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Hamburger — mobile only, inline with title */}
+          <button
+            onClick={openMobileNav}
+            className="md:hidden w-9 h-9 flex items-center justify-center rounded-xl bg-[#f8fafc] border border-[#eaedf3] text-[#4b5563] shrink-0"
+            aria-label="Open menu"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <div className="flex flex-col min-w-0">
+            {typeof title === 'string' ? (
+              <h1 className="text-lg md:text-xl font-bold text-[#111827] tracking-tight truncate">{title}</h1>
+            ) : (
+              title
+            )}
+            {subtitle && <p className="text-[10px] md:text-[11px] text-[#6b7280] font-medium">{subtitle}</p>}
+          </div>
         </div>
         
         <div className="flex items-center gap-2">

@@ -3,7 +3,17 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Prevent Next.js from trying to bundle Puppeteer & Chromium.
   // This is the App Router way to exclude large server-only packages.
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', 'pdfjs-dist', 'ffmpeg-static', 'fluent-ffmpeg'],
+  serverExternalPackages: [
+    'puppeteer', 'puppeteer-core',
+    'pdfjs-dist',
+    'ffmpeg-static', 'fluent-ffmpeg',
+    'sharp',
+    'mongoose',
+    '@getbrevo/brevo',
+    'nodemailer',
+    'pdf-lib',
+    'pdf-parse',
+  ],
   // Required to suppress "webpack config with Turbopack" error in Next.js 16
   turbopack: {},
 };

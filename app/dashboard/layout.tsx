@@ -29,6 +29,10 @@ const DashboardContext = createContext<{
   addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => void;
   markAllAsRead: () => void;
   unreadCount: number;
+  // Mobile nav
+  openMobileNav: () => void;
+  mobileNavOpen: boolean;
+  closeMobileNav: () => void;
 }>({
   user: null,
   documents: [],
@@ -42,6 +46,9 @@ const DashboardContext = createContext<{
   addNotification: () => {},
   markAllAsRead: () => {},
   unreadCount: 0,
+  openMobileNav: () => {},
+  mobileNavOpen: false,
+  closeMobileNav: () => {},
 });
 
 export const useDashboard = () => useContext(DashboardContext);
@@ -65,6 +72,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
   const [drawerOptions, setDrawerOptions] = useState<{ startWithGooglePicker?: boolean }>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Mobile sidebar state — shared so DashboardHeader can open it
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const addNotification = (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
     // Optimistically update UI immediately
@@ -228,11 +238,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       notifications,
       addNotification,
       markAllAsRead,
-      unreadCount
+      unreadCount,
+      openMobileNav: () => setMobileNavOpen(true),
+      mobileNavOpen,
+      closeMobileNav: () => setMobileNavOpen(false),
     }}>
       <div className="flex h-screen bg-[#f4f7fb] md:p-4 md:gap-4 overflow-hidden text-[#111827] relative">
-        <Sidebar user={user} onSignOut={handleSignOut} />
-        <main className="flex-1 bg-white md:rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden pt-16 md:pt-0">
+        <Sidebar user={user} onSignOut={handleSignOut} mobileOpen={mobileNavOpen} setMobileOpen={setMobileNavOpen} />
+        <main className="flex-1 bg-white md:rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
           {children}
         </main>
 
