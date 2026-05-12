@@ -67,11 +67,29 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Resizable drawer state
+  // Resizable drawer state (desktop)
   const [drawerWidth, setDrawerWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const minWidth = 400;
   const maxWidth = 1000;
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+  // 'half' = 50vh, 'full' = 100vh
+  const [mobileSheetSize, setMobileSheetSize] = useState<'half' | 'full'>('half');
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Reset sheet to half when drawer opens on mobile
+  useEffect(() => {
+    if (isOpen && isMobile) setMobileSheetSize('half');
+  }, [isOpen, isMobile]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -659,53 +677,236 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
             className="absolute inset-0 bg-black z-40 cursor-pointer"
           />
 
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-            style={{ width: `${drawerWidth}px` }}
-            className="absolute top-4 right-4 bottom-4 bg-white z-50 shadow-[-8px_0_24px_-10px_rgba(0,0,0,0.08)] flex flex-col rounded-l-3xl border border-[#eaedf3]"
-          >
-            {/* Drag Handle */}
-            <div 
-              onPointerDown={(e) => {
-                e.preventDefault();
-                setIsResizing(true);
+          {/* Desktop: Slide from right | Mobile: Slide from bottom */}
+          {isMobile ? (
+            <motion.div
+              key="mobile-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={0.15}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                  // Dragged down — if half, close; if full, go back to half
+                  if (mobileSheetSize === 'full') setMobileSheetSize('half');
+                  else onClose();
+                } else if (info.offset.y < -60) {
+                  // Dragged up — expand to full
+                  setMobileSheetSize('full');
+                }
               }}
-              className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize hover:bg-[#6366f1]/10 flex items-center justify-center group z-50 transition-colors"
+              style={{ height: mobileSheetSize === 'full' ? '100dvh' : '55dvh' }}
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] flex flex-col rounded-t-3xl border-t border-x border-[#eaedf3] transition-[height] duration-300"
             >
-              <div className="w-1 h-12 bg-[#cbd5e1] rounded-full group-hover:bg-[#6366f1]/50 transition-colors" />
-            </div>
-
-            <div className={`p-5 border-b border-[#eaedf3] pl-8 rounded-tl-3xl ${
-              currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
-            }`}>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
-                    currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
-                  }`}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-[#111827]">
-                      {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
-                    </h2>
-                    <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
+              {/* Mobile drag pill */}
+              <div className="shrink-0 pt-3 pb-1 flex flex-col items-center gap-3">
+                <div className="w-10 h-1 bg-[#cbd5e1] rounded-full" />
+                <div className={`w-full px-5 pb-3 border-b border-[#eaedf3] ${
+                  currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
+                }`}>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
+                        currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
+                      }`}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-[#111827]">
+                          {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
+                        </h2>
+                        <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setMobileSheetSize(mobileSheetSize === 'half' ? 'full' : 'half')}
+                        className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]"
+                        title={mobileSheetSize === 'half' ? 'Expand' : 'Collapse'}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          {mobileSheetSize === 'half'
+                            ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                            : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          }
+                        </svg>
+                      </button>
+                      <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+              </div>
+
+              {/* Mobile shared body */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  onChange={handleFileChange}
+                  accept={getAcceptAttribute()}
+                  multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool}
+                />
+                {fileList.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      {fileList.map((f, index) => (
+                        <div key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${(f as File).lastModified}-mobile`} className="w-[130px] bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-2.5 flex flex-col items-center gap-2 relative group shadow-sm">
+                          {f.type.includes('image') && !('isDriveFile' in f) ? (
+                            <div className="w-[80px] h-[80px] bg-white rounded-lg border border-[#e2e8f0] overflow-hidden flex items-center justify-center">
+                              <img src={URL.createObjectURL(f as File)} alt={f.name} className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-[80px] h-[80px] bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center text-3xl">
+                              {'isDriveFile' in f ? (
+                                <svg className="w-8 h-8" viewBox="0 0 87.3 78">
+                                  <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+                                  <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+                                  <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
+                                </svg>
+                              ) : <span>📁</span>}
+                            </div>
+                          )}
+                          <p className="text-[10px] font-semibold text-[#1e293b] truncate w-full text-center">{f.name}</p>
+                          <button 
+                            onClick={() => setFileList(prev => prev.filter((_, i) => i !== index))}
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-[#ef4444] text-white rounded-full flex items-center justify-center shadow-sm"
+                          >
+                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => fileInputRef.current?.click()} className="w-full h-9 border border-dashed border-[#eaedf3] rounded-xl flex items-center justify-center gap-1 text-[11px] font-medium text-[#6366f1] hover:bg-[#6366f1]/5 transition-all">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add more files
+                    </button>
+                  </div>
+                )}
+                {fileList.length === 0 && !(selectedTool === 'html-to-pdf' && htmlOptions.mode === 'url') && (
+                  <div className="space-y-2">
+                    <div 
+                      className="border-2 border-dashed border-[#eaedf3] rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#6366f1] hover:bg-[#6366f1]/5 transition-all"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="w-10 h-10 bg-[#f8fafc] rounded-xl flex items-center justify-center text-[#6366f1] border border-[#eaedf3]">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </div>
+                      <p className="text-xs font-semibold text-[#111827]">Upload File</p>
+                      <p className="text-[10px] text-[#6b7280]">Tap to select from your device</p>
+                    </div>
+                    <button 
+                      onClick={() => openGooglePicker()}
+                      className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 87.3 78">
+                        <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+                        <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+                        <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
+                      </svg>
+                      Browse Google Drive
+                    </button>
+                  </div>
+                )}
+                {!toolId && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Select Tool</label>
+                    <div className="relative">
+                      <select
+                        value={selectedTool}
+                        onChange={(e) => setSelectedTool(e.target.value)}
+                        className="w-full h-10 bg-white border border-[#eaedf3] rounded-xl pl-3 pr-8 text-xs text-[#1f2937] focus:outline-none focus:ring-1 focus:ring-[#6366f1] cursor-pointer appearance-none"
+                      >
+                        <option value="" disabled>Choose a tool to perform...</option>
+                        {availableTools.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                      <svg className="absolute right-3 top-3 w-4 h-4 text-[#9ca3af] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile footer */}
+              <div className="flex-shrink-0 p-4 border-t border-[#eaedf3] bg-white">
+                <button 
+                  disabled={isActionDisabled() || isProcessing}
+                  className={`w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                    selectedTool && !isProcessing
+                      ? 'bg-[#6366f1] text-white hover:bg-[#4f46e5]' 
+                      : 'bg-[#f3f4f6] text-[#9ca3af] cursor-not-allowed'
+                  }`}
+                >
+                  {isProcessing ? 'Processing...' : 'Process File'}
                 </button>
               </div>
-            </div>
+            </motion.div>
+          ) : (
+            // Desktop: slide from right
+            <motion.div
+              key="desktop-drawer"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+              style={{ width: `${drawerWidth}px` }}
+              className="absolute top-4 right-4 bottom-4 bg-white z-50 shadow-[-8px_0_24px_-10px_rgba(0,0,0,0.08)] flex flex-col rounded-l-3xl border border-[#eaedf3]"
+            >
+              {/* Desktop horizontal resize handle */}
+              <div
+                onPointerDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+                className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize hover:bg-[#6366f1]/10 flex items-center justify-center group z-50 transition-colors"
+              >
+                <div className="w-1 h-12 bg-[#cbd5e1] rounded-full group-hover:bg-[#6366f1]/50 transition-colors" />
+              </div>
 
-            <div className="flex-1 p-5 pl-8 overflow-y-auto space-y-5">
+              <div className={`p-5 border-b border-[#eaedf3] pl-8 rounded-tl-3xl ${
+                currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
+              }`}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
+                      currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
+                    }`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-[#111827]">
+                        {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
+                      </h2>
+                      <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
+                    </div>
+                  </div>
+                  <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Shared body — scrollable content */}
+              <div className="flex-1 p-5 overflow-y-auto space-y-5">
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -1219,6 +1420,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
               </button>
             </div>
           </motion.div>
+          )}
         </>
       )}
       </AnimatePresence>

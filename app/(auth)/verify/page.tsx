@@ -126,7 +126,7 @@ function VerifyPageContent() {
               value={data}
               onChange={(e) => handleChange(e.target, index)}
               onKeyDown={(e) => handleKeyDown(e, index)}
-              className="w-12 h-14 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl text-center text-xl font-bold text-[#111827] outline-none transition-all focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10"
+              className="w-10 h-12 md:w-12 md:h-14 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl text-center text-lg md:text-xl font-bold text-[#111827] outline-none transition-all focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10"
             />
           ))}
         </div>

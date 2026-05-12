@@ -25,7 +25,7 @@ export const AuthLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
 export const AuthCard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <div className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#f1f1f1] p-10 flex flex-col items-center">
+    <div className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#f1f1f1] p-6 md:p-10 flex flex-col items-center">
       {children}
     </div>
   );

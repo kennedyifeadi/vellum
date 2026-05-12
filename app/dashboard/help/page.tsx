@@ -106,7 +106,7 @@ export default function HelpPage() {
 
   return (
     <div className="flex flex-col h-full bg-[#fbfcfd]">
-      <header className="px-8 py-10 bg-white border-b border-[#eaedf3] text-center">
+      <header className="px-4 md:px-8 py-6 md:py-10 bg-white border-b border-[#eaedf3] text-center">
         <h1 className="text-3xl font-extrabold text-[#111827]">Help Center</h1>
         <p className="text-[#6b7280] mt-2 text-sm">Find answers, learn about Vellum, or get in touch with our team.</p>
         
@@ -141,7 +141,7 @@ export default function HelpPage() {
         </form>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 space-y-16 pb-24">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-12 md:space-y-16 pb-24">
         {/* Categories Grid */}
         <section>
           <div className="flex items-center justify-between mb-6">

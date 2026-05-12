@@ -35,7 +35,7 @@ export default function DragAndDrop() {
     <motion.div 
       onClick={handleAreaClick}
       whileHover={{ scale: 1.005, opacity: 0.98 }}
-      className="w-full h-56 border-2 border-dashed border-[#6366f1] rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all bg-[#fbfcfd] hover:bg-[#f8fafc] group"
+      className="w-full h-40 md:h-56 border-2 border-dashed border-[#6366f1] rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all bg-[#fbfcfd] hover:bg-[#f8fafc] group"
     >
       {/* Invisible File Input */}
       <input 
@@ -51,8 +51,8 @@ export default function DragAndDrop() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
         </svg>
       </div>
-      <p className="text-sm font-semibold text-[#111827]">Drag & Drop files here</p>
-      <p className="text-[11px] text-[#6b7280]">Support for PDF, DOCX, JPG, PNG and more. Max file size 100MB.</p>
+      <p className="text-sm font-semibold text-[#111827]"><span className="hidden md:inline">Drag &amp; Drop files here</span><span className="md:hidden">Upload a file to get started</span></p>
+      <p className="hidden md:block text-[11px] text-[#6b7280]">Support for PDF, DOCX, JPG, PNG and more. Max file size 100MB.</p>
       <div className="flex gap-2 mt-2">
         <button 
           onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}

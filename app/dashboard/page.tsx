@@ -24,7 +24,7 @@ export default function DashboardPage() {
         onSearchChange={setSearch}
         searchPlaceholder="Search files, tools..."
       />
-      <div className="p-8 flex-1 overflow-y-auto min-h-0 relative">
+      <div className="p-4 md:p-8 flex-1 overflow-y-auto min-h-0 relative">
       <DragAndDrop />
       <QuickTools />
       

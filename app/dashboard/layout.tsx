@@ -230,9 +230,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       markAllAsRead,
       unreadCount
     }}>
-      <div className="flex h-screen bg-[#f4f7fb] p-4 gap-4 overflow-hidden text-[#111827] relative">
+      <div className="flex h-screen bg-[#f4f7fb] md:p-4 md:gap-4 overflow-hidden text-[#111827] relative">
         <Sidebar user={user} onSignOut={handleSignOut} />
-        <main className="flex-1 bg-white rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
+        <main className="flex-1 bg-white md:rounded-2xl border border-[#eaedf3] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden pt-16 md:pt-0">
           {children}
         </main>
 

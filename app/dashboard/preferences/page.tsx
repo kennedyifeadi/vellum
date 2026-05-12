@@ -54,14 +54,14 @@ export default function PreferencesPage() {
         searchPlaceholder="Search settings..."
       />
 
-      <div className="flex flex-1 min-h-0">
-        <aside className="w-80 border-r border-[#eaedf3] bg-[#f8fafc]/50 p-6 flex flex-col justify-between">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
+        <aside className="md:w-80 border-b md:border-b-0 md:border-r border-[#eaedf3] bg-[#f8fafc]/50 p-4 md:p-6 flex flex-col md:justify-between">
           <div>
-             <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+            <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
 
-          {/* Upgrade Card */}
-          <div className="bg-[#6366f1] rounded-2xl p-5 text-white shadow-xl shadow-[#6366f1]/20 group relative overflow-hidden">
+          {/* Upgrade Card — hidden on mobile to save space */}
+          <div className="hidden md:block bg-[#6366f1] rounded-2xl p-5 text-white shadow-xl shadow-[#6366f1]/20 group relative overflow-hidden">
             <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-3">
@@ -79,7 +79,7 @@ export default function PreferencesPage() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-y-auto p-8 bg-white">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-white">
           <div className="max-w-3xl">
             {renderContent()}
           </div>

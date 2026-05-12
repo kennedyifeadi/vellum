@@ -79,12 +79,12 @@ export default function ToolsLibrary() {
       />
 
       {/* Tabs / Filters */}
-      <div className="flex items-center gap-2 py-6 px-6">
+      <div className="flex items-center gap-2 py-4 px-4 md:py-6 md:px-6 overflow-x-auto">
         {categories.map((category) => (
           <button
             key={category}
             onClick={() => setActiveCategory(category)}
-            className={`h-8 px-4 rounded-full text-xs font-medium transition-all ${
+            className={`h-8 px-3 md:px-4 rounded-full text-xs font-medium transition-all shrink-0 ${
               activeCategory === category
                 ? 'bg-[#6366f1] text-white'
                 : 'bg-white text-[#4b5563] border border-[#eaedf3] hover:bg-[#f3f4f6]'
@@ -96,7 +96,7 @@ export default function ToolsLibrary() {
       </div>
 
       {/* Available Tools Header with View Toggle */}
-      <div className="flex justify-between items-center mb-4 px-6">
+      <div className="flex justify-between items-center mb-4 px-4 md:px-6">
         <p className="font-bold text-xs text-[#9ca3af] uppercase tracking-wider">Available Tools</p>
         <div className="flex items-center gap-1">
           <button 
@@ -119,7 +119,7 @@ export default function ToolsLibrary() {
       </div>
 
       {/* Tools Grid / List */}
-      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-4 overflow-y-auto px-6`}>
+      <div className={`grid ${viewMode === 'grid' ? 'grid-cols-2 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'} gap-3 md:gap-4 overflow-y-auto px-4 md:px-6`}>
         {filteredTools.map((tool) => (
           <motion.button
             key={tool.id}

@@ -75,16 +75,16 @@ export default function RecentFilesPage() {
         searchPlaceholder="Search history..."
       />
 
-      <div className="p-6 flex flex-col flex-1 min-h-0 bg-white">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex items-center gap-2">
+      <div className="p-4 md:p-6 flex flex-col flex-1 min-h-0 bg-white">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {['All Tools', 'PDF', 'Images', 'Documents', 'Security'].map((type) => {
               const isActive = type === 'All Tools' ? typeFilter === 'All Types' : typeFilter === type;
               return (
                 <button
                   key={type}
                   onClick={() => { setTypeFilter(type === 'All Tools' ? 'All Types' : type); setPage(1); }}
-                  className={`h-8 px-4 rounded-full text-xs font-medium transition-all ${
+                  className={`h-8 px-3 rounded-full text-xs font-medium transition-all shrink-0 ${
                     isActive
                       ? 'bg-[#6366f1] text-white'
                       : 'bg-white text-[#4b5563] border border-[#eaedf3] hover:bg-[#f3f4f6]'
@@ -109,7 +109,8 @@ export default function RecentFilesPage() {
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col border border-[#eaedf3] rounded-xl">
-          <div className="bg-[#f8fafc] h-10 px-6 flex items-center text-[10px] font-bold text-[#6b7280] uppercase tracking-wider border-b border-[#eaedf3]">
+          {/* Table header — hidden on mobile */}
+          <div className="hidden md:flex bg-[#f8fafc] h-10 px-6 items-center text-[10px] font-bold text-[#6b7280] uppercase tracking-wider border-b border-[#eaedf3]">
             <div className="w-[40%]">File Name</div>
             <div className="w-[20%]">Type</div>
             <div className="w-[15%]">Status</div>
@@ -130,35 +131,52 @@ export default function RecentFilesPage() {
               </div>
             ) : (
               paginatedActivity.map((file) => (
-                <div key={file._id} className="h-16 px-6 flex items-center border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors group">
-                  <div className="w-[40%] pr-4 font-bold flex items-center gap-3 text-[#111827] text-xs">
-                    <ToolIcon toolName={file.toolUsed} />
-                    <span className="truncate group-hover:text-[#6366f1] transition-colors">{file.fileName}</span>
+                <div key={file._id} className="border-b border-[#f1f4f8] last:border-0 hover:bg-[#fbfcfd] transition-colors group">
+                  {/* Desktop row */}
+                  <div className="hidden md:flex h-16 px-6 items-center">
+                    <div className="w-[40%] pr-4 font-bold flex items-center gap-3 text-[#111827] text-xs">
+                      <ToolIcon toolName={file.toolUsed} />
+                      <span className="truncate group-hover:text-[#6366f1] transition-colors">{file.fileName}</span>
+                    </div>
+                    <div className="w-[20%] text-[#6b7280] text-[11px] font-medium truncate pr-4">{file.toolUsed}</div>
+                    <div className="w-[15%]">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        file.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-[#f1f5f9] text-[#475569]'
+                      }`}>{file.status}</span>
+                    </div>
+                    <div className="w-[15%] text-[#9ca3af] text-[11px] font-semibold">{getRelativeTime(file.createdAt, now)}</div>
+                    <div className="w-[10%] flex justify-end gap-3 items-center">
+                      <button onClick={() => window.location.href = file.outputUrl} className="p-2 text-[#6b7280] hover:text-[#6366f1] hover:bg-white rounded-lg border border-transparent hover:border-[#eaedf3] transition-all" title="Download">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                      </button>
+                      <button onClick={() => handleDelete(file._id)} className="p-2 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all" title="Delete">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
                   </div>
-                  <div className="w-[20%] text-[#6b7280] text-[11px] font-medium truncate pr-4">{file.toolUsed}</div>
-                  <div className="w-[15%]">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                      file.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-[#f1f5f9] text-[#475569]'
-                    }`}>
-                      {file.status}
-                    </span>
-                  </div>
-                  <div className="w-[15%] text-[#9ca3af] text-[11px] font-semibold">{getRelativeTime(file.createdAt, now)}</div>
-                  <div className="w-[10%] flex justify-end gap-3 items-center">
-                    <button 
-                      onClick={() => window.location.href = file.outputUrl}
-                      className="p-2 text-[#6b7280] hover:text-[#6366f1] hover:bg-white rounded-lg border border-transparent hover:border-[#eaedf3] transition-all shadow-none hover:shadow-sm" 
-                      title="Download"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(file._id)}
-                      className="p-2 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all" 
-                      title="Delete"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+
+                  {/* Mobile card */}
+                  <div className="md:hidden px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ToolIcon toolName={file.toolUsed} />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#111827] truncate">{file.fileName}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${
+                            file.status === 'Completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-[#f1f5f9] text-[#475569]'
+                          }`}>{file.status}</span>
+                          <span className="text-[10px] text-[#9ca3af]">{getRelativeTime(file.createdAt, now)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => window.location.href = file.outputUrl} className="p-1.5 text-[#6b7280] hover:text-[#6366f1] rounded-lg transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                      </button>
+                      <button onClick={() => handleDelete(file._id)} className="p-1.5 text-[#9ca3af] hover:text-red-500 rounded-lg transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

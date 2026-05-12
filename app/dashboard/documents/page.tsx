@@ -235,7 +235,7 @@ export default function DocumentsPage() {
       />
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-24">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 pb-24">
 
         {/* Storage + Upload */}
         <div className="flex items-start gap-4">
@@ -268,7 +268,7 @@ export default function DocumentsPage() {
         {/* Quick Access */}
         <div>
           <p className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-3">Quick Access</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Link href="/dashboard/recent" className="bg-white border border-[#eaedf3] rounded-xl p-4 flex items-center gap-3 hover:border-[#c7d2fe] hover:bg-[#fafbff] transition-all group">
               <div className="w-10 h-10 rounded-xl bg-[#fff7ed] text-[#f97316] flex items-center justify-center shrink-0">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
