@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
 
 // ─── Footer column data ───────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export default function Footer() {
           <div className="xl:w-64 shrink-0">
             {/* Logo */}
             <Link href="/" className="inline-flex items-center gap-2.5 mb-5">
-              <img src="/vellum.png" alt="Vellum Logo" className="w-8 h-auto" />
+              <Image src="/vellum.png" alt="Vellum Logo" className="w-8 h-auto" />
               <span className="font-semibold text-lg tracking-tight text-gray-900">Vellum</span>
             </Link>
 

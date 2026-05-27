@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 
 // ─── Tools data per mega-nav category ────────────────────────────────────────
 
@@ -187,7 +188,7 @@ export default function Navbar() {
         >
           {/* ── Logo ── */}
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <img src="/vellum.png" alt="Vellum Logo" className="w-8 h-auto" />
+            <Image src="/vellum.png" alt="Vellum Logo" className="w-8 h-auto" />
             <span className="font-semibold text-lg tracking-tight transition-colors text-gray-900">
               Vellum
             </span>
