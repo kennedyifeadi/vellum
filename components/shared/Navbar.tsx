@@ -188,7 +188,7 @@ export default function Navbar() {
         >
           {/* ── Logo ── */}
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <Image src="/vellum.png" alt="Vellum Logo" className="w-8 h-auto" />
+            <Image src="/vellum.png" alt="Vellum Logo" width={40} height={40} className="w-10 h-auto" />
             <span className="font-semibold text-lg tracking-tight transition-colors text-gray-900">
               Vellum
             </span>
