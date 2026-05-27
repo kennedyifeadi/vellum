@@ -56,14 +56,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirect if already authenticated
-  if (pathname === '/login' || pathname === '/verify' || pathname === '/') {
+  // Redirect authenticated users away from auth pages (but NOT from '/')
+  if (pathname === '/login' || pathname === '/verify') {
     if (isAuthenticated) {
-        return NextResponse.redirect(new URL(isProfileComplete ? '/dashboard' : '/signup-details', request.url));
-    }
-    // Specific case: root route unauthenticated should go to login for now as per user request
-    if (pathname === '/') {
-       return NextResponse.redirect(new URL('/login', request.url));
+      return NextResponse.redirect(new URL(isProfileComplete ? '/dashboard' : '/signup-details', request.url));
     }
   }
 
@@ -71,5 +67,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/dashboard/:path*', '/login', '/verify', '/signup-details'],
+  matcher: ['/dashboard/:path*', '/login', '/verify', '/signup-details'],
 };
