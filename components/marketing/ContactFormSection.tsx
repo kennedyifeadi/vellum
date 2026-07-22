@@ -146,7 +146,7 @@ export default function ContactFormSection() {
             <button 
               type="submit" 
               disabled={status === 'loading'}
-              className="mt-4 inline-flex items-center justify-center rounded-xl bg-gray-900 px-8 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-70 gap-2"
+              className="mt-4 flex items-center justify-center rounded-xl bg-indigo-600 px-8 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70 gap-2"
             >
               {status === 'loading' && (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

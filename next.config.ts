@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
   ],
   // Required to suppress "webpack config with Turbopack" error in Next.js 16
   turbopack: {},
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

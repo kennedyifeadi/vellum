@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ContactFormSection from "@/components/marketing/ContactFormSection";
+import ToolsCarousel from "@/components/marketing/ToolsCarousel";
 
 export default function ContactPage() {
   return (
@@ -40,7 +41,7 @@ export default function ContactPage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                 <Link
                   href="/dashboard/help"
-                  className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800 transition-all w-fit"
+                  className="inline-flex items-center justify-center rounded-lg  bg-indigo-600 text-white hover:bg-indigo-700 px-6 py-3 text-sm font-semibold transition-all w-fit"
                 >
                   Contact Support &rarr;
                 </Link>
@@ -120,6 +121,11 @@ export default function ContactPage() {
       {/* ── Additional Form Section ── */}
       <div className="mt-32">
         <ContactFormSection />
+      </div>
+
+      {/* ── Tools Carousel Section ── */}
+      <div className="mt-16">
+        <ToolsCarousel />
       </div>
 
     </div>
