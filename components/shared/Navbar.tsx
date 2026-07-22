@@ -66,14 +66,16 @@ function ChevronDown({ open }: { open: boolean }) {
 }
 
 // ─── Mega nav panel ───────────────────────────────────────────────────────────
-function MegaNav({ onClose }: { onClose: () => void }) {
+function MegaNav({ onClose, scrolled }: { onClose: () => void; scrolled: boolean }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-[860px] max-w-[96vw] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50"
+      className={`absolute top-full left-0 w-full mt-3 bg-white overflow-hidden z-50 ${
+        scrolled ? 'rounded-2xl border border-gray-100' : 'border-b border-gray-100'
+      }`}
       onMouseLeave={onClose}
     >
       <div className="grid grid-cols-4 divide-x divide-gray-100">
@@ -107,7 +109,7 @@ function MegaNav({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* bottom CTA bar */}
-      <div className="bg-gray-50 border-t border-gray-100 px-6 py-3 flex items-center justify-between">
+      <div className="px-6 py-3 flex items-center justify-between">
         <p className="text-xs text-gray-500">
           Explore all <span className="font-semibold text-gray-700">12 tools</span> across every category
         </p>
@@ -178,11 +180,11 @@ export default function Navbar() {
       >
         <nav
           className={`
-            mx-auto flex items-center justify-between
+            relative mx-auto flex items-center justify-between
             transition-all duration-500 ease-out
             ${scrolled
-              ? 'max-w-5xl rounded-2xl bg-white/90 backdrop-blur-md shadow-lg shadow-black/6 border border-gray-200/60 px-5 h-14'
-              : 'max-w-[2000px] bg-transparent border border-transparent px-6 lg:px-12 h-20'
+              ? 'max-w-5xl rounded-2xl bg-white/90 backdrop-blur-md border border-gray-200/60 px-5 h-14'
+              : 'max-w-500 bg-transparent border border-transparent px-6 lg:px-12 h-20'
             }
           `}
         >
@@ -195,10 +197,9 @@ export default function Navbar() {
           </Link>
 
           {/* ── Desktop links ── */}
-          <div className="hidden md:flex items-center gap-1 relative" ref={megaRef}>
+          <div className="hidden md:flex items-center gap-6" ref={megaRef}>
             {/* Solutions — mega nav trigger */}
             <div
-              className="relative"
               onMouseEnter={handleSolutionsEnter}
               onMouseLeave={handleSolutionsLeave}
             >
@@ -219,15 +220,19 @@ export default function Navbar() {
               </button>
 
               <AnimatePresence>
-                {megaOpen && <MegaNav onClose={() => setMegaOpen(false)} />}
+                {megaOpen && <MegaNav onClose={() => setMegaOpen(false)} scrolled={scrolled} />}
               </AnimatePresence>
             </div>
 
             {/* Static links */}
-            {['About', 'Pricing', 'Contact'].map((item) => (
+            {[
+              { name: "About", href: "/about" },
+              { name: "Pricing", href: "/pricing" },
+              { name: "Contact Sales", href: "/contact" },
+            ].map((item) => (
               <Link
-                key={item}
-                href={`/${item.toLowerCase()}`}
+                key={item.name}
+                href={item.href}
                 className={`
                   px-3.5 py-2 rounded-lg text-sm font-medium
                   transition-all duration-150
@@ -237,7 +242,7 @@ export default function Navbar() {
                   }
                 `}
               >
-                {item}
+                {item.name}
               </Link>
             ))}
           </div>

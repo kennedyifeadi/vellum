@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, useInView } from 'framer-motion';
 import Image from 'next/image';
+import { useRef, useEffect } from 'react';
 
 // ─── Footer column data ───────────────────────────────────────────────────────
 
@@ -64,6 +65,14 @@ const LEGAL_LINKS = [
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isInView = useInView(videoRef, { once: true, margin: "0px 0px -100px 0px" });
+
+  useEffect(() => {
+    if (isInView && videoRef.current) {
+      videoRef.current.play().catch(err => console.error("Video play failed:", err));
+    }
+  }, [isInView]);
 
   return (
     <footer className="w-full bg-white text-gray-900 pt-20 pb-8 px-6 lg:px-12 xl:px-20 border-t border-gray-100 flex flex-col justify-between min-h-[80vh]">
@@ -112,8 +121,9 @@ export default function Footer() {
         </div>
       </div>
 
-      {/* ── Middle: Massive Brand Text ── */}
-      <div className="flex-1 flex items-center justify-center py-24 overflow-hidden w-full">
+      {/* ── Middle: Massive Brand Text / Video ── */}
+      <div className="flex-1 flex items-center justify-center py-24 overflow-hidden w-full bg-white">
+        {/*
         <motion.h1 
           initial={{ y: 150, opacity: 0 }}
           whileInView={{ y: 0, opacity: 1 }}
@@ -123,6 +133,26 @@ export default function Footer() {
         >
           Vellum
         </motion.h1>
+        */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true, margin: "0px 0px -100px 0px" }}
+          transition={{ duration: 1.3, ease: [0.16, 0.65, 0.24, 1] }}
+          className="w-full max-w-375 flex justify-center overflow-hidden relative aspect-4/1"
+        >
+          <video
+            ref={videoRef}
+            src="/FooterVideo.mp4"
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+            style={{ 
+              filter: 'grayscale(1) contrast(1.3) brightness(1.15)',
+              mixBlendMode: 'multiply'
+            }}
+          />
+        </motion.div>
       </div>
 
       {/* ── Bottom bar ── */}
