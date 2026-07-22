@@ -117,7 +117,7 @@ export default function ToolsCarousel() {
 
           {/* Floating Card */}
           <div 
-            className="absolute top-4 right-4 bottom-4 md:top-8 md:right-8 md:bottom-8 w-full max-w-90 bg-white rounded-3xl md:rounded-4xl p-6 md:p-8 flex flex-col justify-between z-10 overflow-y-auto"
+            className="absolute top-4 right-4 bottom-4 md:top-8 md:right-8 md:bottom-8 w-full max-w-95 bg-white rounded-3xl md:rounded-4xl p-6 md:p-8 flex flex-col justify-between z-10 overflow-y-auto"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             
