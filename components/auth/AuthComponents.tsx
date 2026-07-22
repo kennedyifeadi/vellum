@@ -15,7 +15,7 @@ export const AuthLayout: React.FC<{ children: React.ReactNode }> = ({ children }
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-[480px] px-6"
+        className="relative z-10 w-full max-w-120 px-6"
       >
         {children}
       </motion.div>
@@ -25,7 +25,7 @@ export const AuthLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
 export const AuthCard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <div className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#f1f1f1] p-6 md:p-10 flex flex-col items-center">
+    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#f1f1f1] p-6 md:p-10 flex flex-col items-center">
       {children}
     </div>
   );

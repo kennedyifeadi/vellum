@@ -223,7 +223,7 @@ export default function HelpPage() {
                     <svg className="w-6 h-6 text-[#9ca3af]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                   </div>
                   <h3 className="text-sm font-bold text-[#111827]">No results found</h3>
-                  <p className="text-xs text-[#6b7280] mt-1 max-w-[240px] mx-auto">We couldn&apos;t find any FAQs matching your search. Try adjusting your terms or category.</p>
+                  <p className="text-xs text-[#6b7280] mt-1 max-w-60 mx-auto">We couldn&apos;t find any FAQs matching your search. Try adjusting your terms or category.</p>
                   <button 
                     onClick={() => {setSearch(''); setSelectedCategory(null);}}
                     className="mt-4 text-xs font-bold text-[#6366f1] hover:underline"

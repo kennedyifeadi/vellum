@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ContactFormSection from "@/components/marketing/ContactFormSection";
 
 export default function ContactPage() {
   return (
@@ -115,6 +116,12 @@ export default function ContactPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Additional Form Section ── */}
+      <div className="mt-32">
+        <ContactFormSection />
+      </div>
+
     </div>
   );
 }

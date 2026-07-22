@@ -18,22 +18,28 @@ const generateTicketId = () => {
 export async function POST(req: NextRequest) {
   try {
     const userId = await getAuthUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { subject, category, message } = await req.json();
+    const { subject, category, message, guestName, guestEmail } = await req.json();
 
     if (!subject || !category || !message) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    if (!userId && !guestEmail) {
+       return NextResponse.json({ error: 'Email is required for guests' }, { status: 400 });
+    }
+
     await dbConnect();
 
-    // 1. Fetch user details for the email
-    const user = await User.findById(userId);
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    let userEmail = guestEmail;
+    let userName = guestName || 'Guest';
+
+    // 1. Fetch user details if logged in
+    if (userId) {
+      const user = await User.findById(userId);
+      if (user) {
+        userEmail = user.email;
+        userName = user.name || 'User';
+      }
     }
 
     // 2. Generate unique Ticket ID (e.g., VEL-8A2F)
@@ -41,7 +47,9 @@ export async function POST(req: NextRequest) {
 
     // 3. Save to Database
     const ticket = await SupportTicket.create({
-      userId,
+      userId: userId || undefined,
+      guestName: userId ? undefined : userName,
+      guestEmail: userId ? undefined : userEmail,
       ticketId,
       subject,
       category,
@@ -59,16 +67,16 @@ export async function POST(req: NextRequest) {
 
         await client.transactionalEmails.sendTransacEmail({
           subject: `Support Ticket Received: ${ticketId}`,
-          htmlContent: getSupportTicketEmailHtml(user.name || 'User', ticketId, subject, category, message, baseUrl),
+          htmlContent: getSupportTicketEmailHtml(userName, ticketId, subject, category, message, baseUrl),
           sender: { name: "Vellum Support", email: process.env.EMAIL_USER as string },
-          to: [{ email: user.email }],
+          to: [{ email: userEmail }],
         });
 
       } catch (emailError) {
         console.error('[Brevo/Support] Failed to send support email:', emailError);
       }
     } else {
-        console.log(`[SUPPORT] Skipping email send for ${user.email} (API key not configured).`);
+        console.log(`[SUPPORT] Skipping email send for ${userEmail} (API key not configured).`);
     }
 
     return NextResponse.json({ 

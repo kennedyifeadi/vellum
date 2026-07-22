@@ -1,7 +1,9 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ISupportTicket extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+  guestName?: string;
+  guestEmail?: string;
   ticketId: string;
   subject: string;
   category: string;
@@ -13,7 +15,9 @@ export interface ISupportTicket extends Document {
 }
 
 const SupportTicketSchema: Schema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
+  guestName: { type: String, required: false },
+  guestEmail: { type: String, required: false },
   ticketId: { type: String, required: true, unique: true },
   subject: { type: String, required: true },
   category: { type: String, required: true, enum: ['general', 'technical', 'billing', 'feature_request', 'other'] },
