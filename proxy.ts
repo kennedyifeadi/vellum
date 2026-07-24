@@ -31,12 +31,12 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rate Limiting for API routes
   if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp')) {
-    const ip = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
     if (isRateLimited(ip)) {
       return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
     }
