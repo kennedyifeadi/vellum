@@ -3,8 +3,44 @@ import type { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth/jwt';
 import { getToken } from 'next-auth/jwt';
 
+const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS = 30; // 30 requests per minute
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+  if (!record) {
+    rateLimitMap.set(ip, { count: 1, timestamp: now });
+    return false;
+  }
+  if (now - record.timestamp > RATE_LIMIT_WINDOW) {
+    rateLimitMap.set(ip, { count: 1, timestamp: now });
+    return false;
+  }
+  if (record.count >= MAX_REQUESTS) {
+    return true;
+  }
+  record.count += 1;
+  
+  // Basic cleanup to prevent memory leaks in long-running instances
+  if (rateLimitMap.size > 10000) {
+    rateLimitMap.clear();
+  }
+  
+  return false;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Rate Limiting for API routes
+  if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp')) {
+    const ip = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    if (isRateLimited(ip)) {
+      return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+    }
+  }
 
   // 1. Get Authentication State
   const token = request.cookies.get('auth-token')?.value;
@@ -67,5 +103,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/verify', '/signup-details'],
+  matcher: ['/dashboard/:path*', '/login', '/verify', '/signup-details', '/api/convert/:path*', '/api/documents/:path*', '/api/auth/verify-otp'],
 };
