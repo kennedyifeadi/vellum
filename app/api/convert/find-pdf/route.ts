@@ -22,9 +22,6 @@ interface Match {
 export async function POST(req: NextRequest) {
   try {
     const userId = await getAuthUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const formData = await req.formData();
     const file = (await resolveFiles(formData, 'pdf'))[0] as File;
@@ -35,9 +32,13 @@ export async function POST(req: NextRequest) {
     }
 
     await dbConnect();
-    const user = await User.findById(userId);
-    const isPro = user?.plan === 'Pro';
-    const maxPages = isPro ? 100 : 50;
+    const user = userId ? await User.findById(userId) : null;
+    const plan = user?.plan || 'Free';
+    const isPro = plan === 'Pro';
+    
+    let maxPages = 10; // Guest
+    if (plan === 'Pro') maxPages = 100;
+    else if (plan === 'Basic') maxPages = 50;
 
     const arrayBuffer = await file.arrayBuffer();
     // Slice a copy for each consumer — pdfjs.getDocument() detaches/transfers the
@@ -114,16 +115,18 @@ export async function POST(req: NextRequest) {
     const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
 
     // Log Conversion
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    await Conversion.create({
-      userId,
-      toolUsed: 'Find in PDF',
-      fileName: file.name,
-      fileSize: file.size,
-      status: 'success',
-      metadata: { pages: pdf.numPages, matchesFound: totalMatchCount, searchTerm },
-      expiresAt
-    });
+    if (userId) {
+      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      await Conversion.create({
+        userId,
+        toolUsed: 'Find in PDF',
+        fileName: file.name,
+        fileSize: file.size,
+        status: 'success',
+        metadata: { pages: pdf.numPages, matchesFound: totalMatchCount, searchTerm },
+        expiresAt
+      });
+    }
 
     return NextResponse.json({
       success: true,

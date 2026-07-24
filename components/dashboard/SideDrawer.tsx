@@ -118,10 +118,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
     };
   }, [isResizing]);
 
-  const maxAllowedJpg = user?.plan === 'Pro' ? 50 : 30;
-  const maxAllowedMerge = user?.plan === 'Pro' ? 50 : 30;
-  const maxAllowedImage = user?.plan === 'Pro' ? 50 : 30;
-  const maxAllowedImageCompress = user?.plan === 'Pro' ? 50 : 30;
+  const plan = user?.plan || 'Free';
+  let maxAllowed = 3;
+  if (plan === 'Pro') maxAllowed = 50;
+  else if (plan === 'Basic') maxAllowed = 30;
+  
+  const maxAllowedJpg = maxAllowed;
+  const maxAllowedMerge = maxAllowed;
+  const maxAllowedImage = maxAllowed;
+  const maxAllowedImageCompress = maxAllowed;
 
   useEffect(() => {
     if (toolId !== prevToolId) {
@@ -205,7 +210,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
         .setCallback((data: any) => {
           console.log('[GooglePicker] Picker Callback Event:', data.action, data);
           if (data.action === window.google.picker.Action.PICKED) {
-            const MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+            const plan = user?.plan || 'Free';
+            let MAX_SIZE = 25 * 1024 * 1024;
+            if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
+            else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
             let errorShown = false;
             
             setFileList(prev => {
@@ -324,7 +332,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
       const updatedList = [...prev];
 
       for (const selectedFile of newFiles) {
-        const MAX_SIZE = user?.plan === 'Pro' ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+        const plan = user?.plan || 'Free';
+        let MAX_SIZE = 25 * 1024 * 1024;
+        if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
+        else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
 
         if (selectedFile.size > MAX_SIZE) {
           if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
@@ -720,7 +731,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                         <h2 className="text-sm font-bold text-[#111827]">
                           {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                         </h2>
-                        <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
+                        <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -894,7 +905,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                       <h2 className="text-sm font-bold text-[#111827]">
                         {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                       </h2>
-                      <p className="text-[10px] text-[#6b7280]">Free Plan Size Limit: 100MB</p>
+                      <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
                     </div>
                   </div>
                   <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">

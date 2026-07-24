@@ -12,11 +12,11 @@ import mongoose from 'mongoose';
 export const dynamic = 'force-dynamic';
 
 const PLAN_LIMITS: Record<string, number> = {
-  Free: 50 * 1024 * 1024,
+  Basic: 50 * 1024 * 1024,
   Pro: 100 * 1024 * 1024,
 };
 const PLAN_TTL_DAYS: Record<string, number> = {
-  Free: 3,
+  Basic: 3,
   Pro: 5,
 };
 
@@ -27,8 +27,8 @@ export async function POST(req: NextRequest) {
   await dbConnect();
 
   const user = await User.findById(userId).lean() as { plan?: string } | null;
-  const plan = (user?.plan as string) ?? 'Free';
-  const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Free;
+  const plan = (user?.plan as string) ?? 'Basic';
+  const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Basic;
   const ttlDays = PLAN_TTL_DAYS[plan] ?? 3;
 
   // Calculate current storage usage (conversions + staged docs)

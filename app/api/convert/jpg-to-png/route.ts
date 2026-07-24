@@ -10,9 +10,6 @@ import JSZip from 'jszip';
 export async function POST(req: NextRequest) {
   try {
     const userId = await getAuthUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const formData = await req.formData();
     const images = await resolveFiles(formData, 'images');
@@ -22,12 +19,17 @@ export async function POST(req: NextRequest) {
     }
 
     await dbConnect();
-    const user = await User.findById(userId);
+    const user = userId ? await User.findById(userId) : null;
+    const plan = user?.plan || 'Free';
     
     // Check Limits
-    const MAX_FREE_FILES = 5;
-    const MAX_PRO_FILES = 10;
-    const maxAllowed = user?.plan === 'Pro' ? MAX_PRO_FILES : MAX_FREE_FILES;
+    const MAX_GUEST_FILES = 3;
+    const MAX_BASIC_FILES = 30;
+    const MAX_PRO_FILES = 50;
+    
+    let maxAllowed = MAX_GUEST_FILES;
+    if (plan === 'Pro') maxAllowed = MAX_PRO_FILES;
+    else if (plan === 'Basic') maxAllowed = MAX_BASIC_FILES;
 
     if (images.length > maxAllowed) {
       return NextResponse.json({ 
@@ -45,16 +47,18 @@ export async function POST(req: NextRequest) {
         .toBuffer();
 
       // Log Conversion
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
-      await Conversion.create({
-        userId,
-        toolUsed: 'JPEG to PNG',
-        fileName: file.name,
-        fileSize: file.size,
-        status: 'success',
-        metadata: { pages: 1, processedSize: pngBuffer.length },
-        expiresAt
-      });
+      if (userId) {
+        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
+        await Conversion.create({
+          userId,
+          toolUsed: 'JPEG to PNG',
+          fileName: file.name,
+          fileSize: file.size,
+          status: 'success',
+          metadata: { pages: 1, processedSize: pngBuffer.length },
+          expiresAt
+        });
+      }
 
       return new NextResponse(pngBuffer as unknown as BodyInit, {
         headers: {
@@ -84,16 +88,18 @@ export async function POST(req: NextRequest) {
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
       // Log Conversion
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
-      await Conversion.create({
-        userId,
-        toolUsed: 'JPEG to PNG (Batch)',
-        fileName: 'converted_images.zip',
-        fileSize: totalOriginalSize,
-        status: 'success',
-        metadata: { pages: images.length, processedSize: zipBuffer.length },
-        expiresAt
-      });
+      if (userId) {
+        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
+        await Conversion.create({
+          userId,
+          toolUsed: 'JPEG to PNG (Batch)',
+          fileName: 'converted_images.zip',
+          fileSize: totalOriginalSize,
+          status: 'success',
+          metadata: { pages: images.length, processedSize: zipBuffer.length },
+          expiresAt
+        });
+      }
 
       return new NextResponse(zipBuffer as unknown as BodyInit, {
         headers: {

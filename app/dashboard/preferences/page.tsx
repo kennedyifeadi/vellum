@@ -65,10 +65,10 @@ export default function PreferencesPage() {
             <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-black uppercase tracking-widest opacity-80">Free Plan</span>
+                <span className="text-[11px] font-black uppercase tracking-widest opacity-80">Basic Plan</span>
                 <svg className="w-5 h-5 text-white opacity-80" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14H11V21L20 10H13Z"/></svg>
               </div>
-              <p className="text-[13px] font-medium leading-relaxed opacity-90 mb-4">You are currently using the free tier. Upgrade to unlock premium features.</p>
+              <p className="text-[13px] font-medium leading-relaxed opacity-90 mb-4">You are currently using the basic tier. Upgrade to unlock premium features.</p>
               <Link 
                 href="/pricing"
                 className="w-full h-10 bg-white text-[#6366f1] text-[13px] font-bold rounded-xl flex items-center justify-center hover:bg-white/90 transition-all shadow-sm"

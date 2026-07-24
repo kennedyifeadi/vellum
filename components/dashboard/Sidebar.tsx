@@ -158,7 +158,7 @@ export default function Sidebar({
               {user?.name || "User"}
             </span>
             <span className="text-[10px] font-semibold text-[#6b7280]">
-              {user?.plan || "Free"} Plan
+              {user?.plan || "Basic"} Plan
             </span>
           </div>
         </div>
@@ -235,7 +235,7 @@ export default function Sidebar({
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-bold truncate max-w-[120px] text-[#111827]">{user?.name || "User"}</span>
-              <span className="text-[10px] font-semibold text-[#6b7280]">{user?.plan || "Free"} Plan</span>
+              <span className="text-[10px] font-semibold text-[#6b7280]">{user?.plan || "Basic"} Plan</span>
             </div>
           </div>
           <button onClick={handleSignOutClick} className="p-2 rounded-xl text-[#ef4444] hover:bg-[#fef2f2] transition-colors" title="Sign Out">

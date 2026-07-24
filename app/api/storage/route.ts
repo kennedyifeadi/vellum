@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 export const dynamic = 'force-dynamic';
 
 const PLAN_LIMITS: Record<string, number> = {
-  Free: 5 * 1024 * 1024 * 1024,   // 5 GB
+  Basic: 5 * 1024 * 1024 * 1024,   // 5 GB
   Pro: 20 * 1024 * 1024 * 1024,   // 20 GB
 };
 
@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
     await dbConnect();
 
     const user = await User.findById(userId).lean() as { plan?: string } | null;
-    const plan = (user?.plan as string) ?? 'Free';
-    const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Free;
+    const plan = (user?.plan as string) ?? 'Basic';
+    const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Basic;
 
     const agg = await Conversion.aggregate([
       { $match: { userId: new mongoose.Types.ObjectId(userId) } },

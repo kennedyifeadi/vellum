@@ -18,9 +18,6 @@ if (ffmpegStatic) {
 export async function POST(req: NextRequest) {
   try {
     const userId = await getAuthUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const formData = await req.formData();
     const video = (await resolveFiles(formData, 'video'))[0] as File;
@@ -32,12 +29,17 @@ export async function POST(req: NextRequest) {
     }
 
     await dbConnect();
-    const user = await User.findById(userId);
+    const user = userId ? await User.findById(userId) : null;
+    const plan = user?.plan || 'Free';
     
     // Check Limits
-    const MAX_FREE_SIZE = 100 * 1024 * 1024;
+    const MAX_GUEST_SIZE = 50 * 1024 * 1024;
+    const MAX_BASIC_SIZE = 100 * 1024 * 1024;
     const MAX_PRO_SIZE = 500 * 1024 * 1024;
-    const maxSize = user?.plan === 'Pro' ? MAX_PRO_SIZE : MAX_FREE_SIZE;
+    
+    let maxSize = MAX_GUEST_SIZE;
+    if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
+    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
 
     if (video.size > maxSize) {
       return NextResponse.json({ 
@@ -94,16 +96,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Log Conversion
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    await Conversion.create({
-      userId,
-      toolUsed: 'Compress Video',
-      fileName: video.name,
-      fileSize: video.size,
-      status: 'success',
-      metadata: { pages: 1, processedSize: compressedBuffer.length },
-      expiresAt
-    });
+    if (userId) {
+      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      await Conversion.create({
+        userId,
+        toolUsed: 'Compress Video',
+        fileName: video.name,
+        fileSize: video.size,
+        status: 'success',
+        metadata: { pages: 1, processedSize: compressedBuffer.length },
+        expiresAt
+      });
+    }
 
     return new NextResponse(compressedBuffer as unknown as BodyInit, {
       headers: {

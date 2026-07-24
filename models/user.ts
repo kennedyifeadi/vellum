@@ -7,7 +7,7 @@ export interface IUser extends Document {
   currentGoal?: string;
   image?: string;
   isProfileComplete: boolean;
-  plan: 'Free' | 'Pro';
+  plan: 'Basic' | 'Pro' | 'Enterprise';
   emailVerified?: Date;
   accounts?: mongoose.Types.ObjectId[];
   starredTools: string[];
@@ -46,7 +46,7 @@ const UserSchema: Schema = new Schema({
   currentGoal: { type: String },
   image: { type: String },
   isProfileComplete: { type: Boolean, default: false },
-  plan: { type: String, enum: ['Free', 'Pro'], default: 'Free' },
+  plan: { type: String, enum: ['Basic', 'Pro', 'Enterprise'], default: 'Basic' },
   emailVerified: { type: Date },
   accounts: [{ type: Schema.Types.ObjectId, ref: 'Account' }],
   starredTools: { type: [String], default: [] },

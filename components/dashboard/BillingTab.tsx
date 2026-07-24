@@ -56,7 +56,7 @@ export default function BillingTab() {
             <div>
               <h3 className="text-sm font-bold text-[#111827]">Current Plan</h3>
               <p className="text-[13px] text-[#6b7280] mt-1">
-                You are currently on the <strong className="text-[#111827]">{isPro ? 'Pro' : 'Free'}</strong> tier.
+                You are currently on the <strong className="text-[#111827]">{isPro ? 'Pro' : 'Basic'}</strong> tier.
               </p>
             </div>
             {!isPro ? (

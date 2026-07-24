@@ -84,7 +84,7 @@ export const authOptions: AuthOptions = {
   events: {
     async createUser({ user }) {
       // When a user is created via an adapter (Social Login), ensure isProfileComplete is false
-      await User.findByIdAndUpdate(user.id, { isProfileComplete: false, plan: 'Free' });
+      await User.findByIdAndUpdate(user.id, { isProfileComplete: false, plan: 'Basic' });
     }
   },
   secret: process.env.NEXTAUTH_SECRET,

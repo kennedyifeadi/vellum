@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       user = await User.create({
         email,
         isProfileComplete: false,
-        plan: 'Free',
+        plan: 'Basic',
       });
       isNewUser = true;
     }

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { splitPdf } from '@/lib/pdf/split';
 import JSZip from 'jszip';
 import { getAuthUserId } from '@/lib/auth/jwt';
-import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
+import User from '@/models/user';
+import dbConnect from '@/lib/db/mongoose';
 
 
 export async function POST(req: NextRequest) {
@@ -18,6 +19,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });
     }
 
+    const userId = await getAuthUserId(req);
+    await dbConnect();
+    const user = userId ? await User.findById(userId) : null;
+    const plan = user?.plan || 'Free';
+    
+    // Check Limits
+    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
+    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
+    const MAX_PRO_SIZE = 100 * 1024 * 1024;
+    
+    let maxSize = MAX_GUEST_SIZE;
+    if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
+    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+
+    if (file.size > maxSize) {
+      return NextResponse.json({ 
+        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.` 
+      }, { status: 400 });
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
@@ -28,8 +49,6 @@ export async function POST(req: NextRequest) {
       splitEvery,
       outputFileNamePrefix: 'split_document',
     });
-
-    const userId = await getAuthUserId(req);
 
     // Return a single PDF or a zip of all split documents.
     if (splitPdfBuffers.size === 1) {
