@@ -228,6 +228,7 @@ export default function Navbar() {
             {[
               { name: "About", href: "/about" },
               { name: "Pricing", href: "/pricing" },
+              { name: "Security", href: "/security" },
               { name: "Contact Sales", href: "/contact" },
             ].map((item) => (
               <Link
@@ -263,7 +264,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/sign-up"
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
             >
               Get Started
             </Link>
@@ -333,7 +334,7 @@ export default function Navbar() {
                   )}
                 </AnimatePresence>
 
-                {['About', 'Pricing', 'Contact'].map((item) => (
+                {['About', 'Pricing', 'Security', 'Contact'].map((item) => (
                   <Link
                     key={item}
                     href={`/${item.toLowerCase()}`}
@@ -356,7 +357,7 @@ export default function Navbar() {
                 <Link
                   href="/sign-up"
                   onClick={() => setMobileOpen(false)}
-                  className="flex-1 text-center px-4 py-2.5 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
+                  className="flex-1 text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
                 >
                   Get Started
                 </Link>
