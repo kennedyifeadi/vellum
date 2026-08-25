@@ -11,7 +11,11 @@ export default function Sidebar({
   mobileOpen,
   setMobileOpen,
 }: {
-  user: any;
+  user: {
+    name?: string | null;
+    image?: string | null;
+    plan?: string | null;
+  } | null;
   onSignOut: () => Promise<void>;
   mobileOpen: boolean;
   setMobileOpen: (v: boolean) => void;
@@ -154,7 +158,7 @@ export default function Sidebar({
             )}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-xs font-bold truncate max-w-[120px] text-[#111827]">
+            <span className="text-xs font-bold truncate max-w-30 text-[#111827]">
               {user?.name || "User"}
             </span>
             <span className="text-[10px] font-semibold text-[#6b7280]">
@@ -234,7 +238,7 @@ export default function Sidebar({
               )}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold truncate max-w-[120px] text-[#111827]">{user?.name || "User"}</span>
+              <span className="text-xs font-bold truncate max-w-30 text-[#111827]">{user?.name || "User"}</span>
               <span className="text-[10px] font-semibold text-[#6b7280]">{user?.plan || "Basic"} Plan</span>
             </div>
           </div>

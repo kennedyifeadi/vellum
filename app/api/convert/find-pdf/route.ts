@@ -7,11 +7,6 @@ import dbConnect from '@/lib/db/mongoose';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// Use the legacy/CJS path for better node compatibility in serverless environments
-// If this fails, we can use the regular import and handle the worker
-// Using standard import but without worker for simple text extraction
-// In Node.js environment with pdfjs-dist/legacy, the worker is usually handled automatically 
-// or can be omitted for simple operations. setting it to false is invalid in v5+.
 
 interface Match {
   page: number;
@@ -87,7 +82,7 @@ export async function POST(req: NextRequest) {
 
             // Highlighting Logic
             // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
-            const [scaleX, , , scaleY, translateX, translateY] = item.transform;
+            const [scaleX, , , scaleY, translateX, translateY] = item.transform || [1, 0, 0, 1, 0, 0];
 
             // In some PDFs, width/height aren't in item. Must calculate from transform or viewport
             const itemWidth = item.width || (item.str.length * scaleX * 0.6); // Fallback

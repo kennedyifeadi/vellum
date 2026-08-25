@@ -78,7 +78,7 @@ export default function Footer() {
     <footer className="w-full bg-white text-gray-900 pt-20 pb-8 px-6 lg:px-12 xl:px-20 border-t border-gray-100 flex flex-col justify-between min-h-[80vh]">
       
       {/* ── Top section: tagline + columns ── */}
-      <div className="max-w-[2000px] w-full mx-auto">
+      <div className="max-w-500 w-full mx-auto">
         <div className="flex flex-col xl:flex-row xl:gap-20 gap-14">
 
           {/* Left — brand tagline */}
@@ -156,7 +156,7 @@ export default function Footer() {
       </div>
 
       {/* ── Bottom bar ── */}
-      <div className="max-w-[2000px] w-full mx-auto">
+      <div className="max-w-500 w-full mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <p className="text-xs text-gray-400">
             © {year} Vellum. All rights reserved.

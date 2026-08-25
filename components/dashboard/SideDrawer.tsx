@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
+import Image from 'next/image';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -16,10 +17,60 @@ export interface DriveFile {
 }
 type VellumFile = File | DriveFile;
 
+interface GooglePickerBuilder {
+  addView: (view: unknown) => GooglePickerBuilder;
+  setOAuthToken: (token: string) => GooglePickerBuilder;
+  setDeveloperKey: (key: string) => GooglePickerBuilder;
+  setAppId: (appId: string) => GooglePickerBuilder;
+  setCallback: (callback: (data: GooglePickerData) => void) => GooglePickerBuilder;
+  enableFeature: (feature: unknown) => GooglePickerBuilder;
+  build: () => { setVisible: (visible: boolean) => void };
+}
+
+interface GoogleDocsView {
+  setMimeTypes: (types: string) => GoogleDocsView;
+  setIncludeFolders: (include: boolean) => GoogleDocsView;
+}
+
+type GooglePickerData = {
+  action: string;
+  docs: Array<{
+    id: string;
+    name: string;
+    sizeBytes?: number;
+    mimeType: string;
+  }>;
+};
+
+type GoogleTokenResponse = {
+  error?: string;
+  access_token: string;
+};
+
 declare global {
   interface Window {
-    google: any;
-    gapi: any;
+    google: {
+      picker: {
+        PickerBuilder: new () => GooglePickerBuilder;
+        DocsView: new () => GoogleDocsView;
+        Action: { PICKED: string };
+        Feature: { MULTISELECT_ENABLED: unknown };
+      };
+      accounts: {
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (response: GoogleTokenResponse) => void;
+          }) => {
+            requestAccessToken: (options: { prompt: string }) => void;
+          };
+        };
+      };
+    };
+    gapi: {
+      load: (api: string, config: { callback: () => void }) => void;
+    };
   }
 }
 
@@ -56,7 +107,7 @@ const availableTools = [
   { id: 'pdf-to-docx', name: 'PDF to DOCX', color: 'bg-[#EFF6FF] text-[#2563eb]' },
 ];
 
-export default function SideDrawer({ isOpen, onClose, file, toolId, options }: SideDrawerProps) {
+export default function SideDrawer({ isOpen, onClose, file, toolId, options: _options }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
   const { showToast, addNotification, user } = useDashboard();
@@ -207,7 +258,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
         .setOAuthToken(accessToken)
         .setDeveloperKey(apiKey)
         .setAppId(appId)
-        .setCallback((data: any) => {
+        .setCallback((data: GooglePickerData) => {
           console.log('[GooglePicker] Picker Callback Event:', data.action, data);
           if (data.action === window.google.picker.Action.PICKED) {
             const plan = user?.plan || 'Free';
@@ -299,7 +350,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.readonly',
-        callback: (response: any) => {
+        callback: (response: GoogleTokenResponse) => {
           console.log('[GooglePicker] tokenClient Callback received:', response);
           if (response.error !== undefined) {
             console.error('[GooglePicker] Error from tokenClient:', response);
@@ -771,13 +822,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                     <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
                     <div className="flex flex-wrap justify-center gap-3">
                       {fileList.map((f, index) => (
-                        <div key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${(f as File).lastModified}-mobile`} className="w-[130px] bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-2.5 flex flex-col items-center gap-2 relative group shadow-sm">
+                        <div key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${(f as File).lastModified}-mobile`} className="w-32.5 bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-2.5 flex flex-col items-center gap-2 relative group shadow-sm">
                           {f.type.includes('image') && !('isDriveFile' in f) ? (
-                            <div className="w-[80px] h-[80px] bg-white rounded-lg border border-[#e2e8f0] overflow-hidden flex items-center justify-center">
-                              <img src={URL.createObjectURL(f as File)} alt={f.name} className="w-full h-full object-cover" />
+                            <div className="w-20 h-20 bg-white rounded-lg border border-[#e2e8f0] overflow-hidden flex items-center justify-center relative">
+                              <Image src={URL.createObjectURL(f as File)} alt={f.name} fill className="object-cover" unoptimized />
                             </div>
                           ) : (
-                            <div className="w-[80px] h-[80px] bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center text-3xl">
+                            <div className="w-20 h-20 bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center text-3xl">
                               {'isDriveFile' in f ? (
                                 <svg className="w-8 h-8" viewBox="0 0 87.3 78">
                                   <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
@@ -857,7 +908,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
               </div>
 
               {/* Mobile footer */}
-              <div className="flex-shrink-0 p-4 border-t border-[#eaedf3] bg-white">
+              <div className="shrink-0 p-4 border-t border-[#eaedf3] bg-white">
                 <button 
                   disabled={isActionDisabled() || isProcessing}
                   className={`w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
@@ -934,7 +985,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                       <Reorder.Item 
                         key={'isDriveFile' in f ? f.id : `${f.name}-${f.size}-${f.lastModified}`} 
                         value={f} 
-                        className="w-[220px] max-w-full bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-3 flex flex-col items-center gap-2.5 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
+                        className="w-55 max-w-full bg-[#f1f5f9] border border-[#e2e8f0] rounded-xl p-3 flex flex-col items-center gap-2.5 relative group shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing"
                       >
                         <div className="absolute top-2 left-2 w-6 h-6 rounded-lg bg-white/70 flex items-center justify-center text-[#94a3b8] opacity-0 group-hover:opacity-100 transition-opacity border border-[#e2e8f0] shadow-sm pointer-events-none">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -967,7 +1018,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                         ) : f.type.includes('image') && !('isDriveFile' in f) ? (
                           <ImageThumbnail file={f as File} />
                         ) : (
-                          <div className="w-[140px] aspect-square max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-5xl shadow-sm flex-col gap-2">
+                          <div className="w-35 aspect-square max-w-full bg-white rounded-lg border border-[#e2e8f0] flex items-center justify-center overflow-hidden shrink-0 text-5xl shadow-sm flex-col gap-2">
                             {'isDriveFile' in f ? (
                               <>
                                 <svg className="w-10 h-10" viewBox="0 0 87.3 78">
@@ -983,7 +1034,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                           </div>
                         )}
                         <div className="w-full text-center flex flex-col items-center">
-                          <p className="text-sm font-semibold text-[#1e293b] truncate w-full max-w-[260px]">{f.name}</p>
+                          <p className="text-sm font-semibold text-[#1e293b] truncate w-full max-w-65">{f.name}</p>
                           <p className="text-xs text-[#64748b] mt-1 font-medium bg-white px-2 py-0.5 rounded-full border border-[#e2e8f0] inline-block">{formatBytes(f.size)}</p>
                         </div>
                         <button 
@@ -1106,7 +1157,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId, options }: S
                       Clear Results
                     </button>
                   </div>
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="space-y-2 max-h-75 overflow-y-auto pr-2 custom-scrollbar">
                     {findResults.matches.length > 0 ? (
                       findResults.matches.map((match, idx) => (
                         <div key={idx} className="bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-3 hover:border-[#6366f1]/30 transition-colors">
