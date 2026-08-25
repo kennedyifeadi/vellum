@@ -107,7 +107,7 @@ const availableTools = [
   { id: 'pdf-to-docx', name: 'PDF to DOCX', color: 'bg-[#EFF6FF] text-[#2563eb]' },
 ];
 
-export default function SideDrawer({ isOpen, onClose, file, toolId, options: _options }: SideDrawerProps) {
+export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
   const { showToast, addNotification, user } = useDashboard();
