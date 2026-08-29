@@ -124,7 +124,6 @@ export default function ToolsLibrary() {
           <motion.button
             key={tool.id}
             onClick={() => handleToolClick(tool.id)}
-            whileHover={{ y: -4, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
             className={`bg-white border border-[#eaedf3] rounded-2xl p-5 flex ${
               viewMode === 'grid' ? 'flex-col items-start' : 'items-center gap-4'
             } gap-4 hover:border-[#6366f1]/30 text-left transition-all cursor-pointer shadow-[0_1px_4px_rgba(0,0,0,0.01)] relative group`}
