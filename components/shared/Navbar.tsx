@@ -183,7 +183,7 @@ export default function Navbar() {
             relative mx-auto flex items-center justify-between
             transition-all duration-500 ease-out
             ${scrolled
-              ? 'max-w-5xl rounded-2xl bg-white/90 backdrop-blur-md border border-gray-200/60 px-5 h-14'
+              ? 'max-w-5xl rounded-full bg-white/90 border border-gray-200/60 px-5 h-14'
               : 'max-w-500 bg-transparent border border-transparent px-6 lg:px-12 h-20'
             }
           `}
@@ -238,8 +238,8 @@ export default function Navbar() {
                   px-3.5 py-2 rounded-lg text-sm font-medium
                   transition-all duration-150
                   ${scrolled
-                    ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'text-gray-600 hover:text-indigo-600'
+                    : 'text-gray-600 hover:text-indigo-600'
                   }
                 `}
               >
@@ -251,12 +251,12 @@ export default function Navbar() {
           {/* ── Right actions ── */}
           <div className="hidden md:flex items-center gap-2">
             <Link
-              href="/sign-in"
+              href="/login"
               className={`
                 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
                 ${scrolled
-                  ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'text-gray-600 hover:text-indigo-600'
+                  : 'text-gray-600 hover:text-indigo-600'
                 }
               `}
             >
@@ -264,7 +264,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/sign-up"
-              className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+              className="px-4 py-2 rounded-full text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
             >
               Get Started
             </Link>

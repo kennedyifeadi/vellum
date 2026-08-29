@@ -75,7 +75,7 @@ export default function Footer() {
   }, [isInView]);
 
   return (
-    <footer className="w-full bg-white text-gray-900 pt-20 pb-8 px-6 lg:px-12 xl:px-20 border-t border-gray-100 flex flex-col justify-between min-h-[80vh]">
+    <footer className="relative z-10 w-full bg-white text-gray-900 pt-20 pb-8 px-6 lg:px-12 xl:px-20 border-t border-gray-100 flex flex-col justify-between min-h-[80vh]">
       
       {/* ── Top section: tagline + columns ── */}
       <div className="max-w-500 w-full mx-auto">
