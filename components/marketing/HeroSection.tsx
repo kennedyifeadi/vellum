@@ -17,6 +17,7 @@ import Split from "@/public/Tools Assest/Split.png";
 import Conversion from "@/public/Tools Assest/Conversion.png";
 import Lock from "@/public/Tools Assest/Lock.png";
 import { StaticImport } from "next/dist/shared/lib/get-img-props";
+import TargetCursor from "./TargetCursor";
 // Small icons
 const CloudIcon = ({ className }: { className?: string }) => (
   <svg
@@ -189,7 +190,19 @@ const VellumToolsIcon = ({
   );
 };
 
-const SmallNode = ({ x, y, icon: Icon, size = 40, direction = 1 }: any) => (
+const SmallNode = ({
+  x,
+  y,
+  icon: Icon,
+  size = 40,
+  direction = 1,
+}: {
+  x: number;
+  y: number;
+  icon: React.ElementType;
+  size?: number;
+  direction?: number;
+}) => (
   <motion.div
     className={`absolute flex items-center justify-center bg-[#F3F4F6] text-gray-400 z-10 rounded-full`}
     style={{
@@ -218,10 +231,10 @@ export default function HeroSection() {
   }, []);
 
   return (
-    <section className="relative w-full min-h-screen flex flex-col items-center justify-center font-sans bg-white">
+    <section className="relative w-full min-h-screen flex flex-col items-center justify-center font-sans bg-white hero-section-container">
       <div className="absolute inset-0 z-0 overflow-hidden">
         <Antigravity
-          count={300}
+          count={100}
           magnetRadius={20}
           ringRadius={10}
           waveSpeed={0.9}
@@ -356,11 +369,20 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 15 }}
           animate={mounted ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="text-[3.5rem] md:text-[5.5rem] font-extrabold leading-[1.05] tracking-tight text-gray-900 mb-6"
+          className="text-[3.5rem] md:text-[5.5rem] font-extrabold leading-[1.05] tracking-tight text-gray-900 mb-6 cursor-h1-container"
         >
-          Your all-in-one
+          <TargetCursor
+            spinDuration={2}
+            hideDefaultCursor
+            parallaxOn
+            hoverDuration={0.2}
+            cursorColor="#000"
+            cursorColorOnTarget="#3858fb"
+            containerSelector=".cursor-h1-container"
+          />
+          <span className="cursor-target">Your all-in-one</span>
           <br />
-          file toolkit
+          <span className="cursor-target">file toolkit</span>
         </motion.h1>
 
         <motion.p

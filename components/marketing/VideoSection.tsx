@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 
 export default function VideoSection() {
   return (
-    <section className="relative z-10 py-32 flex flex-col items-center justify-center overflow-hidden">
+    <section className="relative z-20 -mt-30 pb-32 flex flex-col items-center justify-center overflow-hidden">
       
       <motion.div
         initial={{ opacity: 0, y: 40, scale: 0.95 }}
