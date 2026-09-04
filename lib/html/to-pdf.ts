@@ -29,7 +29,7 @@ export async function convertHtmlToPdf({
   if (url) {
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
   } else if (htmlContent) {
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    await page.setContent(htmlContent, { waitUntil: 'load' });
   }
 
   const pdfBuffer = await page.pdf({
