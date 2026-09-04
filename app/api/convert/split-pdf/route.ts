@@ -5,6 +5,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
+import { saveConversionRecord } from '@/lib/conversions';
 
 
 export async function POST(req: NextRequest) {
