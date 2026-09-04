@@ -1,6 +1,7 @@
 import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import { PDFDocument as EncryptablePDFDocument } from 'pdf-lib-plus-encrypt';
 import { compressPdf } from '../lib/pdf/compress';
+import { lockPdf } from '../lib/pdf/lock';
 
 async function createPdf(pageCount: number, withAnnotation = false): Promise<Buffer> {
   const doc = await PDFDocument.create();
@@ -70,17 +71,27 @@ describe('compressPdf (lib/pdf/compress.ts)', () => {
     await expect(PDFDocument.load(result.buffer)).resolves.toBeDefined();
   });
 
-  // Documents a real bug: compressPdf loads with `ignoreEncryption: true` specifically to
-  // support password-protected input, but pdf-lib cannot resolve the page tree of a PDF
-  // encrypted via pdf-lib-plus-encrypt once encryption is ignored, so compression of any
-  // locked PDF currently crashes instead of succeeding. See PR description for details.
-  it('currently fails to compress a password-protected PDF', async () => {
+  // pdf-lib loads an encrypted PDF fine when `ignoreEncryption: true` is passed, but it
+  // never decrypts the underlying object streams, so anything that walks the page tree
+  // (getPages, save, etc.) fails deep inside pdf-lib with a confusing raw TypeError.
+  // Neither pdf-lib nor pdf-lib-plus-encrypt support decrypting on load, so compressPdf
+  // now checks `isEncrypted` up front and fails fast with an actionable message instead.
+  it('throws a clear error instead of crashing on a password-protected PDF', async () => {
     const plainDoc = await EncryptablePDFDocument.load(await createPdf(2));
     await plainDoc.encrypt({ userPassword: 'secret', ownerPassword: 'secret' });
     const encryptedBuffer = Buffer.from(await plainDoc.save());
 
     await expect(compressPdf({ pdfBuffer: encryptedBuffer, level: 'medium' })).rejects.toThrow(
-      TypeError
+      /password-protected/i
+    );
+  });
+
+  it('throws the same clear error for a PDF locked via lockPdf', async () => {
+    const pdfBuffer = await createPdf(2);
+    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'secret' });
+
+    await expect(compressPdf({ pdfBuffer: lockedBuffer, level: 'low' })).rejects.toThrow(
+      /password-protected/i
     );
   });
 });
