@@ -3,8 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 export const dynamic = 'force-dynamic';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import fs from 'fs';
-import path from 'path';
+import { getStorage } from '@/lib/storage';
 
 export async function GET(req: NextRequest) {
   try {
@@ -51,10 +50,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     if (conversion.diskFileName) {
-      const filePath = path.join(process.cwd(), 'tmp', 'storage', conversion.diskFileName);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      await getStorage().delete(conversion.diskFileName);
     }
 
     await Conversion.deleteOne({ _id: id });

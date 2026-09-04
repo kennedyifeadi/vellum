@@ -4,7 +4,7 @@ import UserDocumentModel from '@/models/userDocument';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import fs from 'fs';
+import { getStorage } from '@/lib/storage';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
@@ -44,9 +44,7 @@ export async function POST(req: NextRequest) {
 
   if (!files.length) return NextResponse.json({ error: 'No files provided' }, { status: 400 });
 
-  const docsDir = path.join(process.cwd(), 'tmp', 'storage', 'docs');
-  fs.mkdirSync(docsDir, { recursive: true });
-
+  const storage = getStorage();
   let usedSoFar = currentUsed;
   const created = [];
 
@@ -60,10 +58,9 @@ export async function POST(req: NextRequest) {
 
     const ext = path.extname(file.name);
     const diskFileName = `${uuidv4()}${ext}`;
-    const filePath = path.join(docsDir, diskFileName);
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
+    await storage.put(`docs/${diskFileName}`, buffer);
 
     const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
     const doc = await UserDocumentModel.create({

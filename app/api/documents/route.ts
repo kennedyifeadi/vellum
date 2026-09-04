@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
-import fs from 'fs';
-import path from 'path';
+import { getStorage } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,8 +30,7 @@ export async function DELETE(req: NextRequest) {
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   // Delete physical file
-  const filePath = path.join(process.cwd(), 'tmp', 'storage', 'docs', doc.diskFileName);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  await getStorage().delete(`docs/${doc.diskFileName}`);
 
   return NextResponse.json({ success: true });
 }

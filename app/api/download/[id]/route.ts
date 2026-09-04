@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import fs from 'fs';
-import path from 'path';
+import { getStorage } from '@/lib/storage';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -24,12 +23,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'File not found or unauthorized' }, { status: 404 });
     }
 
-    const filePath = path.join(process.cwd(), 'tmp', 'storage', conversion.diskFileName);
-    if (!fs.existsSync(filePath)) {
+    const storage = getStorage();
+    const fileBuffer = await storage.get(conversion.diskFileName);
+    if (!fileBuffer) {
       return NextResponse.json({ error: 'File has expired and was removed' }, { status: 404 });
     }
-
-    const fileBuffer = fs.readFileSync(filePath);
 
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
