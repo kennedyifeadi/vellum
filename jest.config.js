@@ -17,7 +17,7 @@ const config = {
       },
     ],
   },
-  testMatch: ['<rootDir>/tests/**/*.test.(ts|tsx)'],
+  testMatch: ['**/tests/**/*.test.(ts|tsx)'],
 };
 
 module.exports = config;
