@@ -4,8 +4,7 @@ import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import { cookies } from 'next/headers';
-import fs from 'fs';
-import path from 'path';
+import { getStorage } from '@/lib/storage';
 
 export async function DELETE(req: NextRequest) {
   try {
@@ -18,22 +17,18 @@ export async function DELETE(req: NextRequest) {
 
     // 1. Delete physical files from Conversion records
     const conversions = await Conversion.find({ userId });
-    const storageDir = path.join(process.cwd(), 'tmp', 'storage');
-    
-    if (fs.existsSync(storageDir)) {
-      conversions.forEach((conv) => {
-        if (conv.diskFileName) {
-          const filePath = path.join(storageDir, conv.diskFileName);
-          if (fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-            } catch (err) {
-              console.error(`Failed to delete physical file: ${filePath}`, err);
-            }
-          }
+    const storage = getStorage();
+
+    await Promise.all(
+      conversions.map(async (conv) => {
+        if (!conv.diskFileName) return;
+        try {
+          await storage.delete(conv.diskFileName);
+        } catch (err) {
+          console.error(`Failed to delete physical file: ${conv.diskFileName}`, err);
         }
-      });
-    }
+      })
+    );
 
     // 2. Delete Conversion records
     await Conversion.deleteMany({ userId });

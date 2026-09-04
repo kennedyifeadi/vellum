@@ -1,9 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
+import { getStorage, LocalDiskStorage } from '@/lib/storage';
 
 /**
  * Saves a generated file buffer to local storage and logs it to the database for Recent Activity.
@@ -35,15 +34,9 @@ export async function saveConversionRecord(
   const fileId = crypto.randomUUID();
   const extension = originalFileName.endsWith('.zip') ? '.zip' : '.pdf';
   const diskFileName = `${fileId}${extension}`;
-  
-  // Save to local disk tmp/storage
-  const storageDir = path.join(process.cwd(), 'tmp', 'storage');
-  if (!fs.existsSync(storageDir)) {
-    fs.mkdirSync(storageDir, { recursive: true });
-  }
-  
-  const filePath = path.join(storageDir, diskFileName);
-  fs.writeFileSync(filePath, fileBuffer);
+
+  const storage = getStorage();
+  await storage.put(diskFileName, fileBuffer);
 
   // Save database record with TTL index
   const conversion = await Conversion.create({
@@ -66,31 +59,16 @@ export async function saveConversionRecord(
 /**
  * Sweeps the local storage directory and deletes any physical files that no longer
  * exist in the MongoDB Conversion collection (due to TTL deletion or manual deletion).
+ * Local-disk only: an S3-backed deployment relies on bucket lifecycle rules instead.
  */
 export async function cleanupStorage() {
+  const storage = getStorage();
+  if (!(storage instanceof LocalDiskStorage)) return;
+
   await dbConnect();
-  const storageDir = path.join(process.cwd(), 'tmp', 'storage');
-  if (!fs.existsSync(storageDir)) return;
 
   const validConversions = await Conversion.find({ diskFileName: { $exists: true } }, 'diskFileName');
   const validFileNames = new Set(validConversions.map(c => c.diskFileName).filter(Boolean));
 
-  const physicalEntries = fs.readdirSync(storageDir);
-
-  for (const entry of physicalEntries) {
-    if (!validFileNames.has(entry)) {
-      const entryPath = path.join(storageDir, entry);
-      try {
-        const stat = fs.statSync(entryPath);
-        if (stat.isDirectory()) {
-          // Subdirectories (e.g. tmp/storage/docs) must be removed recursively
-          fs.rmSync(entryPath, { recursive: true, force: true });
-        } else {
-          fs.unlinkSync(entryPath);
-        }
-      } catch (err) {
-        console.error(`Failed to delete expired entry ${entry}:`, err);
-      }
-    }
-  }
+  await storage.sweepOrphaned(validFileNames);
 }
