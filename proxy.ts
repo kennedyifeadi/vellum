@@ -35,7 +35,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rate Limiting for API routes
-  if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp')) {
+  if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp') || pathname.startsWith('/api/auth/request-otp')) {
     const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
     if (isRateLimited(ip)) {
       return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
@@ -103,5 +103,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/verify', '/signup-details', '/api/convert/:path*', '/api/documents/:path*', '/api/auth/verify-otp'],
+  matcher: ['/dashboard/:path*', '/login', '/verify', '/signup-details', '/api/convert/:path*', '/api/documents/:path*', '/api/auth/verify-otp', '/api/auth/request-otp'],
 };

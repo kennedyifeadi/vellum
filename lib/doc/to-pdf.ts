@@ -142,7 +142,7 @@ export async function convertDocxToPdf({
   const page = await browser.newPage();
 
   // Set the styled HTML content
-  await page.setContent(styledHtml, { waitUntil: 'networkidle0' });
+  await page.setContent(styledHtml, { waitUntil: 'load' });
 
   // 4. Generate beautifully formatted PDF
   const pdfBuffer = await page.pdf({ 
