@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       userId: user._id.toString(),
       email: user.email,
       isProfileComplete: true,
+      tokenVersion: user.tokenVersion,
     });
 
     cookieStore.set('auth-token', newToken, {

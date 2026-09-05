@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { getAuthUserId, invalidateTokenVersionCache } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
@@ -39,10 +39,11 @@ export async function DELETE(req: NextRequest) {
     if (all) {
       // Revoke all other sessions by bumping token version and clearing active sessions list
       // Leave one dummy session representing the current (we'll just clear all and let the current user login again, or just clear all)
-      await User.findByIdAndUpdate(userId, { 
-        $inc: { tokenVersion: 1 }, 
-        $set: { activeSessions: [] } 
+      await User.findByIdAndUpdate(userId, {
+        $inc: { tokenVersion: 1 },
+        $set: { activeSessions: [] }
       });
+      invalidateTokenVersionCache(userId);
 
       // Clear current cookie as well so they log back in fresh
       const cookieStore = await cookies();
