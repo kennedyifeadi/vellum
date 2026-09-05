@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/auth/verifyOtp';
 import { createToken } from '@/lib/auth/jwt';
+import { buildSessionEntry } from '@/lib/auth/session';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
@@ -36,6 +37,11 @@ export async function POST(req: NextRequest) {
       userId: user._id.toString(),
       email: user.email,
       isProfileComplete: user.isProfileComplete,
+      tokenVersion: user.tokenVersion,
+    });
+
+    await User.findByIdAndUpdate(user._id, {
+      $push: { activeSessions: buildSessionEntry(req) },
     });
 
     const cookieStore = await cookies();

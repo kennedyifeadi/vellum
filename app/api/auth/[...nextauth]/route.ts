@@ -5,6 +5,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import clientPromise from "@/lib/db/mongodb"; // Your MongoDB connection
 import { verifyOtp } from "@/lib/auth/verifyOtp"; // Your existing OTP verification logic
+import { buildSessionEntry } from "@/lib/auth/session";
 import User from "@/models/user"; // Your existing User model
 
 export const authOptions: AuthOptions = {
@@ -65,6 +66,12 @@ export const authOptions: AuthOptions = {
         token.id = user.id;
         token.isProfileComplete = user.isProfileComplete;
         token.role = user.role;
+
+        // This only runs on the initial sign-in (user is only present then),
+        // not on every session refresh, so it records one entry per login.
+        await User.findByIdAndUpdate(user.id, {
+          $push: { activeSessions: buildSessionEntry() },
+        });
       }
       return token;
     },
