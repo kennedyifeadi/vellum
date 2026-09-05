@@ -20,17 +20,18 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
     await expect(PDFDocument.load(lockedBuffer)).rejects.toThrow(/is encrypted/i);
   });
 
-  // Documents a real bug: even with `ignoreEncryption: true`, plain pdf-lib cannot resolve
-  // the page tree of a PDF encrypted via pdf-lib-plus-encrypt — the same root cause that
-  // breaks compressPdf on locked input (see pdf-compress.test.ts). Reading the page count
-  // back out currently throws rather than succeeding.
-  it('currently cannot have its page tree read back even with ignoreEncryption', async () => {
+  // Same root cause as compressPdf (see pdf-compress.test.ts): loading an already-encrypted
+  // PDF with `ignoreEncryption: true` and then touching its page tree fails deep inside
+  // pdf-lib with a confusing raw TypeError, because neither pdf-lib nor pdf-lib-plus-encrypt
+  // can decrypt the object streams on load. lockPdf now checks `isEncrypted` up front and
+  // fails fast with an actionable message instead of attempting to re-encrypt.
+  it('throws a clear error instead of crashing when locking an already-locked PDF', async () => {
     const pdfBuffer = await createPdf(3);
-
     const lockedBuffer = await lockPdf({ pdfBuffer, password: 'letmein' });
 
-    const reloaded = await PDFDocument.load(lockedBuffer, { ignoreEncryption: true });
-    expect(() => reloaded.getPageCount()).toThrow(TypeError);
+    await expect(lockPdf({ pdfBuffer: lockedBuffer, password: 'newpassword' })).rejects.toThrow(
+      /already password-protected/i
+    );
   });
 
   it('throws when called with an empty password instead of producing an unprotected PDF', async () => {
