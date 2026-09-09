@@ -2,12 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateOtp } from '@/lib/auth/otp';
 import dbConnect from '@/lib/db/mongoose';
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const { email } = await req.json();
+
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
+    }
+
+    const { email } = (body ?? {}) as { email?: string };
     if (!email) {
       return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
+    }
+    if (typeof email !== 'string' || !EMAIL_PATTERN.test(email)) {
+      return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
     }
 
     const otpCode = await generateOtp(email);
