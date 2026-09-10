@@ -9,6 +9,18 @@ jest.mock('@/lib/auth/jwt', () => ({
   getAuthUserId: jest.fn().mockImplementation(() => Promise.resolve(mockUserId)),
 }));
 
+jest.mock('@/lib/db/mongoose', () => ({
+  __esModule: true,
+  default: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('@/models/user', () => ({
+  __esModule: true,
+  default: {
+    findById: jest.fn().mockImplementation(() => Promise.resolve(mockUserId ? { plan: 'Free' } : null)),
+  },
+}));
+
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
