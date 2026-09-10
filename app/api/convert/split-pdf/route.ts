@@ -7,6 +7,7 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { handleConvertError } from '@/lib/convert/errors';
 
 
 export async function POST(req: NextRequest) {
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
-    
+
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
       Basic: 50 * 1024 * 1024,
@@ -34,8 +35,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (file.size > maxSize) {
-      return NextResponse.json({ 
-        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.` 
+      return NextResponse.json({
+        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`
       }, { status: 400 });
     }
 
@@ -53,11 +54,15 @@ export async function POST(req: NextRequest) {
     // Return a single PDF or a zip of all split documents.
     if (splitPdfBuffers.size === 1) {
       const firstEntry = splitPdfBuffers.entries().next().value;
-      if (!firstEntry) return NextResponse.json({ error: 'Failed' }, { status: 500 });
+      if (!firstEntry) throw new Error('splitPdf returned an empty result set');
       const [fileName, buffer] = firstEntry;
 
       if (userId) {
-        await saveConversionRecord(userId, 'Split PDF', fileName, Buffer.from(buffer));
+        try {
+          await saveConversionRecord(userId, 'Split PDF', fileName, Buffer.from(buffer));
+        } catch (recordError) {
+          console.error('Failed to record Split PDF conversion:', recordError);
+        }
       }
 
       return new NextResponse(buffer as unknown as BodyInit, {
@@ -66,20 +71,26 @@ export async function POST(req: NextRequest) {
           'Content-Disposition': `attachment; filename="${fileName}"`,
         },
       });
-    } else if (splitPdfBuffers.size > 1) {
+    }
+
+    if (splitPdfBuffers.size > 1) {
       const zip = new JSZip();
-      
+
       for (const [fileName, buffer] of Array.from(splitPdfBuffers.entries())) {
         zip.file(fileName, buffer);
       }
-      
+
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-      
+
       if (userId) {
-        const originalFileName = file?.name ? `split_${file.name.replace('.pdf', '')}.zip` : 'split_documents.zip';
-        await saveConversionRecord(userId, 'Split PDF', originalFileName, Buffer.from(zipBuffer));
+        try {
+          const originalFileName = file?.name ? `split_${file.name.replace('.pdf', '')}.zip` : 'split_documents.zip';
+          await saveConversionRecord(userId, 'Split PDF', originalFileName, Buffer.from(zipBuffer));
+        } catch (recordError) {
+          console.error('Failed to record Split PDF conversion:', recordError);
+        }
       }
-      
+
       return new NextResponse(zipBuffer as unknown as BodyInit, {
         headers: {
           'Content-Type': 'application/zip',
@@ -88,9 +99,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: 'Failed to split PDF.' }, { status: 500 });
+    throw new Error('splitPdf returned no documents');
   } catch (error) {
-    console.error('Error splitting PDF:', error);
-    return NextResponse.json({ error: 'Failed to split PDF.' }, { status: 500 });
+    return handleConvertError(error, 'Failed to split PDF.');
   }
 }

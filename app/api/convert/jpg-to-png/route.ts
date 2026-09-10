@@ -4,9 +4,10 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import sharp from 'sharp';
 import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { convertJpegToPng } from '@/lib/image/to-png';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
-    
+
     const maxAllowed = resolvePlanLimit(plan, {
       guest: 3,
       Basic: 30,
@@ -31,8 +32,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (images.length > maxAllowed) {
-      return NextResponse.json({ 
-        error: `Your current plan allows up to ${maxAllowed} images per conversion.` 
+      return NextResponse.json({
+        error: `Your current plan allows up to ${maxAllowed} images per conversion.`
       }, { status: 400 });
     }
 
@@ -40,23 +41,24 @@ export async function POST(req: NextRequest) {
     if (images.length === 1) {
       const file = images[0];
       const buffer = Buffer.from(await file.arrayBuffer());
-      
-      const pngBuffer = await sharp(buffer)
-        .png({ quality: 100 })
-        .toBuffer();
 
-      // Log Conversion
+      const pngBuffer = await convertJpegToPng({ jpegBuffer: buffer, quality: 100 });
+
       if (userId) {
-        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
-        await Conversion.create({
-          userId,
-          toolUsed: 'JPEG to PNG',
-          fileName: file.name,
-          fileSize: file.size,
-          status: 'success',
-          metadata: { pages: 1, processedSize: pngBuffer.length },
-          expiresAt
-        });
+        try {
+          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
+          await Conversion.create({
+            userId,
+            toolUsed: 'JPEG to PNG',
+            fileName: file.name,
+            fileSize: file.size,
+            status: 'success',
+            metadata: { pages: 1, processedSize: pngBuffer.length },
+            expiresAt
+          });
+        } catch (recordError) {
+          console.error('Failed to record JPEG to PNG conversion:', recordError);
+        }
       }
 
       return new NextResponse(pngBuffer as unknown as BodyInit, {
@@ -73,12 +75,10 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < images.length; i++) {
         const file = images[i];
         totalOriginalSize += file.size;
-        
+
         const buffer = Buffer.from(await file.arrayBuffer());
-        const pngBuffer = await sharp(buffer)
-          .png({ quality: 100 })
-          .toBuffer();
-          
+        const pngBuffer = await convertJpegToPng({ jpegBuffer: buffer, quality: 100 });
+
         // Ensure unique names and correct extensions inside ZIP
         const baseName = file.name.replace(/\.[^/.]+$/, "");
         zip.file(`${baseName}.png`, pngBuffer);
@@ -86,18 +86,21 @@ export async function POST(req: NextRequest) {
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
-      // Log Conversion
       if (userId) {
-        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
-        await Conversion.create({
-          userId,
-          toolUsed: 'JPEG to PNG (Batch)',
-          fileName: 'converted_images.zip',
-          fileSize: totalOriginalSize,
-          status: 'success',
-          metadata: { pages: images.length, processedSize: zipBuffer.length },
-          expiresAt
-        });
+        try {
+          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
+          await Conversion.create({
+            userId,
+            toolUsed: 'JPEG to PNG (Batch)',
+            fileName: 'converted_images.zip',
+            fileSize: totalOriginalSize,
+            status: 'success',
+            metadata: { pages: images.length, processedSize: zipBuffer.length },
+            expiresAt
+          });
+        } catch (recordError) {
+          console.error('Failed to record JPEG to PNG conversion:', recordError);
+        }
       }
 
       return new NextResponse(zipBuffer as unknown as BodyInit, {
@@ -109,7 +112,6 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (error) {
-    console.error('[API/Convert/JPG-to-PNG] Error:', error);
-    return NextResponse.json({ error: 'Failed to convert images to PNG' }, { status: 500 });
+    return handleConvertError(error, 'Failed to convert images to PNG');
   }
 }
