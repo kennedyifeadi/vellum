@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { PDFDocument as EncryptablePDFDocument } from 'pdf-lib-plus-encrypt';
 import { mergePdfs } from '../lib/pdf/merge';
+import { ClientError } from '../lib/convert/errors';
 
 async function createPdf(pageTexts: string[]): Promise<Buffer> {
   const doc = await PDFDocument.create();
@@ -76,6 +77,24 @@ describe('mergePdfs (lib/pdf/merge.ts)', () => {
 
     await expect(mergePdfs({ pdfBuffers: [plain, plain, encrypted] })).rejects.toThrow(
       /file 3/i
+    );
+  });
+
+  it('rejects a non-PDF input as a ClientError naming its position', async () => {
+    const plain = await createPdf(['A1']);
+    const notaPdf = Buffer.from('just some text, not a pdf');
+
+    await expect(mergePdfs({ pdfBuffers: [plain, notaPdf] })).rejects.toBeInstanceOf(ClientError);
+    await expect(mergePdfs({ pdfBuffers: [plain, notaPdf] })).rejects.toThrow(
+      /file 2 is not a valid PDF or is corrupted/i
+    );
+  });
+
+  it('rejects an empty input buffer as a ClientError naming its position', async () => {
+    const plain = await createPdf(['A1']);
+
+    await expect(mergePdfs({ pdfBuffers: [plain, Buffer.alloc(0)] })).rejects.toThrow(
+      /file 2 is empty/i
     );
   });
 });

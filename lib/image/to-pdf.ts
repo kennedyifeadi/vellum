@@ -1,5 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
+import { ClientError } from '@/lib/convert/errors';
 
 interface ImageToPdfOptions {
   imageBuffers: Buffer[];
@@ -10,19 +11,32 @@ export async function convertImagesToPdf({
 }: ImageToPdfOptions): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
 
-  for (const imageBuffer of imageBuffers) {
+  for (const [index, imageBuffer] of imageBuffers.entries()) {
+    if (!imageBuffer || imageBuffer.length === 0) {
+      throw new ClientError(`Image ${index + 1} is empty.`);
+    }
+
     let image;
-    const { width, height } = await sharp(imageBuffer).metadata();
+    let width: number | undefined;
+    let height: number | undefined;
+    try {
+      ({ width, height } = await sharp(imageBuffer).metadata());
+    } catch (error) {
+      throw new ClientError(
+        `Image ${index + 1} is not a valid image or is corrupted.`,
+        400,
+        { cause: error },
+      );
+    }
 
     // Embed image based on its format
     try {
       image = await pdfDoc.embedPng(imageBuffer);
-    } catch (pngError) {
+    } catch {
       try {
         image = await pdfDoc.embedJpg(imageBuffer);
-      } catch (jpgError) {
-        console.error('Unsupported image format:', pngError, jpgError);
-        throw new Error('Unsupported image format. Only PNG and JPEG are supported.');
+      } catch {
+        throw new ClientError('Unsupported image format. Only PNG and JPEG are supported.');
       }
     }
 
