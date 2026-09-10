@@ -6,6 +6,7 @@ import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 
 interface Match {
@@ -31,9 +32,12 @@ export async function POST(req: NextRequest) {
     const plan = user?.plan || 'Free';
     const isPro = plan === 'Pro';
     
-    let maxPages = 10; // Guest
-    if (plan === 'Pro') maxPages = 100;
-    else if (plan === 'Basic') maxPages = 50;
+    const maxPages = resolvePlanLimit(plan, {
+      guest: 10,
+      Basic: 50,
+      Pro: 100,
+      Enterprise: 500,
+    });
 
     const arrayBuffer = await file.arrayBuffer();
     // Slice a copy for each consumer — pdfjs.getDocument() detaches/transfers the

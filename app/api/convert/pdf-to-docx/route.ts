@@ -6,6 +6,7 @@ import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { PDFParse } from 'pdf-parse';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,14 +23,12 @@ export async function POST(req: NextRequest) {
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
     
-    // Check Limits
-    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
-    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
-    const MAX_PRO_SIZE = 100 * 1024 * 1024;
-    
-    let maxSize = MAX_GUEST_SIZE;
-    if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
-    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+    const maxSize = resolvePlanLimit(plan, {
+      guest: 25 * 1024 * 1024,
+      Basic: 50 * 1024 * 1024,
+      Pro: 100 * 1024 * 1024,
+      Enterprise: 500 * 1024 * 1024,
+    });
 
     if (file.size > maxSize) {
       return NextResponse.json({ 
