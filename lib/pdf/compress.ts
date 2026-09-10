@@ -21,9 +21,13 @@ const JPEG_QUALITY: Record<string, number> = {
 
 /**
  * Undo PNG/TIFF prediction filters common in Flate-encoded PDF images.
+ * Returns null when the predictor (or a per-row PNG filter tag) is one we do
+ * not know how to reverse, so callers can skip the image instead of feeding
+ * still-filtered bytes to an image decoder.
  */
-function decodePredictor(data: Uint8Array, predictor: number, colors: number, bpc: number, columns: number): Buffer {
+function decodePredictor(data: Uint8Array, predictor: number, colors: number, bpc: number, columns: number): Buffer | null {
   if (predictor <= 1) return Buffer.from(data);
+  if (predictor !== 2 && (predictor < 10 || predictor > 15)) return null;
 
   const bytesPerPixel = Math.max(1, (colors * bpc) / 8);
   const rowSize = columns * bytesPerPixel;
@@ -45,12 +49,15 @@ function decodePredictor(data: Uint8Array, predictor: number, colors: number, bp
     return decoded;
   }
 
-  // PNG Predictors (10, 11, 12, 13, 14)
-  if (predictor >= 10 && predictor <= 14) {
+  // PNG Predictors (10-15). The PNG filter is always tagged per row as the
+  // first byte of the row; predictor 15 ("optimal") only differs on the encode
+  // side, where the encoder is free to pick a different filter for each row.
+  if (predictor >= 10 && predictor <= 15) {
     for (let i = 0; i < rows; i++) {
         const rawRowStart = i * stride;
         const decodedRowStart = i * rowSize;
-        const filterType = predictor === 10 ? data[rawRowStart] : predictor - 10;
+        const filterType = data[rawRowStart];
+        if (filterType > 4) return null;
         for (let j = 0; j < rowSize; j++) {
             const rawIdx = rawRowStart + 1 + j;
             const current = data[rawIdx];
@@ -81,7 +88,7 @@ function decodePredictor(data: Uint8Array, predictor: number, colors: number, bp
     return decoded;
   }
 
-  return Buffer.from(data);
+  return null;
 }
 
 /**
@@ -131,6 +138,14 @@ function decodeStream(pdfObject: PDFRawStream): Buffer | null {
   return Buffer.from(contents);
 }
 
+async function maxChannelStdev(
+  input: Buffer,
+  raw?: { width: number; height: number; channels: 1 | 2 | 3 | 4 },
+): Promise<number> {
+  const { channels } = await (raw ? sharp(input, { raw }) : sharp(input)).stats();
+  return Math.max(...channels.map((c) => c.stdev));
+}
+
 async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<void> {
   const quality = JPEG_QUALITY[level] ?? 65;
   const context = pdfDoc.context;
@@ -169,6 +184,7 @@ async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<voi
 
     try {
       let pipeline;
+      let rawInfo: { width: number; height: number; channels: 1 | 2 | 3 | 4 } | undefined;
       const colorSpaceObj = dict.get(PDFName.of('ColorSpace'));
       const colorSpace = colorSpaceObj?.toString() || '';
 
@@ -199,13 +215,8 @@ async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<voi
             }
         }
 
-        pipeline = sharp(decoded, {
-          raw: {
-            width,
-            height,
-            channels
-          }
-        });
+        rawInfo = { width, height, channels };
+        pipeline = sharp(decoded, { raw: rawInfo });
       } else {
         pipeline = sharp(decoded); // e.g. DCTDecode (JPEG passes through normally)
       }
@@ -239,6 +250,19 @@ async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<voi
       const reencoded = await pipeline
         .jpeg({ quality, mozjpeg: true, chromaSubsampling: '4:2:0' })
         .toBuffer();
+
+      // Fail-safe: if the source stream carried real detail but the re-encoded
+      // image collapsed to a near-flat field, the raw-pixel interpretation was
+      // wrong (e.g. prediction filter bytes read as pixels). Keep the original
+      // image rather than swap in a degenerate one.
+      if (rawInfo) {
+        const sourceDetail = await maxChannelStdev(decoded, rawInfo);
+        const resultDetail = await maxChannelStdev(reencoded);
+        if (sourceDetail >= 8 && resultDetail < 2) {
+          processedRefs.add(refKey);
+          continue;
+        }
+      }
 
       if (reencoded.length < pdfObject.contents.length) {
         const newDict = pdfObject.dict.clone();
