@@ -9,7 +9,15 @@ import dbConnect from '@/lib/db/mongoose';
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const { email, code } = await req.json();
+
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
+    }
+
+    const { email, code } = (body ?? {}) as { email?: string; code?: string };
 
     if (!email || !code) {
       return NextResponse.json({ error: 'Email and OTP are required.' }, { status: 400 });
