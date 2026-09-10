@@ -1,6 +1,7 @@
 import { PDFDocument, PDFName, PDFRawStream, PDFArray } from 'pdf-lib';
 import sharp from 'sharp';
 import zlib from 'zlib';
+import { loadPdf } from '@/lib/pdf/loadPdf';
 
 interface CompressPdfOptions {
   pdfBuffer: Buffer;
@@ -299,16 +300,10 @@ export async function compressPdf({
 }: CompressPdfOptions): Promise<CompressResult> {
   const originalSize = pdfBuffer.length;
 
-  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
-
-  // `ignoreEncryption` only skips pdf-lib's load-time guard; it does not decrypt the
-  // document. An encrypted PDF's object streams stay opaque to pdf-lib, so anything
-  // that walks the page tree (getPages, save, etc.) fails with a confusing TypeError.
-  // Neither pdf-lib nor pdf-lib-plus-encrypt support decrypting on load, so fail fast
-  // with an actionable message instead of letting that crash surface.
-  if (pdfDoc.isEncrypted) {
-    throw new Error('This PDF is password-protected. Please remove the password before compressing it.');
-  }
+  const pdfDoc = await loadPdf(pdfBuffer, {
+    encryptedMessage:
+      'This PDF is password-protected. Please remove the password before compressing it.',
+  });
 
   await stripOptionalContent(pdfDoc, level);
 

@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
 import { convertImagesToPdf } from '../lib/image/to-pdf';
+import { ClientError } from '../lib/convert/errors';
 
 async function createPng(width: number, height: number, color = { r: 255, g: 0, b: 0 }): Promise<Buffer> {
   return sharp({ create: { width, height, channels: 3, background: color } }).png().toBuffer();
@@ -49,6 +50,24 @@ describe('convertImagesToPdf (lib/image/to-pdf.ts)', () => {
 
     await expect(convertImagesToPdf({ imageBuffers: [webp] })).rejects.toThrow(
       'Unsupported image format. Only PNG and JPEG are supported.'
+    );
+    await expect(convertImagesToPdf({ imageBuffers: [webp] })).rejects.toBeInstanceOf(ClientError);
+  });
+
+  it('rejects an empty image buffer as a ClientError naming its position', async () => {
+    const png = await createPng(40, 40);
+
+    await expect(
+      convertImagesToPdf({ imageBuffers: [png, Buffer.alloc(0)] })
+    ).rejects.toThrow(/image 2 is empty/i);
+  });
+
+  it('rejects a corrupted image buffer as a ClientError, not a generic failure', async () => {
+    const garbage = Buffer.from('\x89PNG\r\n\x1a\n then total nonsense that is not a real image');
+
+    await expect(convertImagesToPdf({ imageBuffers: [garbage] })).rejects.toBeInstanceOf(ClientError);
+    await expect(convertImagesToPdf({ imageBuffers: [garbage] })).rejects.toThrow(
+      /image 1 is not a valid image or is corrupted/i
     );
   });
 

@@ -2,6 +2,7 @@ import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import { PDFDocument as EncryptablePDFDocument } from 'pdf-lib-plus-encrypt';
 import { compressPdf } from '../lib/pdf/compress';
 import { lockPdf } from '../lib/pdf/lock';
+import { ClientError } from '../lib/convert/errors';
 
 async function createPdf(pageCount: number, withAnnotation = false): Promise<Buffer> {
   const doc = await PDFDocument.create();
@@ -92,6 +93,28 @@ describe('compressPdf (lib/pdf/compress.ts)', () => {
 
     await expect(compressPdf({ pdfBuffer: lockedBuffer, level: 'low' })).rejects.toThrow(
       /password-protected/i
+    );
+  });
+
+  it('rejects an empty buffer as a ClientError, not a generic failure', async () => {
+    await expect(compressPdf({ pdfBuffer: Buffer.alloc(0), level: 'medium' })).rejects.toBeInstanceOf(
+      ClientError
+    );
+    await expect(compressPdf({ pdfBuffer: Buffer.alloc(0), level: 'medium' })).rejects.toThrow(/empty/i);
+  });
+
+  it('rejects non-PDF input as a ClientError describing corruption', async () => {
+    const notaPdf = Buffer.from('PNG\x89 not really a pdf');
+    await expect(compressPdf({ pdfBuffer: notaPdf, level: 'low' })).rejects.toBeInstanceOf(ClientError);
+    await expect(compressPdf({ pdfBuffer: notaPdf, level: 'low' })).rejects.toThrow(
+      /not a valid PDF or is corrupted/i
+    );
+  });
+
+  it('rejects a truncated PDF as a ClientError describing corruption', async () => {
+    const truncated = (await createPdf(3)).subarray(0, 100);
+    await expect(compressPdf({ pdfBuffer: truncated, level: 'low' })).rejects.toBeInstanceOf(
+      ClientError
     );
   });
 });

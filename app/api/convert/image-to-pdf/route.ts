@@ -6,6 +6,7 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,8 +46,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (userId) {
-      const originalFileName = files[0]?.name ? `${files[0].name.split('.')[0]}.pdf` : 'converted_images.pdf';
-      await saveConversionRecord(userId, 'Image to PDF', originalFileName, Buffer.from(pdfBuffer));
+      try {
+        const originalFileName = files[0]?.name ? `${files[0].name.split('.')[0]}.pdf` : 'converted_images.pdf';
+        await saveConversionRecord(userId, 'Image to PDF', originalFileName, Buffer.from(pdfBuffer));
+      } catch (recordError) {
+        console.error('Failed to record Image to PDF conversion:', recordError);
+      }
     }
 
     return new NextResponse(pdfBuffer as unknown as BodyInit, {
@@ -56,7 +61,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error converting images to PDF:', error);
-    return NextResponse.json({ error: 'Failed to convert images to PDF.' }, { status: 500 });
+    return handleConvertError(error, 'Failed to convert images to PDF.');
   }
 }

@@ -6,6 +6,7 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,8 +63,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (userId) {
-      const originalFileName = files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf';
-      await saveConversionRecord(userId, 'Merge PDF', originalFileName, Buffer.from(mergedPdfBuffer));
+      try {
+        const originalFileName = files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf';
+        await saveConversionRecord(userId, 'Merge PDF', originalFileName, Buffer.from(mergedPdfBuffer));
+      } catch (recordError) {
+        console.error('Failed to record Merge PDF conversion:', recordError);
+      }
     }
 
     return new NextResponse(mergedPdfBuffer as unknown as BodyInit, {
@@ -73,7 +78,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error merging PDFs:', error);
-    return NextResponse.json({ error: 'Failed to merge PDFs.' }, { status: 500 });
+    return handleConvertError(error, 'Failed to merge PDFs.');
   }
 }
