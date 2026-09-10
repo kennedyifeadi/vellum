@@ -3,18 +3,10 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegStatic from 'ffmpeg-static';
-import path from 'path';
-import fs from 'fs';
-import { tmpdir } from 'os';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
-
-// Setup ffmpeg path
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
-}
+import { compressVideo } from '@/lib/video/compress';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,7 +24,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
-    
+
     const maxSize = resolvePlanLimit(plan, {
       guest: 50 * 1024 * 1024,
       Basic: 100 * 1024 * 1024,
@@ -41,71 +33,40 @@ export async function POST(req: NextRequest) {
     });
 
     if (video.size > maxSize) {
-      return NextResponse.json({ 
-        error: `Your current plan allows videos up to ${maxSize / (1024 * 1024)}MB.` 
+      return NextResponse.json({
+        error: `Your current plan allows videos up to ${maxSize / (1024 * 1024)}MB.`
       }, { status: 400 });
     }
 
-    // Save uploaded file to temp dir
-    const tempDir = tmpdir();
-    const inputPath = path.join(tempDir, `input-${Date.now()}-${video.name}`);
-    const outputPath = path.join(tempDir, `output-${Date.now()}-compressed.mp4`);
+    // Map quality to Constant Rate Factor (CRF); lower CRF = better quality, larger size.
+    let crf = 28;
+    if (quality === 'High') crf = 23;
+    else if (quality === 'Medium') crf = 28;
+    else if (quality === 'Low') crf = 32;
 
     const arrayBuffer = await video.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(inputPath, buffer);
-
-    // Map quality to Constant Rate Factor (CRF)
-    // Lower CRF = better quality, larger size.
-    let crf = 28;
-    if (quality === 'High') crf = 23;      // High quality, less compression
-    else if (quality === 'Medium') crf = 28; // Balanced
-    else if (quality === 'Low') crf = 32;    // Low quality, high compression
-
-    // Process video
-    await new Promise<void>((resolve, reject) => {
-      let command = ffmpeg(inputPath)
-        .videoCodec('libx264')
-        .outputOptions(['-crf', String(crf)]);
-      
-      // If resolution is not 'Original', resize it
-      if (resolution === '720p') {
-        command = command.size('?x720');
-      } else if (resolution === '480p') {
-        command = command.size('?x480');
-      }
-
-      command
-        .on('end', () => resolve())
-        .on('error', (err) => {
-          console.error('FFmpeg Error:', err);
-          reject(err);
-        })
-        .save(outputPath);
+    const compressedBuffer = await compressVideo({
+      inputBuffer: Buffer.from(arrayBuffer),
+      fileName: video.name,
+      crf,
+      resolution,
     });
 
-    const compressedBuffer = fs.readFileSync(outputPath);
-
-    // Clean up temp files
-    try {
-      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    } catch (e) {
-      console.error('Failed to cleanup temp files:', e);
-    }
-
-    // Log Conversion
     if (userId) {
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-      await Conversion.create({
-        userId,
-        toolUsed: 'Compress Video',
-        fileName: video.name,
-        fileSize: video.size,
-        status: 'success',
-        metadata: { pages: 1, processedSize: compressedBuffer.length },
-        expiresAt
-      });
+      try {
+        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        await Conversion.create({
+          userId,
+          toolUsed: 'Compress Video',
+          fileName: video.name,
+          fileSize: video.size,
+          status: 'success',
+          metadata: { pages: 1, processedSize: compressedBuffer.length },
+          expiresAt
+        });
+      } catch (recordError) {
+        console.error('Failed to record Compress Video conversion:', recordError);
+      }
     }
 
     return new NextResponse(compressedBuffer as unknown as BodyInit, {
@@ -116,7 +77,6 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[API/Convert/Video-Compress] Error:', error);
-    return NextResponse.json({ error: 'Failed to compress video' }, { status: 500 });
+    return handleConvertError(error, 'Failed to compress video');
   }
 }
