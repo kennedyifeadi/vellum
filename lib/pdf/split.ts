@@ -15,7 +15,15 @@ export async function splitPdf({
   splitEvery = false,
   outputFileNamePrefix,
 }: SplitPdfOptions): Promise<Map<string, Buffer>> {
-  const originalPdf = await PDFDocument.load(pdfBuffer);
+  const originalPdf = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+
+  // `ignoreEncryption` only skips pdf-lib's load-time guard; it never decrypts the
+  // object streams, so copyPages would later fail deep inside pdf-lib. Fail fast with
+  // an actionable message instead.
+  if (originalPdf.isEncrypted) {
+    throw new Error('This PDF is password-protected. Please remove the password before splitting it.');
+  }
+
   const totalPages = originalPdf.getPageCount();
   const splitPdfs = new Map<string, Buffer>();
 
