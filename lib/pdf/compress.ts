@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFRawStream, PDFArray } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, PDFArray, PDFDict } from 'pdf-lib';
 import sharp from 'sharp';
 import zlib from 'zlib';
 import { loadPdf } from '@/lib/pdf/loadPdf';
@@ -298,6 +298,12 @@ async function stripOptionalContent(pdfDoc: PDFDocument, level: string): Promise
   pdfDoc.setProducer('');
   pdfDoc.setCreator('');
 
+  const infoDict = pdfDoc.context.lookup(pdfDoc.context.trailerInfo.Info);
+  if (infoDict instanceof PDFDict) {
+    infoDict.delete(PDFName.of('CreationDate'));
+    infoDict.delete(PDFName.of('ModDate'));
+  }
+
   // Remove XMP Metadata
   try { pdfDoc.catalog.delete(PDFName.of('Metadata')); } catch {}
 
@@ -324,9 +330,14 @@ export async function compressPdf({
 }: CompressPdfOptions): Promise<CompressResult> {
   const originalSize = pdfBuffer.length;
 
+  // `updateMetadata: false` stops pdf-lib from stamping a fresh Producer / ModDate /
+  // CreationDate into the Info dict on load. Without it, stripping those dates in
+  // stripOptionalContent is pointless (pdf-lib re-adds them) and the added bytes can
+  // inflate small PDFs.
   const pdfDoc = await loadPdf(pdfBuffer, {
     encryptedMessage:
       'This PDF is password-protected. Please remove the password before compressing it.',
+    updateMetadata: false,
   });
 
   await stripOptionalContent(pdfDoc, level);
@@ -338,6 +349,16 @@ export async function compressPdf({
   // Save with object-stream packing
   const savedBytes = await pdfDoc.save({ useObjectStreams: true });
   const compressedBuffer = Buffer.from(savedBytes);
+
+  // Object-stream packing and metadata stripping can still net out larger on tiny or
+  // already-optimized PDFs. Never hand back a file bigger than what came in.
+  if (compressedBuffer.length >= originalSize) {
+    return {
+      buffer: pdfBuffer,
+      originalSize,
+      compressedSize: originalSize,
+    };
+  }
 
   return {
     buffer: compressedBuffer,

@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   const savedBytes = originalSize - compressedSize;
-  const savedPercent = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0;
+  const savedPercent = originalSize > 0 ? Math.max(0, Math.round((savedBytes / originalSize) * 100)) : 0;
 
   return new NextResponse(compressedPdfBuffer as unknown as BodyInit, {
     headers: {

@@ -9,6 +9,11 @@ interface LoadPdfOptions {
   label?: string;
   /** Overrides the generic encryption message with tool-specific wording. */
   encryptedMessage?: string;
+  /**
+   * Forwarded to `PDFDocument.load`. Pass `false` when the caller strips document dates
+   * itself and does not want pdf-lib stamping a fresh Producer / ModDate on load.
+   */
+  updateMetadata?: boolean;
 }
 
 /**
@@ -26,7 +31,10 @@ export async function loadPdf(pdfBuffer: Buffer, options: LoadPdfOptions = {}): 
 
   let pdfDoc: PDFDocument;
   try {
-    pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    pdfDoc = await PDFDocument.load(pdfBuffer, {
+      ignoreEncryption: true,
+      updateMetadata: options.updateMetadata,
+    });
   } catch (error) {
     throw new ClientError(`${subject} is not a valid PDF or is corrupted.`, 400, { cause: error });
   }

@@ -161,3 +161,36 @@ describe('compress-pdf route error handling', () => {
     expect(saveConversionRecord).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('compress-pdf route X-Saved-Percent', () => {
+  it('never returns a negative saved percentage when the result is not smaller', async () => {
+    mockResolvedFiles = [fakeFile(Buffer.from('%PDF-1.4 original'))];
+    compressPdfMock.mockResolvedValueOnce({
+      buffer: Buffer.from('%PDF-1.4 original'),
+      originalSize: 300,
+      compressedSize: 300,
+    });
+
+    const res = await handleCompressPdf(compressRequest());
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Saved-Percent')).toBe('0');
+    expect(res.headers.get('X-Original-Size')).toBe('300');
+    expect(res.headers.get('X-Compressed-Size')).toBe('300');
+  });
+
+  it('reports the real percentage when the file actually shrinks', async () => {
+    mockResolvedFiles = [fakeFile(Buffer.from('%PDF-1.4 smaller'))];
+    compressPdfMock.mockResolvedValueOnce({
+      buffer: Buffer.from('%PDF-1.4 smaller'),
+      originalSize: 1000,
+      compressedSize: 750,
+    });
+
+    const res = await handleCompressPdf(compressRequest());
+
+    expect(res.headers.get('X-Saved-Percent')).toBe('25');
+    expect(res.headers.get('X-Original-Size')).toBe('1000');
+    expect(res.headers.get('X-Compressed-Size')).toBe('750');
+  });
+});
