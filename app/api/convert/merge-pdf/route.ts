@@ -34,6 +34,23 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
+    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
+    const MAX_PRO_SIZE = 100 * 1024 * 1024;
+    const MAX_ENTERPRISE_SIZE = 250 * 1024 * 1024;
+
+    let maxSize = MAX_GUEST_SIZE;
+    if (plan === 'Enterprise') maxSize = MAX_ENTERPRISE_SIZE;
+    else if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
+    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > maxSize) {
+      return NextResponse.json({
+        error: `Your current plan allows merges totaling up to ${maxSize / (1024 * 1024)}MB.`
+      }, { status: 400 });
+    }
+
     const pdfBuffers: Buffer[] = [];
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
