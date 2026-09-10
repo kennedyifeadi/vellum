@@ -127,19 +127,13 @@ export default function SignupDetailsPage() {
             </div>
         </div>
 
-        <div className="w-full mt-10 border-t border-[#f1f1f1] pt-4 flex items-center justify-between">
+        <div className="w-full mt-10 border-t border-[#f1f1f1] pt-4 flex items-center">
             <div className="flex items-center gap-2">
                 <div className="w-16 h-1.5 bg-[#f3f4ff] rounded-full overflow-hidden">
                     <div className="w-full h-full bg-[#6366f1] rounded-full" />
                 </div>
                 <span className="text-[11px] font-medium text-[#6b7280]">Step 3 of 3</span>
             </div>
-            <button 
-                onClick={() => router.push("/dashboard")}
-                className="text-[11px] font-semibold text-[#6b7280] hover:text-[#374151] transition-colors"
-            >
-                Skip for now
-            </button>
         </div>
       </AuthCard>
 
