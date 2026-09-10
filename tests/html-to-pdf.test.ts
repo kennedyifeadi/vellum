@@ -1,6 +1,11 @@
+const mainFrame = { name: 'main' };
+
 const mockPage = {
   setViewport: jest.fn().mockResolvedValue(undefined),
   emulateMediaType: jest.fn().mockResolvedValue(undefined),
+  setRequestInterception: jest.fn().mockResolvedValue(undefined),
+  on: jest.fn(),
+  mainFrame: jest.fn(() => mainFrame),
   goto: jest.fn().mockResolvedValue(undefined),
   setContent: jest.fn().mockResolvedValue(undefined),
   pdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake-content')),
@@ -13,6 +18,10 @@ const mockBrowser = {
 
 jest.mock('puppeteer', () => ({
   launch: jest.fn().mockResolvedValue(mockBrowser),
+}));
+
+jest.mock('dns/promises', () => ({
+  lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
 }));
 
 import puppeteer from 'puppeteer';
