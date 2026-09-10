@@ -6,6 +6,7 @@ import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import sharp from 'sharp';
 import JSZip from 'jszip';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,14 +24,12 @@ export async function POST(req: NextRequest) {
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
     
-    // Check Limits
-    const MAX_GUEST_FILES = 3;
-    const MAX_BASIC_FILES = 30;
-    const MAX_PRO_FILES = 50;
-    
-    let maxAllowed = MAX_GUEST_FILES;
-    if (plan === 'Pro') maxAllowed = MAX_PRO_FILES;
-    else if (plan === 'Basic') maxAllowed = MAX_BASIC_FILES;
+    const maxAllowed = resolvePlanLimit(plan, {
+      guest: 3,
+      Basic: 30,
+      Pro: 50,
+      Enterprise: 250,
+    });
 
     if (images.length > maxAllowed) {
       return NextResponse.json({ 

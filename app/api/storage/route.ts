@@ -4,13 +4,11 @@ import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import mongoose from 'mongoose';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 export const dynamic = 'force-dynamic';
 
-const PLAN_LIMITS: Record<string, number> = {
-  Basic: 5 * 1024 * 1024 * 1024,   // 5 GB
-  Pro: 20 * 1024 * 1024 * 1024,   // 20 GB
-};
+const GB = 1024 * 1024 * 1024;
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,7 +20,12 @@ export async function GET(req: NextRequest) {
 
     const user = await User.findById(userId).lean() as { plan?: string } | null;
     const plan = (user?.plan as string) ?? 'Basic';
-    const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Basic;
+    const limitBytes = resolvePlanLimit(plan, {
+      guest: 5 * GB,
+      Basic: 5 * GB,
+      Pro: 20 * GB,
+      Enterprise: 100 * GB,
+    });
 
     const agg = await Conversion.aggregate([
       { $match: { userId: new mongoose.Types.ObjectId(userId) } },

@@ -8,17 +8,9 @@ import { getStorage } from '@/lib/storage';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 export const dynamic = 'force-dynamic';
-
-const PLAN_LIMITS: Record<string, number> = {
-  Basic: 50 * 1024 * 1024,
-  Pro: 100 * 1024 * 1024,
-};
-const PLAN_TTL_DAYS: Record<string, number> = {
-  Basic: 3,
-  Pro: 5,
-};
 
 export async function POST(req: NextRequest) {
   const userId = await getAuthUserId(req);
@@ -28,8 +20,18 @@ export async function POST(req: NextRequest) {
 
   const user = await User.findById(userId).lean() as { plan?: string } | null;
   const plan = (user?.plan as string) ?? 'Basic';
-  const limitBytes = PLAN_LIMITS[plan] ?? PLAN_LIMITS.Basic;
-  const ttlDays = PLAN_TTL_DAYS[plan] ?? 3;
+  const limitBytes = resolvePlanLimit(plan, {
+    guest: 50 * 1024 * 1024,
+    Basic: 50 * 1024 * 1024,
+    Pro: 100 * 1024 * 1024,
+    Enterprise: 500 * 1024 * 1024,
+  });
+  const ttlDays = resolvePlanLimit(plan, {
+    guest: 3,
+    Basic: 3,
+    Pro: 5,
+    Enterprise: 5,
+  });
 
   // Calculate current storage usage (conversions + staged docs)
   const uid = new mongoose.Types.ObjectId(userId);

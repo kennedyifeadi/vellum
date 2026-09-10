@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { tmpdir } from 'os';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
+import { resolvePlanLimit } from '@/lib/plan-limits';
 
 // Setup ffmpeg path
 if (ffmpegStatic) {
@@ -32,14 +33,12 @@ export async function POST(req: NextRequest) {
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
     
-    // Check Limits
-    const MAX_GUEST_SIZE = 50 * 1024 * 1024;
-    const MAX_BASIC_SIZE = 100 * 1024 * 1024;
-    const MAX_PRO_SIZE = 500 * 1024 * 1024;
-    
-    let maxSize = MAX_GUEST_SIZE;
-    if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
-    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+    const maxSize = resolvePlanLimit(plan, {
+      guest: 50 * 1024 * 1024,
+      Basic: 100 * 1024 * 1024,
+      Pro: 500 * 1024 * 1024,
+      Enterprise: 2500 * 1024 * 1024,
+    });
 
     if (video.size > maxSize) {
       return NextResponse.json({ 

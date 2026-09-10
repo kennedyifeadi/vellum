@@ -21,12 +21,12 @@ export async function saveConversionRecord(
     return null;
   }
 
-  const isPro = user.plan === 'Pro';
+  const extendedRetention = user.plan === 'Pro' || user.plan === 'Enterprise';
   const autoDelete = user.preferences?.autoDelete === true;
-  
+
   // If autoDelete is true, set expiresAt to basically immediately so cleanupStorage picks it up instantly.
-  // Otherwise, default to 5 days for Pro, 3 days for Free.
-  const daysToKeep = isPro ? 5 : 3;
+  // Otherwise, default to 5 days for Pro/Enterprise, 3 days for Basic/guest.
+  const daysToKeep = extendedRetention ? 5 : 3;
   const expiresAt = autoDelete 
     ? new Date(Date.now() + 1000) // Expires in 1 second
     : new Date(Date.now() + daysToKeep * 24 * 60 * 60 * 1000);
