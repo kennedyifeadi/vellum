@@ -1,12 +1,19 @@
 import mammoth from 'mammoth'; // You'll need to install this: npm install mammoth
 import puppeteer from 'puppeteer'; // You'll need to install this: npm install puppeteer
+import {
+  RENDER_TIMEOUT_MS,
+  closeBrowser,
+  withRenderDeadline,
+} from '@/lib/puppeteer/lifecycle';
 
 interface DocxToPdfOptions {
   docxBuffer: Buffer;
+  timeoutMs?: number;
 }
 
 export async function convertDocxToPdf({
   docxBuffer,
+  timeoutMs = RENDER_TIMEOUT_MS,
 }: DocxToPdfOptions): Promise<Buffer> {
   // 1. Convert DOCX to raw HTML using mammoth
   const { value: rawHtml } = await mammoth.convertToHtml({ buffer: docxBuffer });
@@ -139,24 +146,27 @@ export async function convertDocxToPdf({
 
   // 3. Render HTML to PDF using puppeteer
   const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
 
-  // Set the styled HTML content
-  await page.setContent(styledHtml, { waitUntil: 'load' });
+  try {
+    const render = (async () => {
+      const page = await browser.newPage();
+      await page.setContent(styledHtml, { waitUntil: 'load', timeout: timeoutMs });
 
-  // 4. Generate beautifully formatted PDF
-  const pdfBuffer = await page.pdf({ 
-    format: 'A4',
-    margin: {
-      top: '20mm',
-      right: '20mm',
-      bottom: '20mm',
-      left: '20mm'
-    },
-    printBackground: true, // Ensures table zebra-striping and code blocks are rendered
-  });
-  
-  await browser.close();
+      return page.pdf({
+        format: 'A4',
+        margin: {
+          top: '20mm',
+          right: '20mm',
+          bottom: '20mm',
+          left: '20mm',
+        },
+        printBackground: true, // Ensures table zebra-striping and code blocks are rendered
+      });
+    })();
 
-  return Buffer.from(pdfBuffer);
+    const pdfBuffer = await withRenderDeadline(render, timeoutMs);
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await closeBrowser(browser);
+  }
 }
