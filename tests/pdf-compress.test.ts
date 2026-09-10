@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, StandardFonts } from 'pdf-lib';
 import { PDFDocument as EncryptablePDFDocument } from 'pdf-lib-plus-encrypt';
 import { compressPdf } from '../lib/pdf/compress';
 import { lockPdf } from '../lib/pdf/lock';
@@ -19,6 +19,30 @@ async function createPdf(pageCount: number, withAnnotation = false): Promise<Buf
   return Buffer.from(await doc.save());
 }
 
+// A minimal hand-written 1-page PDF with no Info dict. Object-stream packing plus the
+// stripping pass net out larger than this, which is the case issue #47 is about.
+function tinyRawPdf(): Buffer {
+  const header = '%PDF-1.4\n';
+  const obj1 = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n';
+  const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n';
+  const obj3 = '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n';
+  const pad = (n: number) => String(n).padStart(10, '0');
+  const o1 = header.length;
+  const o2 = o1 + obj1.length;
+  const o3 = o2 + obj2.length;
+  const xrefStart = o3 + obj3.length;
+  const xref =
+    `xref\n0 4\n0000000000 65535 f \n${pad(o1)} 00000 n \n${pad(o2)} 00000 n \n${pad(o3)} 00000 n \n` +
+    `trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+  return Buffer.from(header + obj1 + obj2 + obj3 + xref, 'latin1');
+}
+
+async function infoDict(buffer: Buffer): Promise<PDFDict | undefined> {
+  const doc = await PDFDocument.load(buffer, { updateMetadata: false });
+  const info = doc.context.lookup(doc.context.trailerInfo.Info);
+  return info instanceof PDFDict ? info : undefined;
+}
+
 describe('compressPdf (lib/pdf/compress.ts)', () => {
   it('returns a valid PDF with the same page count for a text-only document', async () => {
     const pdfBuffer = await createPdf(3);
@@ -31,6 +55,53 @@ describe('compressPdf (lib/pdf/compress.ts)', () => {
 
     const reloaded = await PDFDocument.load(result.buffer);
     expect(reloaded.getPageCount()).toBe(3);
+  });
+
+  it('returns the original bytes unchanged when compression would not shrink the file', async () => {
+    const pdfBuffer = tinyRawPdf();
+
+    const result = await compressPdf({ pdfBuffer, level: 'low' });
+
+    expect(result.compressedSize).toBe(result.originalSize);
+    expect(result.originalSize).toBe(pdfBuffer.length);
+    expect(result.buffer.equals(pdfBuffer)).toBe(true);
+  });
+
+  it.each(['low', 'medium', 'high'] as const)(
+    'never yields a negative saved percentage at %s level',
+    async (level) => {
+      const pdfBuffer = tinyRawPdf();
+
+      const result = await compressPdf({ pdfBuffer, level });
+
+      const savedPercent = Math.round(
+        ((result.originalSize - result.compressedSize) / result.originalSize) * 100,
+      );
+      expect(savedPercent).toBeGreaterThanOrEqual(0);
+    },
+  );
+
+  it('drops CreationDate and ModDate from the output', async () => {
+    const doc = await PDFDocument.create();
+    doc.setCreationDate(new Date('2020-01-01T00:00:00Z'));
+    doc.setModificationDate(new Date('2020-01-02T00:00:00Z'));
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([600, 600]).drawText('padding to keep the compressed output smaller', {
+      x: 20,
+      y: 300,
+      font,
+      size: 12,
+    });
+    const pdfBuffer = Buffer.from(await doc.save());
+
+    const inputInfo = await infoDict(pdfBuffer);
+    expect(inputInfo?.get(PDFName.of('CreationDate'))).toBeDefined();
+
+    const result = await compressPdf({ pdfBuffer, level: 'low' });
+    const outputInfo = await infoDict(result.buffer);
+
+    expect(outputInfo?.get(PDFName.of('CreationDate'))).toBeUndefined();
+    expect(outputInfo?.get(PDFName.of('ModDate'))).toBeUndefined();
   });
 
   it.each(['low', 'medium', 'high'] as const)('strips document metadata at %s level', async (level) => {
