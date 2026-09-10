@@ -10,13 +10,24 @@ jest.mock('@/lib/auth/jwt', () => ({
 }));
 
 describe('Rate Limiting System Tests (proxy.ts)', () => {
-  function createApiRequest(ip: string, path = '/api/convert/compress-pdf') {
+  function createApiRequest(ip: string, path = '/api/convert/compress-pdf', spoofedForwardedFor?: string) {
     const url = `http://localhost:3000${path}`;
+    const headers: Record<string, string> = {
+      'x-real-ip': ip,
+    };
+    if (spoofedForwardedFor !== undefined) {
+      headers['x-forwarded-for'] = spoofedForwardedFor;
+    }
     return new NextRequest(url, {
       method: 'POST',
-      headers: {
-        'x-forwarded-for': ip,
-      },
+      headers,
+    });
+  }
+
+  function createForwardedForOnlyRequest(forwardedFor: string, path = '/api/convert/compress-pdf') {
+    return new NextRequest(`http://localhost:3000${path}`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': forwardedFor },
     });
   }
 
@@ -64,6 +75,24 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     expect(resAfterReset.status).not.toBe(429);
 
     jest.useRealTimers();
+  });
+
+  it('should not reset the rate-limit bucket when the untrusted x-forwarded-for header is spoofed per request', async () => {
+    const realIp = '203.0.113.7';
+    for (let i = 1; i <= 30; i++) {
+      await proxy(createApiRequest(realIp, '/api/auth/verify-otp', `10.0.0.${i}`));
+    }
+    const blocked = await proxy(createApiRequest(realIp, '/api/auth/verify-otp', '10.0.0.250'));
+    expect(blocked.status).toBe(429);
+  });
+
+  it('should fall back to the rightmost x-forwarded-for entry when no trusted header is present', async () => {
+    const trustedHop = '198.51.100.4';
+    for (let i = 1; i <= 30; i++) {
+      await proxy(createForwardedForOnlyRequest(`10.0.0.${i}, ${trustedHop}`));
+    }
+    const blocked = await proxy(createForwardedForOnlyRequest(`10.0.0.250, ${trustedHop}`));
+    expect(blocked.status).toBe(429);
   });
 
   it('should apply rate limit to /api/documents/ and /api/auth/verify-otp endpoints as well', async () => {
