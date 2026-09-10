@@ -4,9 +4,10 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import sharp from 'sharp';
 import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { compressImage } from '@/lib/image/compress';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
-    
+
     const maxAllowed = resolvePlanLimit(plan, {
       guest: 3,
       Basic: 30,
@@ -32,8 +33,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (images.length > maxAllowed) {
-      return NextResponse.json({ 
-        error: `Your current plan allows up to ${maxAllowed} images per compression.` 
+      return NextResponse.json({
+        error: `Your current plan allows up to ${maxAllowed} images per compression.`
       }, { status: 400 });
     }
 
@@ -47,25 +48,24 @@ export async function POST(req: NextRequest) {
     if (images.length === 1) {
       const file = images[0];
       const buffer = Buffer.from(await file.arrayBuffer());
-      
-      const compressedBuffer = await sharp(buffer)
-        .jpeg({ quality, mozjpeg: true })
-        .png({ quality: quality - 10, palette: true })
-        .webp({ quality })
-        .toBuffer();
 
-      // Log Conversion
+      const compressedBuffer = await compressImage({ imageBuffer: buffer, quality });
+
       if (userId) {
-        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-        await Conversion.create({
-          userId,
-          toolUsed: 'Compress Image',
-          fileName: file.name,
-          fileSize: file.size,
-          status: 'success',
-          metadata: { pages: 1, processedSize: compressedBuffer.length },
-          expiresAt
-        });
+        try {
+          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+          await Conversion.create({
+            userId,
+            toolUsed: 'Compress Image',
+            fileName: file.name,
+            fileSize: file.size,
+            status: 'success',
+            metadata: { pages: 1, processedSize: compressedBuffer.length },
+            expiresAt
+          });
+        } catch (recordError) {
+          console.error('Failed to record Compress Image conversion:', recordError);
+        }
       }
 
       return new NextResponse(compressedBuffer as unknown as BodyInit, {
@@ -86,32 +86,31 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < images.length; i++) {
         const file = images[i];
         totalOriginalSize += file.size;
-        
+
         const buffer = Buffer.from(await file.arrayBuffer());
-        const compressedBuffer = await sharp(buffer)
-          .jpeg({ quality, mozjpeg: true })
-          .png({ quality: quality - 10, palette: true })
-          .webp({ quality })
-          .toBuffer();
-          
+        const compressedBuffer = await compressImage({ imageBuffer: buffer, quality });
+
         totalCompressedSize += compressedBuffer.length;
         zip.file(file.name, compressedBuffer);
       }
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
-      // Log Conversion
       if (userId) {
-        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-        await Conversion.create({
-          userId,
-          toolUsed: 'Compress Image (Batch)',
-          fileName: 'compressed_images.zip',
-          fileSize: totalOriginalSize,
-          status: 'success',
-          metadata: { pages: images.length, processedSize: zipBuffer.length },
-          expiresAt
-        });
+        try {
+          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+          await Conversion.create({
+            userId,
+            toolUsed: 'Compress Image (Batch)',
+            fileName: 'compressed_images.zip',
+            fileSize: totalOriginalSize,
+            status: 'success',
+            metadata: { pages: images.length, processedSize: zipBuffer.length },
+            expiresAt
+          });
+        } catch (recordError) {
+          console.error('Failed to record Compress Image conversion:', recordError);
+        }
       }
 
       return new NextResponse(zipBuffer as unknown as BodyInit, {
@@ -123,7 +122,6 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (error) {
-    console.error('[API/Convert/Image-Compress] Error:', error);
-    return NextResponse.json({ error: 'Failed to compress images' }, { status: 500 });
+    return handleConvertError(error, 'Failed to compress images');
   }
 }
