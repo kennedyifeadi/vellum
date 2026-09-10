@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PDFDocument as EncryptablePDFDocument } from 'pdf-lib-plus-encrypt';
 import { splitPdf } from '../lib/pdf/split';
 
 async function createPdf(pageCount: number): Promise<Buffer> {
@@ -119,5 +120,23 @@ describe('splitPdf (lib/pdf/split.ts)', () => {
 
     const extracted = await PDFDocument.load(buffer);
     expect(extracted.getPageCount()).toBe(1);
+  });
+
+  // Same root cause as compressPdf/lockPdf (see pdf-compress.test.ts): given a
+  // password-protected PDF, pdf-lib's raw EncryptedPDFError otherwise propagates into
+  // the route's generic catch-all and surfaces as an unhelpful HTTP 500. splitPdf now
+  // checks `isEncrypted` up front and fails fast with an actionable message.
+  it('throws a clear error instead of a generic failure on a password-protected PDF', async () => {
+    const plainDoc = await EncryptablePDFDocument.load(await createPdf(3));
+    await plainDoc.encrypt({ userPassword: 'secret', ownerPassword: 'secret' });
+    const encryptedBuffer = Buffer.from(await plainDoc.save());
+
+    await expect(
+      splitPdf({
+        pdfBuffer: encryptedBuffer,
+        splitEvery: true,
+        outputFileNamePrefix: 'doc',
+      })
+    ).rejects.toThrow(/password-protected/i);
   });
 });
