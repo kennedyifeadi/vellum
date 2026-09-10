@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { lockPdf } from '@/lib/pdf/lock';
+import { lockPdf, validateLockPassword } from '@/lib/pdf/lock';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
@@ -12,6 +12,11 @@ export async function POST(req: NextRequest) {
 
     if (!file || !password) {
       return NextResponse.json({ error: 'PDF file and password are required.' }, { status: 400 });
+    }
+
+    const passwordError = validateLockPassword(password);
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
