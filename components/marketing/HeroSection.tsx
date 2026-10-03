@@ -199,7 +199,7 @@ const SmallNode = ({
 }: {
   x: number;
   y: number;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   size?: number;
   direction?: number;
 }) => (
