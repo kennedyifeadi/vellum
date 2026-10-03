@@ -3,6 +3,7 @@ import { convertHtmlToPdf } from '@/lib/html/to-pdf';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,8 +51,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error converting HTML to PDF:', error);
-    const message = error instanceof Error ? error.message : 'Failed to convert HTML to PDF.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleConvertError(error, 'Failed to convert HTML to PDF.');
   }
 }
