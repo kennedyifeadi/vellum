@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import fs from 'fs';
+import path from 'path';
 
 const VALID_HEX_BASIC = '507f1f77bcf86cd799439011';
 const VALID_HEX_PRO = '507f1f77bcf86cd799439012';
@@ -203,6 +204,45 @@ describe('Upload Rates & Storage Quota System Tests', () => {
       expect(res.status).toBe(507);
       const data = await res.json();
       expect(data.error).toContain('Storage limit reached');
+    });
+
+    describe('on-disk name derived from the uploaded file name', () => {
+      const docsRoot = path.resolve(process.cwd(), 'tmp', 'storage', 'docs');
+      const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+      async function uploadAndGetDiskName(fileName: string) {
+        const res = await handleDocumentUpload(createUploadRequest(10, fileName));
+        expect(res.status).toBe(201);
+        const [doc] = await res.json();
+        const writtenPath = String((fs.writeFileSync as jest.Mock).mock.calls[0][0]);
+        return { doc, writtenPath };
+      }
+
+      it('keeps an ordinary extension', async () => {
+        const { doc, writtenPath } = await uploadAndGetDiskName('report.PDF');
+
+        expect(doc.diskFileName).toMatch(new RegExp(`^${UUID}\\.PDF$`));
+        expect(path.dirname(path.resolve(writtenPath))).toBe(docsRoot);
+        expect(doc.fileName).toBe('report.PDF');
+      });
+
+      it.each([
+        ['an oversized extension', `archive.${'a'.repeat(300)}`],
+        ['an extension just over the limit', 'archive.abcdefghijk'],
+        ['a POSIX traversal after the dot', 'x.pdf/../../../../evil'],
+        ['a Windows traversal after the dot', 'x.pdf\\..\\..\\..\\evil'],
+        ['a backslash inside the extension', 'x.a\\b'],
+        ['shell and markup characters', 'x.<svg onload=1>'],
+        ['whitespace in the extension', 'x.p df'],
+        ['a trailing dot', 'x.'],
+        ['no extension', 'README'],
+      ])('drops %s and stores the file under a bare UUID', async (_label, fileName) => {
+        const { doc, writtenPath } = await uploadAndGetDiskName(fileName);
+
+        expect(doc.diskFileName).toMatch(new RegExp(`^${UUID}$`));
+        expect(path.dirname(path.resolve(writtenPath))).toBe(docsRoot);
+        expect(path.basename(writtenPath)).toBe(doc.diskFileName);
+      });
     });
   });
 });
