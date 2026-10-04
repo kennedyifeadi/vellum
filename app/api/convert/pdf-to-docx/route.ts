@@ -11,6 +11,11 @@ import { handleConvertError } from '@/lib/convert/errors';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
 import { assertLineCountWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/pdf-to-docx-limits';
 
+// The plan caps keep a permitted conversion to a few seconds; this is the backstop for
+// an input that is slow in a way the caps do not measure. 60s is the longest duration
+// every Vercel plan accepts.
+export const maxDuration = 60;
+
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
     ? page.lines.map(line => new TextRun(line))
