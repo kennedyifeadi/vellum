@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { lockPdf } from '../lib/pdf/lock';
 
@@ -9,6 +10,51 @@ async function createPdf(pageCount: number): Promise<Buffer> {
     page.drawText(`Page ${i + 1}`, { x: 20, y: 150, font, size: 18 });
   }
   return Buffer.from(await doc.save());
+}
+
+// pdf-lib always emits a `%PDF-1.7` header; rewrite just that comment so we can
+// exercise lockPdf with the range of source headers the fork would otherwise map
+// to RC4-40 / RC4-128 / AES-128.
+async function createPdfWithHeader(version: string): Promise<Buffer> {
+  const bytes = await createPdf(1);
+  const original = Buffer.from('%PDF-1.7');
+  if (bytes.indexOf(original) !== 0) {
+    throw new Error('unexpected pdf-lib header layout');
+  }
+  return Buffer.concat([Buffer.from(`%PDF-${version}`), bytes.subarray(original.length)]);
+}
+
+function encryptDict(pdf: Buffer): string {
+  const text = pdf.toString('latin1');
+  const start = text.indexOf('/Filter /Standard');
+  if (start === -1) {
+    throw new Error('no standard security handler in output');
+  }
+  return text.slice(start, start + 700);
+}
+
+// Independent AES-256 / R5 password check (ISO 32000-1 Adobe extension level 3,
+// Algorithm 2.A without the R6 iteration): the /U entry is
+// SHA-256(password || validationSalt) || validationSalt || keySalt, so a password
+// is correct iff it reproduces the first 32 bytes. This does not rely on the
+// fork's own crypto beyond reading the stored salts.
+function userPasswordMatches(pdf: Buffer, password: string): boolean {
+  const dict = encryptDict(pdf);
+  const u = dict.match(/\/U\s*<([0-9a-fA-F]+)>/);
+  if (!u) {
+    throw new Error('no /U entry in encryption dict');
+  }
+  const uBytes = Buffer.from(u[1], 'hex');
+  const storedHash = uBytes.subarray(0, 32);
+  const validationSalt = uBytes.subarray(32, 40);
+
+  const normalized = unescape(encodeURIComponent(password.normalize('NFKC'))).slice(0, 127);
+  const pwBytes = Buffer.from(normalized, 'latin1');
+
+  const computed = createHash('sha256')
+    .update(Buffer.concat([pwBytes, validationSalt]))
+    .digest();
+  return computed.equals(storedHash);
 }
 
 describe('lockPdf (lib/pdf/lock.ts)', () => {
@@ -34,11 +80,73 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
     );
   });
 
-  it('throws when called with an empty password instead of producing an unprotected PDF', async () => {
+  it('rejects an empty password instead of producing an unprotected PDF', async () => {
     const pdfBuffer = await createPdf(1);
 
-    await expect(lockPdf({ pdfBuffer, password: '' })).rejects.toThrow(
-      /owner password and user password/i
-    );
+    await expect(lockPdf({ pdfBuffer, password: '' })).rejects.toThrow(/at least 4 characters/i);
+  });
+
+  it('rejects a password containing control characters', async () => {
+    const pdfBuffer = await createPdf(1);
+
+    await expect(lockPdf({ pdfBuffer, password: 'ab\x00cd' })).rejects.toThrow(/control characters/i);
+  });
+
+  // AES-256/R5 only hashes the first 127 UTF-8 bytes, so the limit is in bytes, not characters.
+  it('accepts a password of exactly 127 bytes', async () => {
+    const pdfBuffer = await createPdf(1);
+    const password = 'A'.repeat(127);
+
+    const locked = await lockPdf({ pdfBuffer, password });
+
+    expect(userPasswordMatches(locked, password)).toBe(true);
+    expect(userPasswordMatches(locked, `${'A'.repeat(126)}B`)).toBe(false);
+  });
+
+  it.each([
+    ['128 ASCII bytes', 'A'.repeat(128)],
+    ['a 70-character Cyrillic password (140 bytes)', 'Ж'.repeat(70)],
+    ['a 67-character password of 131 bytes', `${'Ж'.repeat(64)}AAA`],
+    ['input that NFKC-expands past the limit', '\uFDFA'.repeat(4)],
+  ])('rejects %s', async (_label, password) => {
+    const pdfBuffer = await createPdf(1);
+
+    await expect(lockPdf({ pdfBuffer, password })).rejects.toThrow(/at most 127 bytes/i);
+  });
+
+  it.each(['1.3', '1.5', '1.7'])(
+    'emits an AES-256 (/V 5 /R 5 /AESV3) encryption dict for a %s source header',
+    async (version) => {
+      const pdfBuffer = await createPdfWithHeader(version);
+
+      const locked = await lockPdf({ pdfBuffer, password: 'letmein' });
+      const dict = encryptDict(locked);
+
+      expect(dict).toMatch(/\/V 5(\D|$)/);
+      expect(dict).toMatch(/\/R 5(\D|$)/);
+      expect(dict).toMatch(/\/Length 256(\D|$)/);
+      expect(dict).toMatch(/\/CFM\s*\/AESV3/);
+    }
+  );
+
+  it('round-trips a password longer than 32 bytes without truncating it', async () => {
+    const pdfBuffer = await createPdfWithHeader('1.3');
+    const password = `${'A'.repeat(40)}YYYY`;
+
+    const locked = await lockPdf({ pdfBuffer, password });
+
+    expect(userPasswordMatches(locked, password)).toBe(true);
+    expect(userPasswordMatches(locked, 'A'.repeat(32))).toBe(false);
+    expect(userPasswordMatches(locked, `${'A'.repeat(40)}ZZZZ`)).toBe(false);
+  });
+
+  it('round-trips a non-ASCII password exactly', async () => {
+    const pdfBuffer = await createPdfWithHeader('1.3');
+    const password = 'pásswörd-Ω';
+
+    const locked = await lockPdf({ pdfBuffer, password });
+
+    expect(userPasswordMatches(locked, password)).toBe(true);
+    expect(userPasswordMatches(locked, 'password')).toBe(false);
   });
 });
