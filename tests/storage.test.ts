@@ -49,6 +49,44 @@ describe('LocalDiskStorage', () => {
     await expect(storage.delete('file.pdf')).resolves.not.toThrow();
   });
 
+  describe('keys that resolve outside the storage root', () => {
+    const escapingKeys = [
+      '../outside.pdf',
+      'docs/../../outside.pdf',
+      '../../../../../../../../outside.pdf',
+      '..',
+      '',
+      // A backslash is only a separator on Windows; elsewhere it is a plain filename character.
+      ...(path.sep === '\\' ? ['..\\outside.pdf', 'docs\\..\\..\\outside.pdf'] : []),
+    ];
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it.each(escapingKeys)('rejects %j on every operation without touching the disk', async (key) => {
+      // Stubbed so a regression fails the assertions below instead of writing outside the root.
+      const mkdirSpy = jest.spyOn(fs, 'mkdirSync').mockImplementation(() => undefined);
+      const writeSpy = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined);
+      const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined);
+
+      await expect(storage.put(key, Buffer.from('x'))).rejects.toThrow(/outside/);
+      await expect(storage.get(key)).rejects.toThrow(/outside/);
+      await expect(storage.delete(key)).rejects.toThrow(/outside/);
+      await expect(storage.exists(key)).rejects.toThrow(/outside/);
+
+      expect(mkdirSpy).not.toHaveBeenCalled();
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(unlinkSpy).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a key whose dot segments stay inside the root', async () => {
+      await storage.put('docs/../kept.pdf', Buffer.from('ok'));
+
+      expect(fs.existsSync(path.join(root, 'kept.pdf'))).toBe(true);
+    });
+  });
+
   describe('sweepOrphaned', () => {
     it('removes files and subdirectories not present in the valid key set', async () => {
       await storage.put('active.pdf', Buffer.from('keep'));
