@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { PDFDocument, PDFHexString, PDFName, PDFOperator, PDFOperatorNames, StandardFonts } from 'pdf-lib';
 import { PDFParse } from 'pdf-parse';
 import { Document, Packer } from 'docx';
+import dbConnect from '@/lib/db/mongoose';
 import { NO_SELECTABLE_TEXT_MESSAGE } from '@/lib/convert/pdf-text';
 
 let mockUserId: string | null = null;
@@ -181,6 +182,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockUserId = null;
   mockPlan = 'Free';
+  (dbConnect as jest.Mock).mockResolvedValue(true);
   mockResolvedFiles = [];
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -391,5 +393,34 @@ describe('pdf-to-docx route', () => {
       expect(res.status).toBe(200);
       expect(paragraphTexts(await documentXml(res))).toHaveLength(8100);
     }, 30_000);
+  });
+
+  describe('database use', () => {
+    it('converts for a guest without connecting to the database', async () => {
+      const res = await convert([{ text: ['Guest document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(dbConnect).not.toHaveBeenCalled();
+    });
+
+    it('converts for a guest while the database is down', async () => {
+      (dbConnect as jest.Mock).mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const res = await convert([{ text: ['Guest document'] }]);
+
+      expect(res.status).toBe(200);
+    });
+
+    it('connects and records history for a signed-in user', async () => {
+      mockUserId = 'user-1';
+
+      const res = await convert([{ text: ['Member document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(dbConnect).toHaveBeenCalledTimes(1);
+      expect(createConversion).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', toolUsed: 'PDF to DOCX', status: 'success' })
+      );
+    });
   });
 });

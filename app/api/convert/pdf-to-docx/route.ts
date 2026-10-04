@@ -52,9 +52,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });
     }
 
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
+    }
 
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
