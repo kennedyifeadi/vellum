@@ -92,6 +92,28 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
     await expect(lockPdf({ pdfBuffer, password: 'ab\x00cd' })).rejects.toThrow(/control characters/i);
   });
 
+  // AES-256/R5 only hashes the first 127 UTF-8 bytes, so the limit is in bytes, not characters.
+  it('accepts a password of exactly 127 bytes', async () => {
+    const pdfBuffer = await createPdf(1);
+    const password = 'A'.repeat(127);
+
+    const locked = await lockPdf({ pdfBuffer, password });
+
+    expect(userPasswordMatches(locked, password)).toBe(true);
+    expect(userPasswordMatches(locked, `${'A'.repeat(126)}B`)).toBe(false);
+  });
+
+  it.each([
+    ['128 ASCII bytes', 'A'.repeat(128)],
+    ['a 70-character Cyrillic password (140 bytes)', 'Ж'.repeat(70)],
+    ['a 67-character password of 131 bytes', `${'Ж'.repeat(64)}AAA`],
+    ['input that NFKC-expands past the limit', '\uFDFA'.repeat(4)],
+  ])('rejects %s', async (_label, password) => {
+    const pdfBuffer = await createPdf(1);
+
+    await expect(lockPdf({ pdfBuffer, password })).rejects.toThrow(/at most 127 bytes/i);
+  });
+
   it.each(['1.3', '1.5', '1.7'])(
     'emits an AES-256 (/V 5 /R 5 /AESV3) encryption dict for a %s source header',
     async (version) => {

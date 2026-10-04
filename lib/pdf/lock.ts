@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib-plus-encrypt';
 
 const AES256_HEADER_VERSION = '1.7ext3';
 const MIN_PASSWORD_LENGTH = 4;
-const MAX_PASSWORD_LENGTH = 127;
+const MAX_PASSWORD_BYTES = 127;
 
 interface LockPdfOptions {
   pdfBuffer: Buffer;
@@ -19,16 +19,16 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-// AES-256/R5 hashes up to 127 bytes of the NFKC-normalised password, so anything
-// longer is silently ignored. Control characters (including NUL) have no portable
+// AES-256/R5 hashes up to 127 UTF-8 bytes of the NFKC-normalised password, so
+// anything longer is silently ignored. Control characters (including NUL) have no portable
 // encoding in the password string and produce files a spec-compliant reader
 // cannot reopen, so they are rejected rather than encrypted.
 export function validateLockPassword(password: unknown): string | null {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
     return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
   }
-  if (password.length > MAX_PASSWORD_LENGTH) {
-    return `Password must be at most ${MAX_PASSWORD_LENGTH} characters.`;
+  if (Buffer.byteLength(password.normalize('NFKC'), 'utf8') > MAX_PASSWORD_BYTES) {
+    return `Password must be at most ${MAX_PASSWORD_BYTES} bytes.`;
   }
   if (hasControlCharacter(password)) {
     return 'Password must not contain control characters.';
