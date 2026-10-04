@@ -7,6 +7,7 @@ import dbConnect from '@/lib/db/mongoose';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { findInItems, type TextItemLike } from '@/lib/pdf/findPdfStream';
 
 
 interface Match {
@@ -65,49 +66,44 @@ export async function POST(req: NextRequest) {
       const textContent = await page.getTextContent();
       const pdfLibPage = pdfLibDoc.getPage(i - 1);
 
-      textContent.items.forEach((itemOrMark) => {
-        // Use a more specific type check to avoid 'any' if possible, or a safer cast
-        const item = itemOrMark as { str?: string; transform?: number[]; width?: number; height?: number };
-        if (!item.str) return;
-        
-        const text = item.str.toLowerCase();
-        if (text.includes(searchTerm)) {
-          // Find all occurrences in this item
-          let index = text.indexOf(searchTerm);
-          while (index !== -1) {
-            totalMatchCount++; // always count, regardless of plan
-            // Collect snippet metadata for Pro users only
-            if (isPro) {
-              const start = Math.max(0, index - 20);
-              const end = Math.min(item.str.length, index + searchTerm.length + 20);
-              const snippet = item.str.substring(start, end);
-              matches.push({ page: i, text: item.str, snippet: `...${snippet}...` });
-            }
+      // pdfjs yields TextItem | TextMarkedContent; only the former carries `str`.
+      const textItems = textContent.items.filter(
+        (itemOrMark) => typeof (itemOrMark as { str?: unknown }).str === 'string',
+      ) as unknown as TextItemLike[];
 
-            // Highlighting Logic
-            // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
-            const [scaleX, , , scaleY, translateX, translateY] = item.transform || [1, 0, 0, 1, 0, 0];
+      const { matches: pageMatches, matchCount } = findInItems(textItems, searchTerm);
+      totalMatchCount += matchCount; // always count, regardless of plan
 
-            // In some PDFs, width/height aren't in item. Must calculate from transform or viewport
-            const itemWidth = item.width || (item.str.length * scaleX * 0.6); // Fallback
-            const itemHeight = item.height || scaleY;
-
-            // Simple highlighting: Currently highlights the ENTIRE segment if matches.
-            // Sophisticated matching (character-level) requires more complex math with char positions.
-            // For V1, we highlight the segment containing the word.
-            pdfLibPage.drawRectangle({
-              x: translateX,
-              y: translateY,
-              width: itemWidth,
-              height: itemHeight || 10,
-              color: rgb(1, 1, 0), // Yellow
-              opacity: 0.35,
-            });
-
-            index = text.indexOf(searchTerm, index + 1);
-          }
+      if (isPro) {
+        for (const match of pageMatches) {
+          matches.push({ page: i, text: match.text, snippet: match.snippet });
         }
-      });
+      }
+
+      // Highlight every item a match overlaps, so a match spanning a line wrap gets a
+      // highlight on each line it touches. Rectangle geometry (whole-run width, vertical
+      // offset, rotated text) is out of scope here — tracked in #59.
+      const itemsToHighlight = new Set<number>();
+      for (const match of pageMatches) {
+        for (const itemIndex of match.itemIndices) itemsToHighlight.add(itemIndex);
+      }
+
+      for (const itemIndex of itemsToHighlight) {
+        const item = textItems[itemIndex];
+        // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
+        const [scaleX, , , scaleY, translateX, translateY] = item.transform || [1, 0, 0, 1, 0, 0];
+        const itemWidth = item.width || (item.str.length * scaleX * 0.6); // Fallback
+        const itemHeight = item.height || scaleY;
+
+        pdfLibPage.drawRectangle({
+          x: translateX,
+          y: translateY,
+          width: itemWidth,
+          height: itemHeight || 10,
+          color: rgb(1, 1, 0), // Yellow
+          opacity: 0.35,
+        });
+      }
     }
 
     const modifiedPdfBytes = await pdfLibDoc.save();
