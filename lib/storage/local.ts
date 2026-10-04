@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { assertInsideDir } from '@/lib/paths';
 import type { StorageDriver } from './types';
 
 /**
@@ -67,6 +68,6 @@ export class LocalDiskStorage implements StorageDriver {
   }
 
   private resolve(key: string): string {
-    return path.join(this.root, key);
+    return assertInsideDir(this.root, path.join(this.root, key));
   }
 }

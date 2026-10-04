@@ -12,6 +12,13 @@ import { resolvePlanLimit } from '@/lib/plan-limits';
 
 export const dynamic = 'force-dynamic';
 
+const SAFE_EXTENSION = /^\.[a-z0-9]{1,10}$/i;
+
+function storageExtension(fileName: string): string {
+  const ext = path.extname(fileName);
+  return SAFE_EXTENSION.test(ext) ? ext : '';
+}
+
 export async function POST(req: NextRequest) {
   const userId = await getAuthUserId(req);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -58,8 +65,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ext = path.extname(file.name);
-    const diskFileName = `${uuidv4()}${ext}`;
+    const diskFileName = `${uuidv4()}${storageExtension(file.name)}`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
     await storage.put(`docs/${diskFileName}`, buffer);

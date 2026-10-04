@@ -1,9 +1,11 @@
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { ClientError } from '@/lib/convert/errors';
+import { assertInsideDir } from '@/lib/paths';
 
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -33,6 +35,21 @@ function isBadInputError(message: string): boolean {
   return BAD_INPUT_SIGNATURES.some((sig) => haystack.includes(sig.toLowerCase()));
 }
 
+const KNOWN_VIDEO_EXTENSIONS = new Set([
+  '.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.3gp', '.wmv', '.flv',
+]);
+
+// The extension is only a hint for ffmpeg's container probing; anything unrecognised
+// gets a neutral one so no client-supplied text ever lands in a path.
+function inputExtension(fileName: string): string {
+  const ext = path.extname(path.basename(fileName ?? '')).toLowerCase();
+  return KNOWN_VIDEO_EXTENSIONS.has(ext) ? ext : '.tmp';
+}
+
+function tempPath(name: string): string {
+  return assertInsideDir(tmpdir(), path.join(tmpdir(), name));
+}
+
 export async function compressVideo({
   inputBuffer,
   fileName,
@@ -43,9 +60,9 @@ export async function compressVideo({
     throw new ClientError('The video file is empty.');
   }
 
-  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const inputPath = path.join(tmpdir(), `input-${stamp}-${fileName}`);
-  const outputPath = path.join(tmpdir(), `output-${stamp}-compressed.mp4`);
+  const id = randomUUID();
+  const inputPath = tempPath(`input-${id}${inputExtension(fileName)}`);
+  const outputPath = tempPath(`output-${id}.mp4`);
 
   fs.writeFileSync(inputPath, inputBuffer);
 

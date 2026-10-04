@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { convertJpegToPng } from '@/lib/image/to-png';
 import { handleConvertError } from '@/lib/convert/errors';
+import { bareFileName, claimUniqueName } from '@/lib/paths';
 
 export async function POST(req: NextRequest) {
   try {
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Multiple Images - Create ZIP
       const zip = new JSZip();
+      const entryNames = new Set<string>();
       let totalOriginalSize = 0;
 
       for (let i = 0; i < images.length; i++) {
@@ -79,9 +81,8 @@ export async function POST(req: NextRequest) {
         const buffer = Buffer.from(await file.arrayBuffer());
         const pngBuffer = await convertJpegToPng({ jpegBuffer: buffer, quality: 100 });
 
-        // Ensure unique names and correct extensions inside ZIP
-        const baseName = file.name.replace(/\.[^/.]+$/, "");
-        zip.file(`${baseName}.png`, pngBuffer);
+        const baseName = bareFileName(file.name, `image-${i + 1}`).replace(/\.[^.]+$/, '') || `image-${i + 1}`;
+        zip.file(claimUniqueName(`${baseName}.png`, entryNames), pngBuffer);
       }
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });

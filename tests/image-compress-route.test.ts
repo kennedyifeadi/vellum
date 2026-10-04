@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import sharp from 'sharp';
+import JSZip from 'jszip';
 
 let mockUserId: string | null = null;
 let mockPlan = 'Free';
@@ -151,5 +152,54 @@ describe('image-compress route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.length).toBeGreaterThan(0);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  describe('zip entry names for a batch', () => {
+    const hostileNames = [
+      '../../evil.png',
+      '..\\..\\evil.png',
+      '/etc/cron.d/evil.png',
+      'C:\\Windows\\evil.png',
+      'evil.png',
+      'EVIL.png',
+      '',
+      '../..',
+    ];
+
+    it('uses bare, unique basenames so extracting the archive cannot escape its folder', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      mockPlan = 'Pro';
+      const image = await createPng();
+      mockResolvedFiles = hostileNames.map((name) => fakeFile(image, name));
+
+      const res = await handleImageCompress(compressRequest());
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/zip');
+      const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+      const entries = Object.values(zip.files);
+
+      expect(entries).toHaveLength(hostileNames.length);
+      for (const entry of entries) {
+        expect(entry.dir).toBe(false);
+        expect(entry.name).not.toMatch(/[\\/:]/);
+        expect(entry.name).not.toMatch(/^\.+$/);
+        expect(entry.name.length).toBeGreaterThan(0);
+      }
+      expect(new Set(entries.map((e) => e.name.toLowerCase())).size).toBe(hostileNames.length);
+      expect(entries.map((e) => e.name)).toEqual(expect.arrayContaining(['evil.png', 'evil (1).png', 'evil (2).png', 'image-7', 'image-8']));
+    });
+
+    it('leaves ordinary distinct names untouched', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      mockPlan = 'Pro';
+      const image = await createPng();
+      mockResolvedFiles = [fakeFile(image, 'one.png'), fakeFile(image, 'two.png')];
+
+      const res = await handleImageCompress(compressRequest());
+
+      const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+      expect(Object.keys(zip.files).sort()).toEqual(['one.png', 'two.png']);
+    });
   });
 });

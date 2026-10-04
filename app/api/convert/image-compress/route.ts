@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { compressImage } from '@/lib/image/compress';
 import { handleConvertError } from '@/lib/convert/errors';
+import { bareFileName, claimUniqueName } from '@/lib/paths';
 
 export async function POST(req: NextRequest) {
   try {
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Multiple Images - Create ZIP
       const zip = new JSZip();
+      const entryNames = new Set<string>();
       let totalOriginalSize = 0;
       let totalCompressedSize = 0;
 
@@ -91,7 +93,8 @@ export async function POST(req: NextRequest) {
         const compressedBuffer = await compressImage({ imageBuffer: buffer, quality });
 
         totalCompressedSize += compressedBuffer.length;
-        zip.file(file.name, compressedBuffer);
+        const entryName = claimUniqueName(bareFileName(file.name, `image-${i + 1}`), entryNames);
+        zip.file(entryName, compressedBuffer);
       }
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
