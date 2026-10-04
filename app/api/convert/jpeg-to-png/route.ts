@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertJpegToPng } from '@/lib/image/to-png';
+import { handleConvertError } from '@/lib/convert/errors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,7 +25,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error converting JPEG to PNG:', error);
-    return NextResponse.json({ error: 'Failed to convert JPEG to PNG.' }, { status: 500 });
+    return handleConvertError(error, 'Failed to convert JPEG to PNG.');
   }
 }

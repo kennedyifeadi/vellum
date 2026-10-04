@@ -1,4 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
+import { ClientError } from '@/lib/convert/errors';
+import { loadPdf } from './loadPdf';
 
 interface SplitPdfOptions {
   pdfBuffer: Buffer;
@@ -15,37 +17,35 @@ export async function splitPdf({
   splitEvery = false,
   outputFileNamePrefix,
 }: SplitPdfOptions): Promise<Map<string, Buffer>> {
-  const originalPdf = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
-
-  // `ignoreEncryption` only skips pdf-lib's load-time guard; it never decrypts the
-  // object streams, so copyPages would later fail deep inside pdf-lib. Fail fast with
-  // an actionable message instead.
-  if (originalPdf.isEncrypted) {
-    throw new Error('This PDF is password-protected. Please remove the password before splitting it.');
-  }
+  const originalPdf = await loadPdf(pdfBuffer, {
+    encryptedMessage:
+      'This PDF is password-protected. Please remove the password before splitting it.',
+  });
 
   const totalPages = originalPdf.getPageCount();
   const splitPdfs = new Map<string, Buffer>();
 
   if (!splitEvery) {
-    // Extract specific range
+    const requestedStart = Math.min(startPage, endPage);
+    const requestedEnd = Math.max(startPage, endPage);
+
+    if (requestedStart > totalPages) {
+      throw new ClientError(
+        `Page range ${requestedStart}-${requestedEnd} is outside this ${totalPages}-page document.`,
+      );
+    }
+
     const newPdf = await PDFDocument.create();
-    const actualStart = Math.max(0, startPage - 1);
-    const actualEnd = Math.min(totalPages - 1, endPage - 1);
-    
-    // Make sure bounds are correctly ordered
-    const minPage = Math.min(actualStart, actualEnd);
-    const maxPage = Math.max(actualStart, actualEnd);
-    
-    // Generate indices from minPage to maxPage
+    const minPage = Math.max(0, requestedStart - 1);
+    const maxPage = Math.min(totalPages - 1, requestedEnd - 1);
+
     const indicesToCopy = Array.from({ length: maxPage - minPage + 1 }, (_, i) => minPage + i);
-    
+
     const copiedPages = await newPdf.copyPages(originalPdf, indicesToCopy);
     copiedPages.forEach((page) => newPdf.addPage(page));
-    
+
     splitPdfs.set(`${outputFileNamePrefix}_pages_${minPage + 1}_to_${maxPage + 1}.pdf`, Buffer.from(await newPdf.save()));
   } else {
-    // Split into individual pages
     for (let i = 0; i < totalPages; i++) {
       const newPdf = await PDFDocument.create();
       const [copiedPage] = await newPdf.copyPages(originalPdf, [i]);
