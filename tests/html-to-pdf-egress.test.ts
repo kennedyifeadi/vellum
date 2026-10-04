@@ -78,7 +78,7 @@ describe('convertHtmlToPdf still performs allowed conversions', () => {
   it('renders a self-contained HTML document via setContent', async () => {
     const result = await convertHtmlToPdf({ htmlContent: '<h1>Invoice</h1>' });
 
-    expect(mockPage.setContent).toHaveBeenCalledWith('<h1>Invoice</h1>', { waitUntil: 'load' });
+    expect(mockPage.setContent).toHaveBeenCalledWith('<h1>Invoice</h1>', { waitUntil: 'load', timeout: expect.any(Number) });
     expect(mockPage.goto).not.toHaveBeenCalled();
     expect(result).toEqual(Buffer.from('%PDF-fake-content'));
   });
