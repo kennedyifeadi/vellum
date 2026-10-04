@@ -71,4 +71,54 @@ describe('compressVideo (lib/video/compress.ts)', () => {
     const after = fs.readdirSync(tmpdir()).filter((f) => f.startsWith('input-') || f.startsWith('output-'));
     expect(after.length).toBeLessThanOrEqual(before.length);
   });
+
+  describe('client-supplied file names never reach the filesystem', () => {
+    const tempRoot = path.resolve(tmpdir());
+    const realWriteFileSync = fs.writeFileSync;
+    const realUnlinkSync = fs.unlinkSync;
+    let touchedPaths: string[];
+
+    const isInsideTemp = (target: string) => path.dirname(path.resolve(target)) === tempRoot;
+
+    beforeEach(() => {
+      touchedPaths = [];
+      // Only paths inside the temp dir are passed through, so a regression can never
+      // write or delete a real file elsewhere on the machine running the suite.
+      jest.spyOn(fs, 'writeFileSync').mockImplementation(((target: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+        touchedPaths.push(String(target));
+        if (isInsideTemp(String(target))) {
+          (realWriteFileSync as (...args: unknown[]) => void)(target, ...rest);
+        }
+      }) as typeof fs.writeFileSync);
+      jest.spyOn(fs, 'unlinkSync').mockImplementation(((target: fs.PathLike) => {
+        touchedPaths.push(String(target));
+        if (isInsideTemp(String(target))) realUnlinkSync(target);
+      }) as typeof fs.unlinkSync);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it.each([
+      ['POSIX traversal', '../../x.mp4'],
+      ['deep POSIX traversal', '../../../../../../../../x.mp4'],
+      ['Windows traversal', '..\\..\\x.mp4'],
+      ['deep Windows traversal', '..\\..\\..\\..\\..\\..\\..\\..\\Users\\Public\\pwned.mp4'],
+      ['POSIX absolute path', '/etc/passwd.mp4'],
+      ['Windows absolute path', 'C:\\Windows\\win.mp4'],
+      ['empty name', ''],
+      ['separators only', '/\\/\\'],
+      ['hostile extension', 'clip.mp4/../../../../x'],
+    ])('keeps every temp file inside the temp dir for a %s', async (_label, fileName) => {
+      const result = await compressVideo({ inputBuffer: sampleVideo, fileName, crf: 32 });
+
+      expect(result.subarray(0, 12).toString('latin1')).toContain('ftyp');
+      expect(touchedPaths.length).toBeGreaterThanOrEqual(3);
+      for (const touched of touchedPaths) {
+        expect(isInsideTemp(touched)).toBe(true);
+        expect(path.basename(touched)).toMatch(/^(input|output)-[0-9a-f-]{36}\.[a-z0-9]{1,4}$/);
+      }
+    });
+  });
 });
