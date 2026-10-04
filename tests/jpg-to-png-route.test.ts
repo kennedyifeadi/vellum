@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import sharp from 'sharp';
+import JSZip from 'jszip';
 
 let mockUserId: string | null = null;
 let mockPlan = 'Free';
@@ -152,5 +153,54 @@ describe('jpg-to-png route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.subarray(0, 8)).toEqual(PNG_SIGNATURE);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  describe('zip entry names for a batch', () => {
+    const hostileNames = [
+      '../../evil.jpg',
+      '..\\..\\evil.jpg',
+      '/etc/cron.d/evil.jpg',
+      'C:\\Windows\\evil.jpg',
+      'evil.jpg',
+      'EVIL.jpg',
+      '',
+      '../..',
+    ];
+
+    it('uses bare, unique basenames so extracting the archive cannot escape its folder', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      mockPlan = 'Pro';
+      const image = await createJpeg();
+      mockResolvedFiles = hostileNames.map((name) => fakeFile(image, name));
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/zip');
+      const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+      const entries = Object.values(zip.files);
+
+      expect(entries).toHaveLength(hostileNames.length);
+      for (const entry of entries) {
+        expect(entry.dir).toBe(false);
+        expect(entry.name).not.toMatch(/[\\/:]/);
+        expect(entry.name).not.toMatch(/^\.+$/);
+        expect(entry.name.length).toBeGreaterThan(0);
+      }
+      expect(new Set(entries.map((e) => e.name.toLowerCase())).size).toBe(hostileNames.length);
+      expect(entries.map((e) => e.name)).toEqual(expect.arrayContaining(['evil.png', 'evil (1).png', 'evil (2).png', 'image-7.png', 'image-8.png']));
+    });
+
+    it('leaves ordinary distinct names untouched', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      mockPlan = 'Pro';
+      const image = await createJpeg();
+      mockResolvedFiles = [fakeFile(image, 'one.jpg'), fakeFile(image, 'two.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+      expect(Object.keys(zip.files).sort()).toEqual(['one.png', 'two.png']);
+    });
   });
 });
