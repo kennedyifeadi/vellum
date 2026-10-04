@@ -9,6 +9,7 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
+import { assertLineCountWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/pdf-to-docx-limits';
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -21,6 +22,23 @@ function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
       pageBreakBefore: pageIndex > 0 && lineIndex === 0,
     })
   );
+}
+
+async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
+  const pdfParser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) });
+  try {
+    const { total } = await pdfParser.getInfo();
+    assertPageCountWithinPlan(plan, total);
+
+    const { pages } = await pdfParser.getText({ pageJoiner: '' });
+    return toConvertiblePages(pages);
+  } finally {
+    await pdfParser.destroy();
+  }
+}
+
+function countLines(pages: ConvertiblePage[]): number {
+  return pages.reduce((lineCount, page) => lineCount + (page.hasText ? page.lines.length : 1), 0);
 }
 
 export async function POST(req: NextRequest) {
@@ -37,7 +55,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const user = userId ? await User.findById(userId) : null;
     const plan = user?.plan || 'Free';
-    
+
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
       Basic: 50 * 1024 * 1024,
@@ -51,18 +69,13 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 1. Extract Text
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfParser = new PDFParse({ data: new Uint8Array(arrayBuffer) });
-    const data = await pdfParser.getText({ pageJoiner: '' });
-    const numPages = data.total;
-    await pdfParser.destroy();
+    const pages = await extractPages(file, plan);
+    assertLineCountWithinPlan(plan, countLines(pages));
 
-    // 2. Generate DOCX
     const doc = new Document({
       sections: [{
         properties: {},
-        children: toConvertiblePages(data.pages).flatMap(toParagraphs),
+        children: pages.flatMap(toParagraphs),
       }],
     });
 
@@ -77,7 +90,7 @@ export async function POST(req: NextRequest) {
         fileName: file.name,
         fileSize: file.size,
         status: 'success',
-        metadata: { pages: numPages, processedSize: docxBuffer.length },
+        metadata: { pages: pages.length, processedSize: docxBuffer.length },
         expiresAt
       });
     }
