@@ -7,6 +7,21 @@ import dbConnect from '@/lib/db/mongoose';
 import { PDFParse } from 'pdf-parse';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { handleConvertError } from '@/lib/convert/errors';
+import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
+
+function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
+  const runs = page.hasText
+    ? page.lines.map(line => new TextRun(line))
+    : [new TextRun({ text: missingTextPlaceholder(page.num), italics: true })];
+
+  return runs.map((run, lineIndex) =>
+    new Paragraph({
+      children: [run],
+      pageBreakBefore: pageIndex > 0 && lineIndex === 0,
+    })
+  );
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,20 +54,15 @@ export async function POST(req: NextRequest) {
     // 1. Extract Text
     const arrayBuffer = await file.arrayBuffer();
     const pdfParser = new PDFParse({ data: new Uint8Array(arrayBuffer) });
-    const data = await pdfParser.getText();
+    const data = await pdfParser.getText({ pageJoiner: '' });
     const numPages = data.total;
     await pdfParser.destroy();
-    
+
     // 2. Generate DOCX
-    // pdf-parse provides extracted text separated by newlines
     const doc = new Document({
       sections: [{
         properties: {},
-        children: data.text.split('\n').map(line => 
-          new Paragraph({
-            children: [new TextRun(line)],
-          })
-        ),
+        children: toConvertiblePages(data.pages).flatMap(toParagraphs),
       }],
     });
 
@@ -80,7 +90,6 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[API/Convert/PDF-to-DOCX] Error:', error);
-    return NextResponse.json({ error: 'Failed to convert PDF to DOCX' }, { status: 500 });
+    return handleConvertError(error, 'Failed to convert PDF to DOCX');
   }
 }
