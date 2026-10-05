@@ -2,9 +2,13 @@ import { NextRequest } from 'next/server';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import { PDFDocument, PDFHexString, PDFName, PDFOperator, PDFOperatorNames, StandardFonts } from 'pdf-lib';
+import { PDFParse } from 'pdf-parse';
+import { Document, Packer } from 'docx';
+import dbConnect from '@/lib/db/mongoose';
 import { NO_SELECTABLE_TEXT_MESSAGE } from '@/lib/convert/pdf-text';
 
 let mockUserId: string | null = null;
+let mockPlan = 'Free';
 let mockResolvedFiles: any[] = [];
 
 jest.mock('@/lib/auth/jwt', () => ({
@@ -19,7 +23,7 @@ jest.mock('@/lib/db/mongoose', () => ({
 jest.mock('@/models/user', () => ({
   __esModule: true,
   default: {
-    findById: jest.fn().mockImplementation(() => Promise.resolve(mockUserId ? { plan: 'Free' } : null)),
+    findById: jest.fn().mockImplementation(() => Promise.resolve(mockUserId ? { plan: mockPlan } : null)),
   },
 }));
 
@@ -32,6 +36,11 @@ jest.mock('@/models/conversion', () => ({
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
+
+jest.mock('docx', () => {
+  const actual = jest.requireActual('docx');
+  return { ...actual, Document: jest.fn((...args: unknown[]) => new actual.Document(...args)) };
+});
 
 import { POST as handlePdfToDocx } from '../app/api/convert/pdf-to-docx/route';
 
@@ -120,6 +129,18 @@ async function createPdf(pages: PageSpec[]): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
+async function createTextPdf(pageCount: number, linesPerPage: number): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+    const page = doc.addPage([400, 1000]);
+    for (let lineIndex = 0; lineIndex < linesPerPage; lineIndex++) {
+      page.drawText(`p${pageIndex + 1} l${lineIndex + 1}`, { x: 20, y: 985 - lineIndex * 10, font: helvetica, size: 6 });
+    }
+  }
+  return Buffer.from(await doc.save());
+}
+
 function fakeFile(buffer: Buffer, name = 'report.pdf') {
   return {
     name,
@@ -160,12 +181,14 @@ function pageBreakCount(xml: string): number {
 beforeEach(() => {
   jest.clearAllMocks();
   mockUserId = null;
+  mockPlan = 'Free';
+  (dbConnect as jest.Mock).mockResolvedValue(true);
   mockResolvedFiles = [];
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
-  (console.error as jest.Mock).mockRestore?.();
+  jest.restoreAllMocks();
 });
 
 describe('pdf-to-docx route', () => {
@@ -288,5 +311,116 @@ describe('pdf-to-docx route', () => {
         metadata: expect.objectContaining({ pages: 2 }),
       })
     );
+  });
+
+  describe('page cap', () => {
+    it('rejects an over-cap PDF before extracting any text or building anything', async () => {
+      const getText = jest.spyOn(PDFParse.prototype, 'getText');
+      const toBuffer = jest.spyOn(Packer, 'toBuffer');
+
+      const res = await postFile(await createTextPdf(101, 0));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: 'This PDF has 101 pages; your plan allows converting up to 100 pages to Word.',
+      });
+      expect(getText).not.toHaveBeenCalled();
+      expect(Document).not.toHaveBeenCalled();
+      expect(toBuffer).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Basic', 200],
+      ['Pro', 300],
+      ['Enterprise', 500],
+    ])('holds a %s plan to %d pages', async (plan, cap) => {
+      mockUserId = 'user-1';
+      mockPlan = plan;
+
+      const res = await postFile(await createTextPdf(cap + 1, 0));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: `This PDF has ${cap + 1} pages; your plan allows converting up to ${cap} pages to Word.`,
+      });
+      expect(createConversion).not.toHaveBeenCalled();
+    });
+
+    it('converts a PDF a paid plan allows but a guest would not', async () => {
+      mockUserId = 'user-1';
+      mockPlan = 'Basic';
+
+      const res = await postFile(await createTextPdf(101, 1));
+
+      expect(res.status).toBe(200);
+      expect(paragraphTexts(await documentXml(res))).toHaveLength(101);
+    });
+
+    it('converts a PDF exactly at the guest cap', async () => {
+      const res = await postFile(await createTextPdf(100, 1));
+
+      expect(res.status).toBe(200);
+      expect(paragraphTexts(await documentXml(res))).toHaveLength(100);
+    });
+  });
+
+  describe('text cap', () => {
+    let denseGuestPdf: Buffer;
+
+    beforeAll(async () => {
+      denseGuestPdf = await createTextPdf(90, 90);
+    });
+
+    it('rejects a PDF under the page cap but over the text cap before building anything', async () => {
+      const toBuffer = jest.spyOn(Packer, 'toBuffer');
+
+      const res = await postFile(denseGuestPdf);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: 'This PDF has 8,100 lines of text; your plan allows converting up to 8,000 lines to Word.',
+      });
+      expect(Document).not.toHaveBeenCalled();
+      expect(toBuffer).not.toHaveBeenCalled();
+    });
+
+    it('converts the same PDF on a plan whose text cap allows it', async () => {
+      mockUserId = 'user-1';
+      mockPlan = 'Basic';
+
+      const res = await postFile(denseGuestPdf);
+
+      expect(res.status).toBe(200);
+      expect(paragraphTexts(await documentXml(res))).toHaveLength(8100);
+    }, 30_000);
+  });
+
+  describe('database use', () => {
+    it('converts for a guest without connecting to the database', async () => {
+      const res = await convert([{ text: ['Guest document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(dbConnect).not.toHaveBeenCalled();
+    });
+
+    it('converts for a guest while the database is down', async () => {
+      (dbConnect as jest.Mock).mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const res = await convert([{ text: ['Guest document'] }]);
+
+      expect(res.status).toBe(200);
+    });
+
+    it('connects and records history for a signed-in user', async () => {
+      mockUserId = 'user-1';
+
+      const res = await convert([{ text: ['Member document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(dbConnect).toHaveBeenCalledTimes(1);
+      expect(createConversion).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', toolUsed: 'PDF to DOCX', status: 'success' })
+      );
+    });
   });
 });
