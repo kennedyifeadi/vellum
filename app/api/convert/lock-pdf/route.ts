@@ -29,8 +29,12 @@ export async function POST(req: NextRequest) {
 
     const userId = await getAuthUserId(req);
     if (userId) {
-      const originalFileName = file?.name ? `locked_${file.name}` : 'locked.pdf';
-      await saveConversionRecord(userId, 'Lock PDF', originalFileName, Buffer.from(lockedPdfBuffer));
+      try {
+        const originalFileName = file?.name ? `locked_${file.name}` : 'locked.pdf';
+        await saveConversionRecord(userId, 'Lock PDF', originalFileName, Buffer.from(lockedPdfBuffer));
+      } catch (recordError) {
+        console.error('Failed to record Lock PDF conversion:', recordError);
+      }
     }
 
     return new NextResponse(lockedPdfBuffer as unknown as BodyInit, {
