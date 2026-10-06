@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { compressPdf } from '@/lib/pdf/compress';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
   try {
     if (userId) {
-      const originalFileName = file?.name ? `compressed_${file.name}` : 'compressed.pdf';
+      const originalFileName = ensureExtension(file?.name ? `compressed_${file.name}` : 'compressed.pdf', '.pdf');
       await saveConversionRecord(userId, 'Compress PDF', originalFileName, compressedPdfBuffer);
     }
   } catch (recordError) {

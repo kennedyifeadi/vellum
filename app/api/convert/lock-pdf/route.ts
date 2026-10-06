@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { lockPdf, validateLockPassword } from '@/lib/pdf/lock';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 
 export async function POST(req: NextRequest) {
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     const userId = await getAuthUserId(req);
     if (userId) {
       try {
-        const originalFileName = file?.name ? `locked_${file.name}` : 'locked.pdf';
+        const originalFileName = ensureExtension(file?.name ? `locked_${file.name}` : 'locked.pdf', '.pdf');
         await saveConversionRecord(userId, 'Lock PDF', originalFileName, Buffer.from(lockedPdfBuffer));
       } catch (recordError) {
         console.error('Failed to record Lock PDF conversion:', recordError);

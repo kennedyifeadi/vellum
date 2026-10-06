@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import { assertInsideDir, bareFileName, claimUniqueName } from '@/lib/paths';
+import { assertInsideDir, bareFileName, claimUniqueName, ensureExtension } from '@/lib/paths';
 
 describe('assertInsideDir', () => {
   const root = path.join(os.tmpdir(), 'vellum-paths-test');
@@ -73,5 +73,21 @@ describe('claimUniqueName', () => {
     expect(claimUniqueName('README', taken)).toBe('README (1)');
     expect(claimUniqueName('.env', taken)).toBe('.env');
     expect(claimUniqueName('.env', taken)).toBe('.env (1)');
+  });
+});
+
+describe('ensureExtension', () => {
+  it.each(['report.pdf', 'SCAN.PDF', 'merged_report.Pdf'])('leaves %p unchanged', (fileName) => {
+    expect(ensureExtension(fileName, '.pdf')).toBe(fileName);
+  });
+
+  it.each([
+    ['report', 'report.pdf'],
+    ['Scan 2026-10-01', 'Scan 2026-10-01.pdf'],
+    ['invoice.pdf.download', 'invoice.pdf.download.pdf'],
+    ['page.xhtml', 'page.xhtml.pdf'],
+    ['notpdf', 'notpdf.pdf'],
+  ])('appends the extension to %p', (fileName, expected) => {
+    expect(ensureExtension(fileName, '.pdf')).toBe(expected);
   });
 });

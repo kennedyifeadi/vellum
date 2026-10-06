@@ -52,3 +52,11 @@ export function claimUniqueName(name: string, taken: Set<string>): string {
   taken.add(candidate.toLowerCase());
   return candidate;
 }
+
+/**
+ * For routes whose output type is fixed but whose recorded name comes from the upload,
+ * which may carry no extension or a foreign one (Drive imports use the Drive name as-is).
+ */
+export function ensureExtension(fileName: string, extension: string): string {
+  return fileName.toLowerCase().endsWith(extension.toLowerCase()) ? fileName : `${fileName}${extension}`;
+}
