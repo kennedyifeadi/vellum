@@ -1,9 +1,27 @@
 import { ClientError } from '@/lib/convert/errors';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
-// The conversion runs in-process and blocks the event loop for its whole duration, so
-// both caps are sized by measurement: the largest input a tier allows converts in about
-// 1s (guest) to 4s (Enterprise). See #81 for the figures.
+const BYTES_PER_MB = 1024 * 1024;
+
+// The conversion runs in-process and blocks the event loop for its whole duration. The
+// three caps together bound that stall: size bounds the text extraction, pages and
+// lines bound the DOCX build that follows it.
+
+// Extraction cost follows the bytes pdf.js has to interpret. The page count needs the
+// parser and the line count needs the extraction itself, so size is the one cap that can
+// refuse a PDF before any parsing. Measured worst case for a one-page PDF at the cap:
+// about 4s (guest), 10s (Basic), 12s (Pro) and 21s (Enterprise). See #86 for the figures.
+// This is the size of the upload, not of what it decodes to: a compressed content stream
+// can inflate far past the cap, which only isolating the extraction can bound (#83).
+const MAX_FILE_SIZE: PlanTierValues<number> = {
+  guest: 5 * BYTES_PER_MB,
+  Basic: 10 * BYTES_PER_MB,
+  Pro: 15 * BYTES_PER_MB,
+  Enterprise: 25 * BYTES_PER_MB,
+};
+
+// Sized by measurement on ordinary text: the largest page and line counts a tier allows
+// convert in about 1s (guest) to 4s (Enterprise). See #81 for the figures.
 const MAX_PAGES: PlanTierValues<number> = {
   guest: 100,
   Basic: 200,
@@ -23,6 +41,20 @@ const MAX_LINES: PlanTierValues<number> = {
 
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');
+}
+
+// Rounded up so that a file just over the cap never reads as being exactly at it.
+function formatSizeInMb(bytes: number): string {
+  return (Math.ceil((bytes / BYTES_PER_MB) * 10) / 10).toFixed(1);
+}
+
+export function assertFileSizeWithinPlan(plan: string | null | undefined, fileSize: number): void {
+  const maxFileSize = resolvePlanLimit(plan, MAX_FILE_SIZE);
+  if (fileSize > maxFileSize) {
+    throw new ClientError(
+      `This PDF is ${formatSizeInMb(fileSize)} MB; your plan allows converting PDFs up to ${maxFileSize / BYTES_PER_MB} MB to Word. This limit is specific to PDF to Word and is lower than the general upload limit.`,
+    );
+  }
 }
 
 export function assertPageCountWithinPlan(plan: string | null | undefined, pageCount: number): void {
