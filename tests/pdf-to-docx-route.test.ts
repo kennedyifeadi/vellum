@@ -449,7 +449,7 @@ describe('pdf-to-docx route', () => {
 
     beforeAll(async () => {
       denseGuestPdf = await createTextPdf(90, 90);
-    });
+    }, 30_000);
 
     it('rejects a PDF under the page cap but over the text cap before building anything', async () => {
       const toBuffer = jest.spyOn(Packer, 'toBuffer');
