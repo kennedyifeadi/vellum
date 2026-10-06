@@ -56,6 +56,7 @@ import { POST as handlePdfToDocx } from '../app/api/convert/pdf-to-docx/route';
 
 const XML_ILLEGAL_CHARS = /[^\u0009\u000A\u000D -퟿-�\u{10000}-\u{10FFFF}]/gu;
 const PAGE_MARKER = /-- \d+ of \d+ --/;
+const MB = 1024 * 1024;
 
 type PageSpec = { text: string[] } | { unmapped: string[] } | { image: true };
 
@@ -151,19 +152,19 @@ async function createTextPdf(pageCount: number, linesPerPage: number): Promise<B
   return Buffer.from(await doc.save());
 }
 
-function fakeFile(buffer: Buffer, name = 'report.pdf') {
+function fakeFile(buffer: Buffer, size = buffer.length, name = 'report.pdf') {
   return {
     name,
     type: 'application/pdf',
-    size: buffer.length,
+    size,
     arrayBuffer: jest
       .fn()
       .mockResolvedValue(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)),
   };
 }
 
-function postFile(buffer: Buffer) {
-  mockResolvedFiles = [fakeFile(buffer)];
+function postFile(buffer: Buffer, reportedSize?: number) {
+  mockResolvedFiles = [fakeFile(buffer, reportedSize)];
   return handlePdfToDocx(
     new NextRequest('http://localhost:3000/api/convert/pdf-to-docx', { method: 'POST', body: new FormData() })
   );
@@ -322,6 +323,74 @@ describe('pdf-to-docx route', () => {
         metadata: expect.objectContaining({ pages: 2 }),
       })
     );
+  });
+
+  describe('size cap', () => {
+    // The route reads only the upload's reported size before parsing, so a small PDF
+    // reporting a large size stands in for a multi-megabyte fixture.
+    const DENSE_PAGE: PageSpec[] = [{ text: ['Dense one-page document'] }];
+
+    it('refuses an over-cap PDF before reading or parsing it', async () => {
+      const getInfo = jest.spyOn(PDFParse.prototype, 'getInfo');
+      const getText = jest.spyOn(PDFParse.prototype, 'getText');
+
+      const res = await postFile(await createPdf(DENSE_PAGE), 5 * MB + 1);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error:
+          'This PDF is 5.1 MB; your plan allows converting PDFs up to 5 MB to Word. This limit is specific to PDF to Word and is lower than the general upload limit.',
+      });
+      expect(mockResolvedFiles[0].arrayBuffer).not.toHaveBeenCalled();
+      expect(getInfo).not.toHaveBeenCalled();
+      expect(getText).not.toHaveBeenCalled();
+      expect(Document).not.toHaveBeenCalled();
+    });
+
+    it('converts a PDF exactly at the guest cap', async () => {
+      const res = await postFile(await createPdf(DENSE_PAGE), 5 * MB);
+
+      expect(res.status).toBe(200);
+      expect(paragraphTexts(await documentXml(res))).toEqual(['Dense one-page document']);
+    });
+
+    it.each([
+      ['Basic', 10],
+      ['Pro', 15],
+      ['Enterprise', 25],
+    ])('holds a %s plan to %d MB', async (plan, capMb) => {
+      mockUserId = 'user-1';
+      mockPlan = plan;
+
+      const res = await postFile(await createPdf(DENSE_PAGE), capMb * MB + 1);
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain(`up to ${capMb} MB to Word`);
+      expect(createConversion).not.toHaveBeenCalled();
+    });
+
+    it('converts for a Pro user a size a guest is refused', async () => {
+      const pdf = await createPdf(DENSE_PAGE);
+      const guestRes = await postFile(pdf, 12 * MB);
+
+      mockUserId = 'user-1';
+      mockPlan = 'Pro';
+      const proRes = await postFile(pdf, 12 * MB);
+
+      expect(guestRes.status).toBe(400);
+      expect(proRes.status).toBe(200);
+      expect(paragraphTexts(await documentXml(proRes))).toEqual(['Dense one-page document']);
+    });
+
+    it('holds a signed-in user with an unrecognised plan to the guest cap', async () => {
+      mockUserId = 'user-1';
+      mockPlan = 'Platinum';
+
+      const res = await postFile(await createPdf(DENSE_PAGE), 5 * MB + 1);
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain('up to 5 MB to Word');
+    });
   });
 
   describe('page cap', () => {

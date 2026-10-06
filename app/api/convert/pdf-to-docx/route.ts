@@ -6,14 +6,18 @@ import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { PDFParse } from 'pdf-parse';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
-import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
-import { assertLineCountWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/pdf-to-docx-limits';
+import {
+  assertFileSizeWithinPlan,
+  assertLineCountWithinPlan,
+  assertPageCountWithinPlan,
+} from '@/lib/convert/pdf-to-docx-limits';
 
-// The plan caps keep a permitted conversion to a few seconds; this is the backstop for
-// an input that is slow in a way the caps do not measure. 60s is the longest duration
-// every Vercel plan accepts.
+// The plan caps keep the measured worst case between about 4s (guest) and 21s
+// (Enterprise); this is the backstop for an input that is slow in a way the caps do not
+// measure, such as a compressed content stream. It only takes effect on Vercel, where 60s
+// is the longest duration every plan accepts.
 export const maxDuration = 60;
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
@@ -64,18 +68,7 @@ export async function POST(req: NextRequest) {
       plan = user?.plan || 'Free';
     }
 
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 25 * 1024 * 1024,
-      Basic: 50 * 1024 * 1024,
-      Pro: 100 * 1024 * 1024,
-      Enterprise: 500 * 1024 * 1024,
-    });
-
-    if (file.size > maxSize) {
-      return NextResponse.json({ 
-        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.` 
-      }, { status: 400 });
-    }
+    assertFileSizeWithinPlan(plan, file.size);
 
     const pages = await extractPages(file, plan);
     assertLineCountWithinPlan(plan, countLines(pages));
