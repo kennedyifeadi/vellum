@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useDashboard } from '@/app/dashboard/layout';
 import ToolIcon from '@/components/shared/ToolIcon';
+import DownloadAction from '@/components/dashboard/DownloadAction';
 
 export default function ActivityTable() {
   const { recentActivity, refreshData } = useDashboard();
@@ -86,9 +87,9 @@ export default function ActivityTable() {
                   </div>
                   <div className="w-[15%] text-[#9ca3af] text-[11px] font-medium capitalize pr-2">{getRelativeTime(row.createdAt, now)}</div>
                   <div className="w-[10%] flex justify-end gap-3 text-[#111827] font-semibold items-center">
-                    <button onClick={() => window.location.href = row.outputUrl} className="text-[#6366f1] hover:text-[#4f46e5] transition-colors">
+                    <DownloadAction outputUrl={row.outputUrl} className="text-[#6366f1] hover:text-[#4f46e5] transition-colors">
                       Download
-                    </button>
+                    </DownloadAction>
                     <button onClick={() => handleDelete(row._id)} className="p-1.5 text-[#9ca3af] hover:bg-[#fee2e2] hover:text-[#ef4444] rounded-md transition-colors" title="Delete">
                       <svg className="w-[15px] h-[15px]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
