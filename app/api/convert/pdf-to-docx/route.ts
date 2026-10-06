@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
-import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
+import { saveConversionRecord } from '@/lib/conversions';
 import { PDFParse } from 'pdf-parse';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { resolvePlanLimit } from '@/lib/plan-limits';
@@ -88,25 +88,23 @@ export async function POST(req: NextRequest) {
     });
 
     const docxBuffer = await Packer.toBuffer(doc);
+    const outputFileName = `${file.name.replace(/\.[^/.]+$/, "")}.docx`;
 
-    // Log Conversion
     if (userId) {
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // Expires in 2 hours
-      await Conversion.create({
-        userId,
-        toolUsed: 'PDF to DOCX',
-        fileName: file.name,
-        fileSize: file.size,
-        status: 'success',
-        metadata: { pages: pages.length, processedSize: docxBuffer.length },
-        expiresAt
-      });
+      try {
+        await saveConversionRecord(userId, 'PDF to DOCX', outputFileName, docxBuffer, {
+          pages: pages.length,
+          processedSize: docxBuffer.length,
+        });
+      } catch (recordError) {
+        console.error('Failed to record PDF to DOCX conversion:', recordError);
+      }
     }
 
     return new NextResponse(docxBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="${file.name.replace(/\.[^/.]+$/, "")}.docx"`,
+        'Content-Disposition': `attachment; filename="${outputFileName}"`,
       },
     });
 

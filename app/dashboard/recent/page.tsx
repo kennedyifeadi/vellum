@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import ToolIcon from '@/components/shared/ToolIcon';
+import DownloadAction from '@/components/dashboard/DownloadAction';
 import { ALL_TOOLS } from '@/lib/tools';
 
 export default function RecentFilesPage() {
@@ -146,9 +147,9 @@ export default function RecentFilesPage() {
                     </div>
                     <div className="w-[15%] text-[#9ca3af] text-[11px] font-semibold">{getRelativeTime(file.createdAt, now)}</div>
                     <div className="w-[10%] flex justify-end gap-3 items-center">
-                      <button onClick={() => window.location.href = file.outputUrl} className="p-2 text-[#6b7280] hover:text-[#6366f1] hover:bg-white rounded-lg border border-transparent hover:border-[#eaedf3] transition-all" title="Download">
+                      <DownloadAction outputUrl={file.outputUrl} className="p-2 text-[#6b7280] hover:text-[#6366f1] hover:bg-white rounded-lg border border-transparent hover:border-[#eaedf3] transition-all" title="Download">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                      </button>
+                      </DownloadAction>
                       <button onClick={() => handleDelete(file._id)} className="p-2 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all" title="Delete">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
@@ -170,9 +171,9 @@ export default function RecentFilesPage() {
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <button onClick={() => window.location.href = file.outputUrl} className="p-1.5 text-[#6b7280] hover:text-[#6366f1] rounded-lg transition-colors">
+                      <DownloadAction outputUrl={file.outputUrl} className="p-1.5 text-[#6b7280] hover:text-[#6366f1] rounded-lg transition-colors">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                      </button>
+                      </DownloadAction>
                       <button onClick={() => handleDelete(file._id)} className="p-1.5 text-[#9ca3af] hover:text-red-500 rounded-lg transition-colors">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>

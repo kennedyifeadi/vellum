@@ -33,6 +33,16 @@ jest.mock('@/models/conversion', () => ({
   default: { create: (...args: any[]) => createConversion(...args) },
 }));
 
+const mockStored = new Map<string, Buffer>();
+jest.mock('@/lib/storage', () => ({
+  getStorage: () => ({
+    put: async (key: string, data: Buffer) => {
+      mockStored.set(key, data);
+    },
+  }),
+  LocalDiskStorage: class {},
+}));
+
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
@@ -184,6 +194,7 @@ beforeEach(() => {
   mockPlan = 'Free';
   (dbConnect as jest.Mock).mockResolvedValue(true);
   mockResolvedFiles = [];
+  mockStored.clear();
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -307,7 +318,7 @@ describe('pdf-to-docx route', () => {
     expect(createConversion).toHaveBeenCalledWith(
       expect.objectContaining({
         toolUsed: 'PDF to DOCX',
-        status: 'success',
+        status: 'Completed',
         metadata: expect.objectContaining({ pages: 2 }),
       })
     );
@@ -395,6 +406,54 @@ describe('pdf-to-docx route', () => {
     }, 30_000);
   });
 
+  describe('history', () => {
+    it('stores the generated document so the history row can re-download it', async () => {
+      mockUserId = 'user-1';
+
+      const res = await convert([{ text: ['Member document'] }]);
+      const body = Buffer.from(await res.arrayBuffer());
+
+      expect(createConversion).toHaveBeenCalledTimes(1);
+      const record = createConversion.mock.calls[0][0];
+      expect(record).toMatchObject({
+        userId: 'user-1',
+        toolUsed: 'PDF to DOCX',
+        fileName: 'report.docx',
+        fileSize: body.length,
+        status: 'Completed',
+      });
+      expect(record.diskFileName).toMatch(/\.docx$/);
+      expect(record.outputUrl).toBe(`/api/download/${record.diskFileName.replace(/\.docx$/, '')}`);
+
+      const stored = mockStored.get(record.diskFileName)!;
+      expect(stored.equals(body)).toBe(true);
+      const storedDocument = await JSZip.loadAsync(stored);
+      expect(storedDocument.file('word/document.xml')).not.toBeNull();
+      expect(paragraphTexts(await storedDocument.file('word/document.xml')!.async('string'))).toEqual([
+        'Member document',
+      ]);
+    });
+
+    it('stores nothing for a guest', async () => {
+      const res = await convert([{ text: ['Guest document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(createConversion).not.toHaveBeenCalled();
+      expect(mockStored.size).toBe(0);
+    });
+
+    it('still returns the document when the history write fails', async () => {
+      mockUserId = 'user-1';
+      createConversion.mockRejectedValueOnce(new Error('mongo timeout'));
+
+      const res = await convert([{ text: ['Member document'] }]);
+
+      expect(res.status).toBe(200);
+      expect(paragraphTexts(await documentXml(res))).toEqual(['Member document']);
+      expect(createConversion).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('database use', () => {
     it('converts for a guest without connecting to the database', async () => {
       const res = await convert([{ text: ['Guest document'] }]);
@@ -417,9 +476,9 @@ describe('pdf-to-docx route', () => {
       const res = await convert([{ text: ['Member document'] }]);
 
       expect(res.status).toBe(200);
-      expect(dbConnect).toHaveBeenCalledTimes(1);
+      expect(dbConnect).toHaveBeenCalled();
       expect(createConversion).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-1', toolUsed: 'PDF to DOCX', status: 'success' })
+        expect.objectContaining({ userId: 'user-1', toolUsed: 'PDF to DOCX', status: 'Completed' })
       );
     });
   });

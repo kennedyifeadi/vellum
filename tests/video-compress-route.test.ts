@@ -27,6 +27,12 @@ jest.mock('@/models/conversion', () => ({
   default: { create: (...args: any[]) => conversionCreate(...args) },
 }));
 
+const mockStoragePut = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/storage', () => ({
+  getStorage: () => ({ put: mockStoragePut }),
+  LocalDiskStorage: class {},
+}));
+
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
@@ -47,6 +53,13 @@ function fakeFile(buffer: Buffer, name = 'clip.mp4', type = 'video/mp4') {
       .fn()
       .mockResolvedValue(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)),
   };
+}
+
+function expectStandardRetention(record: any, startedAt: number) {
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  const retentionMs = new Date(record.expiresAt).getTime() - startedAt;
+  expect(retentionMs).toBeGreaterThanOrEqual(threeDaysMs - 5000);
+  expect(retentionMs).toBeLessThanOrEqual(threeDaysMs + 5000);
 }
 
 function videoRequest() {
@@ -138,5 +151,31 @@ describe('video-compress route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.equals(Buffer.from('fake-mp4-payload'))).toBe(true);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the compression as history-only: no stored output', async () => {
+    mockUserId = '507f1f77bcf86cd799439011';
+    const input = Buffer.from('raw-input');
+    const encoded = Buffer.from('fake-mp4-payload');
+    mockResolvedFiles = [fakeFile(input)];
+    compressVideo.mockResolvedValueOnce(encoded);
+    const startedAt = Date.now();
+
+    const res = await handleVideoCompress(videoRequest());
+
+    expect(res.status).toBe(200);
+    expect(conversionCreate).toHaveBeenCalledTimes(1);
+    const record = conversionCreate.mock.calls[0][0];
+    expect(record).toMatchObject({
+      toolUsed: 'Compress Video',
+      fileName: 'clip.mp4',
+      fileSize: input.length,
+      status: 'Completed',
+      metadata: { pages: 1, processedSize: encoded.length },
+    });
+    expect(record.outputUrl).toBeUndefined();
+    expect(record.diskFileName).toBeUndefined();
+    expectStandardRetention(record, startedAt);
+    expect(mockStoragePut).not.toHaveBeenCalled();
   });
 });

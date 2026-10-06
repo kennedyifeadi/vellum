@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
-import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
+import { recordConversionHistory } from '@/lib/conversions';
 import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { compressImage } from '@/lib/image/compress';
@@ -54,15 +54,9 @@ export async function POST(req: NextRequest) {
 
       if (userId) {
         try {
-          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-          await Conversion.create({
-            userId,
-            toolUsed: 'Compress Image',
-            fileName: file.name,
-            fileSize: file.size,
-            status: 'success',
-            metadata: { pages: 1, processedSize: compressedBuffer.length },
-            expiresAt
+          await recordConversionHistory(userId, 'Compress Image', file.name, file.size, {
+            pages: 1,
+            processedSize: compressedBuffer.length,
           });
         } catch (recordError) {
           console.error('Failed to record Compress Image conversion:', recordError);
@@ -101,15 +95,9 @@ export async function POST(req: NextRequest) {
 
       if (userId) {
         try {
-          const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-          await Conversion.create({
-            userId,
-            toolUsed: 'Compress Image (Batch)',
-            fileName: 'compressed_images.zip',
-            fileSize: totalOriginalSize,
-            status: 'success',
-            metadata: { pages: images.length, processedSize: zipBuffer.length },
-            expiresAt
+          await recordConversionHistory(userId, 'Compress Image (Batch)', 'compressed_images.zip', totalOriginalSize, {
+            pages: images.length,
+            processedSize: zipBuffer.length,
           });
         } catch (recordError) {
           console.error('Failed to record Compress Image conversion:', recordError);

@@ -26,7 +26,8 @@ jest.mock('@/models/conversion', () => ({
   },
 }));
 
-import { saveConversionRecord, cleanupStorage } from '../lib/conversions';
+import Conversion from '@/models/conversion';
+import { saveConversionRecord, recordConversionHistory, cleanupStorage } from '../lib/conversions';
 
 describe('Features & Conversion Lifecycle System Tests', () => {
   beforeEach(() => {
@@ -136,6 +137,103 @@ describe('Features & Conversion Lifecycle System Tests', () => {
       
       const actualDiffMs = new Date(record.expiresAt).getTime() - now;
       expect(actualDiffMs).toBeLessThanOrEqual(5000);
+    });
+  });
+
+  describe('Stored output type (saveConversionRecord)', () => {
+    const dummyBuffer = Buffer.from('generated content test');
+    const userId = '507f1f77bcf86cd799439011';
+
+    it.each([
+      ['report.docx', '.docx'],
+      ['converted_photo.png', '.png'],
+      ['converted_images.zip', '.zip'],
+      ['merged.pdf', '.pdf'],
+      ['locked_SCAN.PDF', '.pdf'],
+    ])('stores %s under a %s key and keeps the output name for download', async (fileName, extension) => {
+      const record: any = await saveConversionRecord(userId, 'Any Tool', fileName, dummyBuffer);
+
+      expect(record.diskFileName.endsWith(extension)).toBe(true);
+      expect(record.outputUrl).toBe(`/api/download/${record.diskFileName.slice(0, -extension.length)}`);
+      expect(record.fileName).toBe(fileName);
+      expect(record.status).toBe('Completed');
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringContaining(record.diskFileName), dummyBuffer);
+    });
+
+    it.each(['clip.mp4', 'archive.tar.gz', 'no-extension', ''])(
+      'refuses to store %p instead of mislabelling it as a PDF',
+      async (fileName) => {
+        await expect(saveConversionRecord(userId, 'Any Tool', fileName, dummyBuffer)).rejects.toThrow(
+          /unsupported output type/
+        );
+
+        expect(fs.writeFileSync).not.toHaveBeenCalled();
+        expect(Conversion.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('keeps the metadata it is given', async () => {
+      const record: any = await saveConversionRecord(userId, 'PDF to DOCX', 'report.docx', dummyBuffer, { pages: 4 });
+
+      expect(record.metadata).toEqual({ pages: 4 });
+    });
+  });
+
+  describe('History-only records (recordConversionHistory)', () => {
+    const userId = '507f1f77bcf86cd799439011';
+
+    it('records a Completed row with no stored output', async () => {
+      const record: any = await recordConversionHistory(userId, 'Compress Video', 'clip.mp4', 4096, {
+        pages: 1,
+        processedSize: 1024,
+      });
+
+      expect(record).toMatchObject({
+        userId,
+        toolUsed: 'Compress Video',
+        fileName: 'clip.mp4',
+        fileSize: 4096,
+        status: 'Completed',
+        metadata: { pages: 1, processedSize: 1024 },
+      });
+      expect(record.outputUrl).toBeUndefined();
+      expect(record.diskFileName).toBeUndefined();
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Basic', 3],
+      ['Pro', 5],
+      ['Enterprise', 5],
+    ])('keeps a %s row for %d days, like a stored conversion', async (plan, days) => {
+      mockFindByIdResult = { plan, preferences: { autoDelete: false } };
+      const now = Date.now();
+
+      const record: any = await recordConversionHistory(userId, 'Find in PDF', 'doc.pdf', 2048);
+
+      const expectedMs = days * 24 * 60 * 60 * 1000;
+      const actualDiffMs = new Date(record.expiresAt).getTime() - now;
+      expect(actualDiffMs).toBeGreaterThanOrEqual(expectedMs - 5000);
+      expect(actualDiffMs).toBeLessThanOrEqual(expectedMs + 5000);
+    });
+
+    it('expires the row almost immediately when autoDelete is on', async () => {
+      mockFindByIdResult = { plan: 'Pro', preferences: { autoDelete: true } };
+      const now = Date.now();
+
+      const record: any = await recordConversionHistory(userId, 'Find in PDF', 'doc.pdf', 2048);
+
+      expect(new Date(record.expiresAt).getTime() - now).toBeLessThanOrEqual(5000);
+    });
+
+    it('records nothing when the user does not exist', async () => {
+      mockFindByIdResult = null;
+
+      const record = await recordConversionHistory(userId, 'Find in PDF', 'doc.pdf', 2048);
+
+      expect(record).toBeNull();
+      expect(Conversion.create).not.toHaveBeenCalled();
     });
   });
 

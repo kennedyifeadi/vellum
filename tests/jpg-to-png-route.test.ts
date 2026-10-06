@@ -28,6 +28,16 @@ jest.mock('@/models/conversion', () => ({
   default: { create: (...args: any[]) => conversionCreate(...args) },
 }));
 
+const mockStored = new Map<string, Buffer>();
+jest.mock('@/lib/storage', () => ({
+  getStorage: () => ({
+    put: async (key: string, data: Buffer) => {
+      mockStored.set(key, data);
+    },
+  }),
+  LocalDiskStorage: class {},
+}));
+
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
@@ -72,6 +82,7 @@ beforeEach(() => {
   mockUserId = null;
   mockPlan = 'Free';
   mockResolvedFiles = [];
+  mockStored.clear();
   convertJpegToPngMock.mockImplementation((opts: any) =>
     jest.requireActual('@/lib/image/to-png').convertJpegToPng(opts)
   );
@@ -153,6 +164,76 @@ describe('jpg-to-png route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.subarray(0, 8)).toEqual(PNG_SIGNATURE);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps serving the zip when the batch history write fails', async () => {
+    mockUserId = '507f1f77bcf86cd799439011';
+    const image = await createJpeg();
+    mockResolvedFiles = [fakeFile(image, 'one.jpg'), fakeFile(image, 'two.jpg')];
+    conversionCreate.mockRejectedValueOnce(new Error('mongo timeout'));
+
+    const res = await handleJpgToPng(jpgRequest());
+
+    expect(res.status).toBe(200);
+    const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+    expect(Object.keys(zip.files).sort()).toEqual(['one.png', 'two.png']);
+    expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  describe('history', () => {
+    it('stores the single PNG so the history row can re-download it', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      mockResolvedFiles = [fakeFile(await createJpeg(), 'photo.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+      const body = Buffer.from(await res.arrayBuffer());
+
+      expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="converted_photo.png"');
+      expect(conversionCreate).toHaveBeenCalledTimes(1);
+      const record = conversionCreate.mock.calls[0][0];
+      expect(record).toMatchObject({
+        toolUsed: 'JPEG to PNG',
+        fileName: 'converted_photo.png',
+        fileSize: body.length,
+        status: 'Completed',
+        metadata: { pages: 1, processedSize: body.length },
+      });
+      expect(record.diskFileName).toMatch(/\.png$/);
+      expect(record.outputUrl).toBe(`/api/download/${record.diskFileName.replace(/\.png$/, '')}`);
+      expect(mockStored.get(record.diskFileName)!.equals(body)).toBe(true);
+    });
+
+    it('stores the batch zip so the history row can re-download it', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      const image = await createJpeg();
+      mockResolvedFiles = [fakeFile(image, 'one.jpg'), fakeFile(image, 'two.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+      const body = Buffer.from(await res.arrayBuffer());
+
+      expect(conversionCreate).toHaveBeenCalledTimes(1);
+      const record = conversionCreate.mock.calls[0][0];
+      expect(record).toMatchObject({
+        toolUsed: 'JPEG to PNG (Batch)',
+        fileName: 'converted_images.zip',
+        fileSize: body.length,
+        status: 'Completed',
+        metadata: { pages: 2, processedSize: body.length },
+      });
+      expect(record.diskFileName).toMatch(/\.zip$/);
+      expect(record.outputUrl).toBe(`/api/download/${record.diskFileName.replace(/\.zip$/, '')}`);
+      expect(mockStored.get(record.diskFileName)!.equals(body)).toBe(true);
+    });
+
+    it('stores nothing for a guest', async () => {
+      mockResolvedFiles = [fakeFile(await createJpeg())];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(200);
+      expect(conversionCreate).not.toHaveBeenCalled();
+      expect(mockStored.size).toBe(0);
+    });
   });
 
   describe('zip entry names for a batch', () => {

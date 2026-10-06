@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mergePdfs } from '@/lib/pdf/merge';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        const originalFileName = files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf';
+        const originalFileName = ensureExtension(files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf', '.pdf');
         await saveConversionRecord(userId, 'Merge PDF', originalFileName, Buffer.from(mergedPdfBuffer));
       } catch (recordError) {
         console.error('Failed to record Merge PDF conversion:', recordError);

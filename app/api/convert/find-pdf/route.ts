@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
-import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
+import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { resolvePlanLimit } from '@/lib/plan-limits';
@@ -109,18 +109,16 @@ export async function POST(req: NextRequest) {
     const modifiedPdfBytes = await pdfLibDoc.save();
     const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
 
-    // Log Conversion
     if (userId) {
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-      await Conversion.create({
-        userId,
-        toolUsed: 'Find in PDF',
-        fileName: file.name,
-        fileSize: file.size,
-        status: 'success',
-        metadata: { pages: pdf.numPages, matchesFound: totalMatchCount, searchTerm },
-        expiresAt
-      });
+      try {
+        await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
+          pages: pdf.numPages,
+          matchesFound: totalMatchCount,
+          searchTerm,
+        });
+      } catch (recordError) {
+        console.error('Failed to record Find in PDF conversion:', recordError);
+      }
     }
 
     return NextResponse.json({

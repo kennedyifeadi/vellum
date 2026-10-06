@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { convertHtmlToPdf } from '@/lib/html/to-pdf';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
+import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        await saveConversionRecord(userId, 'HTML to PDF', outputFileName, Buffer.from(pdfBuffer));
+        await saveConversionRecord(userId, 'HTML to PDF', ensureExtension(outputFileName, '.pdf'), Buffer.from(pdfBuffer));
       } catch (recordError) {
         console.error('Failed to record HTML to PDF conversion:', recordError);
       }
