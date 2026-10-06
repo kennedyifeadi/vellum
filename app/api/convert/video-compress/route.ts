@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import User from '@/models/user';
-import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
+import { recordConversionHistory } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { compressVideo } from '@/lib/video/compress';
@@ -54,15 +54,9 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-        await Conversion.create({
-          userId,
-          toolUsed: 'Compress Video',
-          fileName: video.name,
-          fileSize: video.size,
-          status: 'success',
-          metadata: { pages: 1, processedSize: compressedBuffer.length },
-          expiresAt
+        await recordConversionHistory(userId, 'Compress Video', video.name, video.size, {
+          pages: 1,
+          processedSize: compressedBuffer.length,
         });
       } catch (recordError) {
         console.error('Failed to record Compress Video conversion:', recordError);

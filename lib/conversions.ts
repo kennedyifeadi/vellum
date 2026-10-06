@@ -90,6 +90,31 @@ export async function saveConversionRecord(
 }
 
 /**
+ * Logs a conversion to Recent Activity without keeping its output, for tools whose
+ * history rows are deliberately not re-downloadable.
+ */
+export async function recordConversionHistory(
+  userId: string,
+  toolUsed: string,
+  fileName: string,
+  fileSize: number,
+  metadata?: Record<string, unknown>
+) {
+  const expiresAt = await resolveExpiry(userId);
+  if (!expiresAt) return null;
+
+  return Conversion.create({
+    userId,
+    toolUsed,
+    fileName,
+    fileSize,
+    status: 'Completed',
+    metadata,
+    expiresAt,
+  });
+}
+
+/**
  * Sweeps the local storage directory and deletes any physical files that no longer
  * exist in the MongoDB Conversion collection (due to TTL deletion or manual deletion).
  * Local-disk only: an S3-backed deployment relies on bucket lifecycle rules instead.

@@ -28,6 +28,12 @@ jest.mock('@/models/conversion', () => ({
   default: { create: (...args: any[]) => conversionCreate(...args) },
 }));
 
+const mockStoragePut = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/storage', () => ({
+  getStorage: () => ({ put: mockStoragePut }),
+  LocalDiskStorage: class {},
+}));
+
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
@@ -56,6 +62,13 @@ function fakeFile(buffer: Buffer, name = 'pic.png', type = 'image/png') {
       .fn()
       .mockResolvedValue(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)),
   };
+}
+
+function expectStandardRetention(record: any, startedAt: number) {
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  const retentionMs = new Date(record.expiresAt).getTime() - startedAt;
+  expect(retentionMs).toBeGreaterThanOrEqual(threeDaysMs - 5000);
+  expect(retentionMs).toBeLessThanOrEqual(threeDaysMs + 5000);
 }
 
 function compressRequest() {
@@ -152,6 +165,70 @@ describe('image-compress route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.length).toBeGreaterThan(0);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps serving the zip when the batch history write fails', async () => {
+    mockUserId = '507f1f77bcf86cd799439011';
+    const image = await createPng();
+    mockResolvedFiles = [fakeFile(image, 'one.png'), fakeFile(image, 'two.png')];
+    conversionCreate.mockRejectedValueOnce(new Error('mongo timeout'));
+
+    const res = await handleImageCompress(compressRequest());
+
+    expect(res.status).toBe(200);
+    const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+    expect(Object.keys(zip.files).sort()).toEqual(['one.png', 'two.png']);
+    expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  describe('history', () => {
+    it('records a single compression as history-only: no stored output', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      const image = await createPng();
+      mockResolvedFiles = [fakeFile(image)];
+      const startedAt = Date.now();
+
+      const res = await handleImageCompress(compressRequest());
+      const body = Buffer.from(await res.arrayBuffer());
+
+      expect(conversionCreate).toHaveBeenCalledTimes(1);
+      const record = conversionCreate.mock.calls[0][0];
+      expect(record).toMatchObject({
+        toolUsed: 'Compress Image',
+        fileName: 'pic.png',
+        fileSize: image.length,
+        status: 'Completed',
+        metadata: { pages: 1, processedSize: body.length },
+      });
+      expect(record.outputUrl).toBeUndefined();
+      expect(record.diskFileName).toBeUndefined();
+      expectStandardRetention(record, startedAt);
+      expect(mockStoragePut).not.toHaveBeenCalled();
+    });
+
+    it('records a batch compression as history-only: no stored output', async () => {
+      mockUserId = '507f1f77bcf86cd799439011';
+      const image = await createPng();
+      mockResolvedFiles = [fakeFile(image, 'one.png'), fakeFile(image, 'two.png')];
+      const startedAt = Date.now();
+
+      const res = await handleImageCompress(compressRequest());
+      const body = Buffer.from(await res.arrayBuffer());
+
+      expect(conversionCreate).toHaveBeenCalledTimes(1);
+      const record = conversionCreate.mock.calls[0][0];
+      expect(record).toMatchObject({
+        toolUsed: 'Compress Image (Batch)',
+        fileName: 'compressed_images.zip',
+        fileSize: image.length * 2,
+        status: 'Completed',
+        metadata: { pages: 2, processedSize: body.length },
+      });
+      expect(record.outputUrl).toBeUndefined();
+      expect(record.diskFileName).toBeUndefined();
+      expectStandardRetention(record, startedAt);
+      expect(mockStoragePut).not.toHaveBeenCalled();
+    });
   });
 
   describe('zip entry names for a batch', () => {
