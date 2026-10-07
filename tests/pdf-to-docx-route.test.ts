@@ -2,10 +2,17 @@ import { NextRequest } from 'next/server';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import { PDFDocument, PDFHexString, PDFName, PDFOperator, PDFOperatorNames, StandardFonts } from 'pdf-lib';
-import { PDFParse } from 'pdf-parse';
 import { Document, Packer } from 'docx';
 import dbConnect from '@/lib/db/mongoose';
+import * as pdfExtraction from '@/lib/convert/pdf-extraction';
 import { NO_SELECTABLE_TEXT_MESSAGE } from '@/lib/convert/pdf-text';
+import {
+  CONVERTER_BUSY_MESSAGE,
+  EXTRACTION_LIMITS,
+  PDF_TOO_COMPLEX_MESSAGE,
+} from '@/lib/convert/pdf-to-docx-limits';
+import { lockPdf } from '@/lib/pdf/lock';
+import { createSlowPdf, trackEventLoopStall } from './helpers/slowPdf';
 
 let mockUserId: string | null = null;
 let mockPlan = 'Free';
@@ -331,8 +338,7 @@ describe('pdf-to-docx route', () => {
     const DENSE_PAGE: PageSpec[] = [{ text: ['Dense one-page document'] }];
 
     it('refuses an over-cap PDF before reading or parsing it', async () => {
-      const getInfo = jest.spyOn(PDFParse.prototype, 'getInfo');
-      const getText = jest.spyOn(PDFParse.prototype, 'getText');
+      const extractPdfPages = jest.spyOn(pdfExtraction, 'extractPdfPages');
 
       const res = await postFile(await createPdf(DENSE_PAGE), 5 * MB + 1);
 
@@ -342,8 +348,7 @@ describe('pdf-to-docx route', () => {
           'This PDF is 5.1 MB; your plan allows converting PDFs up to 5 MB to Word. This limit is specific to PDF to Word and is lower than the general upload limit.',
       });
       expect(mockResolvedFiles[0].arrayBuffer).not.toHaveBeenCalled();
-      expect(getInfo).not.toHaveBeenCalled();
-      expect(getText).not.toHaveBeenCalled();
+      expect(extractPdfPages).not.toHaveBeenCalled();
       expect(Document).not.toHaveBeenCalled();
     });
 
@@ -395,16 +400,17 @@ describe('pdf-to-docx route', () => {
 
   describe('page cap', () => {
     it('rejects an over-cap PDF before extracting any text or building anything', async () => {
-      const getText = jest.spyOn(PDFParse.prototype, 'getText');
       const toBuffer = jest.spyOn(Packer, 'toBuffer');
+      // Extracting any of these pages would outlast the deadline, so only a refusal made
+      // before extraction can answer with the page count.
+      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 1_000);
 
-      const res = await postFile(await createTextPdf(101, 0));
+      const res = await postFile(createSlowPdf(30, 101));
 
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({
         error: 'This PDF has 101 pages; your plan allows converting up to 100 pages to Word.',
       });
-      expect(getText).not.toHaveBeenCalled();
       expect(Document).not.toHaveBeenCalled();
       expect(toBuffer).not.toHaveBeenCalled();
     });
@@ -473,6 +479,90 @@ describe('pdf-to-docx route', () => {
       expect(res.status).toBe(200);
       expect(paragraphTexts(await documentXml(res))).toHaveLength(8100);
     }, 30_000);
+  });
+
+  describe('extraction isolation', () => {
+    let slowPdf: Buffer;
+
+    beforeAll(() => {
+      slowPdf = createSlowPdf(30);
+    });
+
+    it('refuses a PDF that outlasts the deadline without blocking the event loop', async () => {
+      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 1_000);
+      const stopTracking = trackEventLoopStall();
+      const startedAt = performance.now();
+
+      const res = await postFile(slowPdf);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: PDF_TOO_COMPLEX_MESSAGE });
+      expect(performance.now() - startedAt).toBeLessThan(4_000);
+      expect(stopTracking()).toBeLessThan(500);
+      expect(Document).not.toHaveBeenCalled();
+    });
+
+    it('holds a signed-in user to the deadline of their own plan', async () => {
+      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 60_000);
+      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'Pro', 1_000);
+      mockUserId = 'user-1';
+      mockPlan = 'Pro';
+
+      const res = await postFile(slowPdf);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: PDF_TOO_COMPLEX_MESSAGE });
+      expect(createConversion).not.toHaveBeenCalled();
+    });
+
+    it('refuses a PDF that exceeds the heap limit and keeps serving afterwards', async () => {
+      // pdf.js itself does not fit in a heap this small, which makes any PDF exceed it.
+      const heapLimit = jest.replaceProperty(EXTRACTION_LIMITS, 'maxHeapMb', 8);
+      const refused = await convert([{ text: ['Ordinary document'] }]);
+      heapLimit.restore();
+
+      const converted = await convert([{ text: ['Ordinary document'] }]);
+
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: PDF_TOO_COMPLEX_MESSAGE });
+      expect(converted.status).toBe(200);
+    });
+
+    it.each([
+      ['a corrupt PDF', async (pdf: Buffer) => pdf.subarray(0, Math.floor(pdf.length / 2)), 'InvalidPDFException'],
+      [
+        'an encrypted PDF',
+        (pdf: Buffer) => lockPdf({ pdfBuffer: pdf, password: 'correct-Horse-7!' }),
+        'PasswordException',
+      ],
+    ])('still returns a generic 500 for %s and logs the parser error', async (_label, damage, parserErrorName) => {
+      const res = await postFile(await damage(await createPdf([{ text: ['Ordinary document'] }])));
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Failed to convert PDF to DOCX' });
+      expect(console.error).toHaveBeenCalledWith(
+        '[convert] Failed to convert PDF to DOCX',
+        expect.objectContaining({ name: parserErrorName }),
+      );
+    });
+
+    it('answers 503 with Retry-After while every extraction slot is taken, then recovers', async () => {
+      jest.replaceProperty(EXTRACTION_LIMITS, 'maxConcurrent', 1);
+      const occupying = pdfExtraction
+        .extractPdfPages(new Uint8Array(slowPdf), { maxPages: 1, deadlineMs: 1_000, maxHeapMb: 256, maxConcurrent: 1 })
+        .catch(() => undefined);
+
+      const busy = await convert([{ text: ['Ordinary document'] }]);
+      await occupying;
+      const recovered = await convert([{ text: ['Ordinary document'] }]);
+
+      expect(busy.status).toBe(503);
+      expect(busy.headers.get('Retry-After')).toBe('5');
+      expect(await busy.json()).toEqual({ error: CONVERTER_BUSY_MESSAGE });
+      expect(Document).toHaveBeenCalledTimes(1);
+      expect(recovered.status).toBe(200);
+      expect(paragraphTexts(await documentXml(recovered))).toEqual(['Ordinary document']);
+    });
   });
 
   describe('history', () => {

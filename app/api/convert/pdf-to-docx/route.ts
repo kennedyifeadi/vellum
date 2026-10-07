@@ -4,21 +4,25 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
-import { PDFParse } from 'pdf-parse';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
-import { handleConvertError } from '@/lib/convert/errors';
+import { ClientError, handleConvertError } from '@/lib/convert/errors';
+import { extractPdfPages, PdfExtractionError } from '@/lib/convert/pdf-extraction';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
 import {
   assertFileSizeWithinPlan,
   assertLineCountWithinPlan,
   assertPageCountWithinPlan,
+  CONVERTER_BUSY_MESSAGE,
+  extractionOptionsForPlan,
+  PDF_TOO_COMPLEX_MESSAGE,
 } from '@/lib/convert/pdf-to-docx-limits';
 
-// The plan caps keep the measured worst case between about 4s (guest) and 21s
-// (Enterprise); this is the backstop for an input that is slow in a way the caps do not
-// measure, such as a compressed content stream. It only takes effect on Vercel, where 60s
-// is the longest duration every plan accepts.
+// The extraction deadline (25s at most) and the DOCX build the page and line caps allow
+// (about 2.5s at most) bound a request well inside this; it is the platform's own backstop
+// and only takes effect on Vercel, where 60s is the longest duration every plan accepts.
 export const maxDuration = 60;
+
+const BUSY_RETRY_AFTER_SECONDS = 5;
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -33,17 +37,34 @@ function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   );
 }
 
-async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
-  const pdfParser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) });
-  try {
-    const { total } = await pdfParser.getInfo();
-    assertPageCountWithinPlan(plan, total);
-
-    const { pages } = await pdfParser.getText({ pageJoiner: '' });
-    return toConvertiblePages(pages);
-  } finally {
-    await pdfParser.destroy();
+function rethrowExtractionFailure(error: unknown, plan: string): never {
+  if (error instanceof PdfExtractionError) {
+    const { failure } = error;
+    if (failure.reason === 'page-limit') {
+      assertPageCountWithinPlan(plan, failure.pageCount);
+    }
+    if (failure.reason === 'deadline' || failure.reason === 'memory') {
+      throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
+    }
+    if (failure.reason === 'parser') {
+      throw error.cause;
+    }
   }
+  throw error;
+}
+
+async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
+  const data = new Uint8Array(await file.arrayBuffer());
+  try {
+    const pages = await extractPdfPages(data, extractionOptionsForPlan(plan));
+    return toConvertiblePages(pages);
+  } catch (error) {
+    rethrowExtractionFailure(error, plan);
+  }
+}
+
+function isBusy(error: unknown): boolean {
+  return error instanceof PdfExtractionError && error.failure.reason === 'busy';
 }
 
 function countLines(pages: ConvertiblePage[]): number {
@@ -102,6 +123,12 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
+    if (isBusy(error)) {
+      return NextResponse.json(
+        { error: CONVERTER_BUSY_MESSAGE },
+        { status: 503, headers: { 'Retry-After': String(BUSY_RETRY_AFTER_SECONDS) } },
+      );
+    }
     return handleConvertError(error, 'Failed to convert PDF to DOCX');
   }
 }
