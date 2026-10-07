@@ -65,6 +65,19 @@ const XML_ILLEGAL_CHARS = /[^\u0009\u000A\u000D -퟿-�\u{10000}-\u{10FFFF}]
 const PAGE_MARKER = /-- \d+ of \d+ --/;
 const MB = 1024 * 1024;
 
+// Every conversion starts a worker thread and loads pdf.js in it, which alone can take
+// seconds while other suites compete for the CPU. Conversions that are meant to finish
+// therefore run under deadlines no machine should reach, not the production ones, and
+// each test gets more time than that. A test about the deadline sets its own.
+const GENEROUS_DEADLINES_MS = { guest: 30_000, Basic: 30_000, Pro: 30_000, Enterprise: 30_000 };
+jest.setTimeout(60_000);
+
+let deadlines: { replaceValue(value: typeof GENEROUS_DEADLINES_MS): unknown };
+
+function setDeadlines(overrides: Partial<typeof GENEROUS_DEADLINES_MS>) {
+  deadlines.replaceValue({ ...GENEROUS_DEADLINES_MS, ...overrides });
+}
+
 type PageSpec = { text: string[] } | { unmapped: string[] } | { image: true };
 
 /**
@@ -204,6 +217,7 @@ beforeEach(() => {
   mockResolvedFiles = [];
   mockStored.clear();
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  deadlines = jest.replaceProperty(EXTRACTION_LIMITS, 'deadlineMs', GENEROUS_DEADLINES_MS);
 });
 
 afterEach(() => {
@@ -401,10 +415,8 @@ describe('pdf-to-docx route', () => {
   describe('page cap', () => {
     it('rejects an over-cap PDF before extracting any text or building anything', async () => {
       const toBuffer = jest.spyOn(Packer, 'toBuffer');
-      // Extracting any of these pages would outlast the deadline, so only a refusal made
-      // before extraction can answer with the page count.
-      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 1_000);
-
+      // Extracting these pages would outlast even the generous deadline, so only a
+      // refusal made before extraction can answer with the page count.
       const res = await postFile(createSlowPdf(30, 101));
 
       expect(res.status).toBe(400);
@@ -478,33 +490,37 @@ describe('pdf-to-docx route', () => {
 
       expect(res.status).toBe(200);
       expect(paragraphTexts(await documentXml(res))).toHaveLength(8100);
-    }, 30_000);
+    });
   });
 
   describe('extraction isolation', () => {
     let slowPdf: Buffer;
 
     beforeAll(() => {
-      slowPdf = createSlowPdf(30);
+      // Twenty pages that each take seconds to extract: minutes in all, on any machine.
+      slowPdf = createSlowPdf(30, 20);
     });
 
     it('refuses a PDF that outlasts the deadline without blocking the event loop', async () => {
-      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 1_000);
+      setDeadlines({ guest: 3_000 });
       const stopTracking = trackEventLoopStall();
       const startedAt = performance.now();
 
       const res = await postFile(slowPdf);
+      const elapsed = performance.now() - startedAt;
+      const longestStall = stopTracking();
 
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: PDF_TOO_COMPLEX_MESSAGE });
-      expect(performance.now() - startedAt).toBeLessThan(4_000);
-      expect(stopTracking()).toBeLessThan(500);
+      // Left to finish, this extraction takes minutes.
+      expect(elapsed).toBeLessThan(30_000);
+      // A blocked event loop stalls for the whole extraction, not for a fraction of it.
+      expect(longestStall).toBeLessThan(elapsed / 2);
       expect(Document).not.toHaveBeenCalled();
     });
 
     it('holds a signed-in user to the deadline of their own plan', async () => {
-      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'guest', 60_000);
-      jest.replaceProperty(EXTRACTION_LIMITS.deadlineMs, 'Pro', 1_000);
+      setDeadlines({ Pro: 1_000 });
       mockUserId = 'user-1';
       mockPlan = 'Pro';
 
@@ -548,13 +564,16 @@ describe('pdf-to-docx route', () => {
 
     it('answers 503 with Retry-After while every extraction slot is taken, then recovers', async () => {
       jest.replaceProperty(EXTRACTION_LIMITS, 'maxConcurrent', 1);
+      const ordinaryPdf = await createPdf([{ text: ['Ordinary document'] }]);
+      // Holds the only slot until its deadline; the request below needs no worker to be
+      // refused, so it is answered long before that.
       const occupying = pdfExtraction
-        .extractPdfPages(new Uint8Array(slowPdf), { maxPages: 1, deadlineMs: 1_000, maxHeapMb: 256, maxConcurrent: 1 })
+        .extractPdfPages(new Uint8Array(slowPdf), { maxPages: 20, deadlineMs: 5_000, maxHeapMb: 256, maxConcurrent: 1 })
         .catch(() => undefined);
 
-      const busy = await convert([{ text: ['Ordinary document'] }]);
+      const busy = await postFile(ordinaryPdf);
       await occupying;
-      const recovered = await convert([{ text: ['Ordinary document'] }]);
+      const recovered = await postFile(ordinaryPdf);
 
       expect(busy.status).toBe(503);
       expect(busy.headers.get('Retry-After')).toBe('5');

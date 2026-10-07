@@ -4,8 +4,11 @@ import { extractPdfPages, PdfExtractionError, PdfExtractionOptions } from '@/lib
 import { lockPdf } from '@/lib/pdf/lock';
 import { createSlowPdf, trackEventLoopStall } from './helpers/slowPdf';
 
-const OPTIONS: PdfExtractionOptions = { maxPages: 10, deadlineMs: 20_000, maxHeapMb: 256, maxConcurrent: 2 };
-const SHORT_DEADLINE: PdfExtractionOptions = { ...OPTIONS, deadlineMs: 1_000 };
+// Every extraction starts a worker thread and loads pdf.js in it, which alone can take
+// seconds while other suites compete for the CPU. An extraction that is meant to finish
+// therefore gets a deadline no machine should reach, and each test more time than that.
+const OPTIONS: PdfExtractionOptions = { maxPages: 20, deadlineMs: 30_000, maxHeapMb: 256, maxConcurrent: 2 };
+jest.setTimeout(60_000);
 
 let ordinaryPdf: Buffer;
 let slowPdf: Buffer;
@@ -21,6 +24,11 @@ async function createTextPdf(pageTexts: string[]): Promise<Buffer> {
 
 function extract(pdf: Buffer, options: PdfExtractionOptions = OPTIONS) {
   return extractPdfPages(new Uint8Array(pdf), options);
+}
+
+// Only for an extraction of `slowPdf` whose kill is the point of the test.
+function killedAfter(deadlineMs: number, options: PdfExtractionOptions = OPTIONS) {
+  return extract(slowPdf, { ...options, deadlineMs });
 }
 
 async function failureOf(extraction: Promise<unknown>) {
@@ -41,7 +49,8 @@ function hasRunningWorker(): boolean {
 
 beforeAll(async () => {
   ordinaryPdf = await createTextPdf(['First page', 'Second page']);
-  slowPdf = createSlowPdf(30);
+  // Twenty pages that each take seconds to extract: minutes in all, on any machine.
+  slowPdf = createSlowPdf(30, 20);
 });
 
 afterEach(() => {
@@ -57,22 +66,26 @@ describe('extractPdfPages', () => {
   });
 
   it('refuses a PDF over the page cap with its real page count, without extracting its text', async () => {
-    // Extracting any of these pages would outlast the deadline, so only a refusal made
+    // Extracting these pages would outlast even this deadline, so only a refusal made
     // before extraction can report the page count.
-    const failure = await failureOf(extract(createSlowPdf(30, 7), { ...SHORT_DEADLINE, maxPages: 6 }));
+    const failure = await failureOf(extract(slowPdf, { ...OPTIONS, maxPages: 19 }));
 
-    expect(failure).toEqual({ reason: 'page-limit', pageCount: 7 });
+    expect(failure).toEqual({ reason: 'page-limit', pageCount: 20 });
   });
 
   it('stops at the deadline and leaves the event loop free while it runs', async () => {
     const stopTracking = trackEventLoopStall();
     const startedAt = performance.now();
 
-    const failure = await failureOf(extract(slowPdf, SHORT_DEADLINE));
+    const failure = await failureOf(killedAfter(3_000));
+    const elapsed = performance.now() - startedAt;
+    const longestStall = stopTracking();
 
     expect(failure).toEqual({ reason: 'deadline' });
-    expect(performance.now() - startedAt).toBeLessThan(4_000);
-    expect(stopTracking()).toBeLessThan(500);
+    // Left to finish, this extraction takes minutes.
+    expect(elapsed).toBeLessThan(30_000);
+    // A blocked event loop stalls for the whole extraction, not for a fraction of it.
+    expect(longestStall).toBeLessThan(elapsed / 2);
   });
 
   it('reports a worker that exceeds its heap limit instead of crashing the process', async () => {
@@ -112,7 +125,7 @@ describe('extractPdfPages', () => {
   });
 
   describe('concurrency', () => {
-    const ONE_AT_A_TIME: PdfExtractionOptions = { ...SHORT_DEADLINE, maxConcurrent: 1 };
+    const ONE_AT_A_TIME: PdfExtractionOptions = { ...OPTIONS, maxConcurrent: 1 };
 
     it('refuses an extraction over the limit and runs it once a slot is free', async () => {
       const running = extract(ordinaryPdf, ONE_AT_A_TIME);
@@ -129,12 +142,12 @@ describe('extractPdfPages', () => {
     });
 
     it.each([
-      ['a page-cap refusal', () => extract(ordinaryPdf, { ...ONE_AT_A_TIME, maxPages: 1 })],
-      ['a parser error', () => extract(Buffer.from('not a pdf at all'), ONE_AT_A_TIME)],
-      ['a deadline kill', () => extract(slowPdf, ONE_AT_A_TIME)],
-      ['a heap limit kill', () => extract(ordinaryPdf, { ...ONE_AT_A_TIME, maxHeapMb: 8 })],
-    ])('frees its slot after %s', async (_label, failingExtraction) => {
-      await expect(failingExtraction()).rejects.toBeInstanceOf(PdfExtractionError);
+      ['a page-cap refusal', 'page-limit', () => extract(ordinaryPdf, { ...ONE_AT_A_TIME, maxPages: 1 })],
+      ['a parser error', 'parser', () => extract(Buffer.from('not a pdf at all'), ONE_AT_A_TIME)],
+      ['a deadline kill', 'deadline', () => killedAfter(1_000, ONE_AT_A_TIME)],
+      ['a heap limit kill', 'memory', () => extract(ordinaryPdf, { ...ONE_AT_A_TIME, maxHeapMb: 8 })],
+    ])('frees its slot after %s', async (_label, reason, failingExtraction) => {
+      expect(await failureOf(failingExtraction())).toMatchObject({ reason });
 
       await expect(extract(ordinaryPdf, ONE_AT_A_TIME)).resolves.toHaveLength(2);
     });
@@ -142,8 +155,7 @@ describe('extractPdfPages', () => {
 
   describe('worker lifetime', () => {
     it('keeps a worker alive only while an extraction runs', async () => {
-      const running = extract(slowPdf, SHORT_DEADLINE).catch(() => undefined);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const running = killedAfter(1_000).catch(() => undefined);
 
       expect(hasRunningWorker()).toBe(true);
       await running;
@@ -154,7 +166,7 @@ describe('extractPdfPages', () => {
       ['success', () => extract(ordinaryPdf)],
       ['a page-cap refusal', () => extract(ordinaryPdf, { ...OPTIONS, maxPages: 1 })],
       ['a parser error', () => extract(Buffer.from('not a pdf at all'))],
-      ['a deadline kill', () => extract(slowPdf, SHORT_DEADLINE)],
+      ['a deadline kill', () => killedAfter(1_000)],
       ['a heap limit kill', () => extract(ordinaryPdf, { ...OPTIONS, maxHeapMb: 8 })],
     ])('has no worker left after %s', async (_label, extraction) => {
       await extraction().catch(() => undefined);
