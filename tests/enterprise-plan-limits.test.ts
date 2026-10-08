@@ -86,15 +86,15 @@ jest.mock('fluent-ffmpeg', () => {
   return { __esModule: true, default: fn };
 });
 
-jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  getDocument: jest.fn().mockImplementation(() => ({
-    promise: Promise.resolve({
-      numPages: mockNumPages,
-      getPage: jest.fn().mockResolvedValue({
-        getTextContent: jest.fn().mockResolvedValue({ items: [] }),
-      }),
-    }),
-  })),
+// Stands in for the extraction worker, which refuses a PDF over the page cap it is given.
+jest.mock('@/lib/convert/find-pdf-extraction', () => ({
+  extractPdfTextItems: jest.fn().mockImplementation(async (_data: Uint8Array, { maxPages }: { maxPages: number }) => {
+    if (mockNumPages > maxPages) {
+      const { PdfExtractionError } = jest.requireActual('@/lib/convert/pdf-worker');
+      throw new PdfExtractionError({ reason: 'page-limit', pageCount: mockNumPages }, 'over the page limit');
+    }
+    return Array.from({ length: mockNumPages }, () => []);
+  }),
 }));
 
 jest.mock('pdf-lib', () => ({

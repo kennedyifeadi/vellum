@@ -4,6 +4,10 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
+import { resolvePlanLimit } from '@/lib/plan-limits';
+import { ClientError, handleConvertError } from '@/lib/convert/errors';
+import User from '@/models/user';
+import dbConnect from '@/lib/db/mongoose';
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +24,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
+    const userId = await getAuthUserId(req);
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
+    }
+
+    const maxSize = resolvePlanLimit(plan, {
+      guest: 25 * 1024 * 1024,
+      Basic: 50 * 1024 * 1024,
+      Pro: 100 * 1024 * 1024,
+      Enterprise: 500 * 1024 * 1024,
+    });
+
+    if (file.size > maxSize) {
+      throw new ClientError(
+        `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`,
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
@@ -28,7 +53,6 @@ export async function POST(req: NextRequest) {
       password,
     });
 
-    const userId = await getAuthUserId(req);
     if (userId) {
       try {
         const originalFileName = ensureExtension(file?.name ? `locked_${file.name}` : 'locked.pdf', '.pdf');
@@ -45,7 +69,6 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error locking PDF:', error);
-    return NextResponse.json({ error: 'Failed to lock PDF.' }, { status: 500 });
+    return handleConvertError(error, 'Failed to lock PDF.');
   }
 }

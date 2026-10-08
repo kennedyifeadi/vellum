@@ -22,13 +22,21 @@ const nextConfig: NextConfig = {
     'pdf-lib',
     'pdf-parse',
   ],
-  // PDF to Word extracts text in a worker thread (lib/convert/pdf-extraction.ts). The
-  // worker's entry file is loaded from disk by path and is the only importer of
-  // pdf-parse on that route, so the build cannot trace either on its own; without these
+  // PDF to Word and Find in PDF extract text in a worker thread (lib/convert/pdf-worker.ts).
+  // A worker's entry file is loaded from disk by path and is the only importer of its
+  // PDF parser on that route, so the build cannot trace either on its own; without these
   // a traced deployment (Vercel, standalone output) ships without them.
   outputFileTracingIncludes: {
+    '/api/convert/find-pdf': [
+      './lib/convert/find-pdf-extraction-worker.mjs',
+      './lib/convert/pdf-worker-runtime.mjs',
+      './node_modules/pdfjs-dist/package.json',
+      './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+      './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+    ],
     '/api/convert/pdf-to-docx': [
       './lib/convert/pdf-extraction-worker.mjs',
+      './lib/convert/pdf-worker-runtime.mjs',
       './node_modules/pdf-parse/package.json',
       './node_modules/pdf-parse/dist/pdf-parse/esm/**/*.js',
       './node_modules/pdf-parse/node_modules/pdfjs-dist/package.json',

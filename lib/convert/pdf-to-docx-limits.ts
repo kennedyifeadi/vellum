@@ -1,5 +1,6 @@
 import { ClientError } from '@/lib/convert/errors';
 import type { PdfExtractionOptions } from '@/lib/convert/pdf-extraction';
+import { PDF_WORKER_LIMITS, pdfTooComplexMessage, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -51,20 +52,12 @@ export const EXTRACTION_LIMITS = {
     Pro: 15_000,
     Enterprise: 25_000,
   } satisfies PlanTierValues<number>,
-  // The Enterprise PDF needs between 48 and 64 MB of heap. This bounds the worker's
-  // JavaScript heap only: a decoded content stream is held outside it, and is bounded by
-  // the deadline alone.
-  maxHeapMb: 256,
-  // Each extraction keeps a CPU core busy for its whole duration, so this is how many
-  // cores PDF to Word may take from the rest of the server.
-  maxConcurrent: 2,
+  ...PDF_WORKER_LIMITS,
 };
 
-export const PDF_TOO_COMPLEX_MESSAGE =
-  'This PDF is too complex to convert to Word. Splitting it into smaller files may help.';
+export const PDF_TOO_COMPLEX_MESSAGE = pdfTooComplexMessage('convert to Word');
 
-export const CONVERTER_BUSY_MESSAGE =
-  'PDF to Word is busy right now. Please try again in a few seconds.';
+export const CONVERTER_BUSY_MESSAGE = pdfToolBusyMessage('PDF to Word');
 
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');
