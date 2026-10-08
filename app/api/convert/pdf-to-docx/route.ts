@@ -8,6 +8,8 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { extractPdfPages, PdfExtractionError } from '@/lib/convert/pdf-extraction';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
+import { isBusy } from '@/lib/convert/pdf-worker';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import {
   assertFileSizeWithinPlan,
   assertLineCountWithinPlan,
@@ -21,8 +23,6 @@ import {
 // (about 2.5s at most) bound a request well inside this; it is the platform's own backstop
 // and only takes effect on Vercel, where 60s is the longest duration every plan accepts.
 export const maxDuration = 60;
-
-const BUSY_RETRY_AFTER_SECONDS = 5;
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -61,10 +61,6 @@ async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]
   } catch (error) {
     rethrowExtractionFailure(error, plan);
   }
-}
-
-function isBusy(error: unknown): boolean {
-  return error instanceof PdfExtractionError && error.failure.reason === 'busy';
 }
 
 function countLines(pages: ConvertiblePage[]): number {
@@ -124,10 +120,7 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     if (isBusy(error)) {
-      return NextResponse.json(
-        { error: CONVERTER_BUSY_MESSAGE },
-        { status: 503, headers: { 'Retry-After': String(BUSY_RETRY_AFTER_SECONDS) } },
-      );
+      return busyResponse(CONVERTER_BUSY_MESSAGE);
     }
     return handleConvertError(error, 'Failed to convert PDF to DOCX');
   }

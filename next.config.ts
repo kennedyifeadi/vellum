@@ -29,6 +29,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/convert/pdf-to-docx': [
       './lib/convert/pdf-extraction-worker.mjs',
+      './lib/convert/pdf-worker-runtime.mjs',
       './node_modules/pdf-parse/package.json',
       './node_modules/pdf-parse/dist/pdf-parse/esm/**/*.js',
       './node_modules/pdf-parse/node_modules/pdfjs-dist/package.json',
