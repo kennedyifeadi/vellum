@@ -1,6 +1,5 @@
 import NextAuth, { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import MicrosoftAzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import clientPromise from "@/lib/db/mongodb"; // Your MongoDB connection
@@ -15,12 +14,6 @@ export const authOptions: AuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-    }),
-    // Microsoft Azure AD Provider
-    MicrosoftAzureADProvider({
-      clientId: process.env.AZURE_AD_CLIENT_ID as string,
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET as string,
-      tenantId: process.env.AZURE_AD_TENANT_ID as string,
     }),
     // Custom Passwordless OTP Provider
     CredentialsProvider({

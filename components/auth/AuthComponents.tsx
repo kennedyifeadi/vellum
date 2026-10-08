@@ -51,7 +51,7 @@ export const SocialButton: React.FC<{
   onClick: () => void; 
   icon: React.ReactNode; 
   label: string;
-  provider: 'google' | 'microsoft';
+  provider: 'google';
 }> = ({ onClick, icon, label }) => {
   return (
     <button
