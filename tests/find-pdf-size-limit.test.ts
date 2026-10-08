@@ -7,7 +7,7 @@ const USER_ID = '507f1f77bcf86cd799439011';
 
 let mockUserId: string | null = null;
 let mockPlan: string | undefined = 'Free';
-let mockResolvedFiles: any[] = [];
+let mockResolvedFiles: unknown[] = [];
 
 jest.mock('@/lib/auth/jwt', () => ({
   getAuthUserId: jest.fn().mockImplementation(() => Promise.resolve(mockUserId)),
@@ -27,25 +27,18 @@ jest.mock('@/models/user', () => ({
 
 const recordConversionHistory = jest.fn().mockResolvedValue(true);
 jest.mock('@/lib/conversions', () => ({
-  recordConversionHistory: (...args: any[]) => recordConversionHistory(...args),
+  recordConversionHistory: (...args: unknown[]) => recordConversionHistory(...args),
 }));
 
 jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
 
-const mockGetDocument = jest.fn().mockImplementation(() => ({
-  promise: Promise.resolve({
-    numPages: 1,
-    getPage: jest.fn().mockResolvedValue({
-      getTextContent: jest.fn().mockResolvedValue({
-        items: [{ str: 'Find me', hasEOL: false, width: 60, height: 18, transform: [18, 0, 0, 18, 20, 150] }],
-      }),
-    }),
-  }),
-}));
-jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  getDocument: (...args: any[]) => mockGetDocument(...args),
+const mockExtractPdfTextItems = jest
+  .fn()
+  .mockResolvedValue([[{ str: 'Find me', hasEOL: false, width: 60, height: 18, transform: [18, 0, 0, 18, 20, 150] }]]);
+jest.mock('@/lib/convert/find-pdf-extraction', () => ({
+  extractPdfTextItems: (...args: unknown[]) => mockExtractPdfTextItems(...args),
 }));
 
 import { POST as handleFindPdf } from '../app/api/convert/find-pdf/route';
@@ -100,7 +93,7 @@ afterEach(() => {
 });
 
 describe('find-pdf per-plan upload size limit', () => {
-  it('refuses an over-cap guest upload without reading or parsing it', async () => {
+  it('refuses an over-cap guest upload without reading or extracting it', async () => {
     const file = pdfFile(60 * MB);
 
     const res = await find(file);
@@ -108,7 +101,7 @@ describe('find-pdf per-plan upload size limit', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'Your current plan allows PDFs up to 25MB.' });
     expect(file.arrayBuffer).not.toHaveBeenCalled();
-    expect(mockGetDocument).not.toHaveBeenCalled();
+    expect(mockExtractPdfTextItems).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -130,7 +123,7 @@ describe('find-pdf per-plan upload size limit', () => {
     expect(refused.status).toBe(400);
     expect(await refused.json()).toEqual({ error: `Your current plan allows PDFs up to ${capMb}MB.` });
     expect(overCap.arrayBuffer).not.toHaveBeenCalled();
-    expect(mockGetDocument).toHaveBeenCalledTimes(1);
+    expect(mockExtractPdfTextItems).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an over-cap upload from a signed-in user without recording it', async () => {
@@ -139,7 +132,7 @@ describe('find-pdf per-plan upload size limit', () => {
     const res = await find(pdfFile(51 * MB));
 
     expect(res.status).toBe(400);
-    expect(mockGetDocument).not.toHaveBeenCalled();
+    expect(mockExtractPdfTextItems).not.toHaveBeenCalled();
     expect(recordConversionHistory).not.toHaveBeenCalled();
   });
 });

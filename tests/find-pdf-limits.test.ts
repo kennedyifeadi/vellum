@@ -1,5 +1,10 @@
 import { ClientError } from '@/lib/convert/errors';
-import { assertFileSizeWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/find-pdf-limits';
+import {
+  assertFileSizeWithinPlan,
+  assertPageCountWithinPlan,
+  extractionOptionsForPlan,
+} from '@/lib/convert/find-pdf-limits';
+import { extractionOptionsForPlan as pdfToDocxExtractionOptionsForPlan } from '@/lib/convert/pdf-to-docx-limits';
 
 const MB = 1024 * 1024;
 
@@ -16,6 +21,35 @@ const PAGE_CAPS: [string, number][] = [
   ['Pro', 100],
   ['Enterprise', 500],
 ];
+
+const EXTRACTION_DEADLINES_S: [string, number][] = [
+  ['Free', 5],
+  ['Basic', 10],
+  ['Pro', 15],
+  ['Enterprise', 45],
+];
+
+describe('find-pdf extraction limits', () => {
+  it.each(EXTRACTION_DEADLINES_S)('gives a %s plan %d seconds to extract', (plan, seconds) => {
+    expect(extractionOptionsForPlan(plan).deadlineMs).toBe(seconds * 1000);
+  });
+
+  it.each(PAGE_CAPS)('stops a %s plan extracting past %d pages', (plan, cap) => {
+    expect(extractionOptionsForPlan(plan).maxPages).toBe(cap);
+  });
+
+  it('holds an unknown plan to the guest limits', () => {
+    expect(extractionOptionsForPlan('Platinum')).toEqual(extractionOptionsForPlan(null));
+    expect(extractionOptionsForPlan('Platinum').deadlineMs).toBe(5000);
+  });
+
+  it('runs under the heap limit and the concurrency limit PDF to Word runs under', () => {
+    const { maxHeapMb, maxConcurrent } = extractionOptionsForPlan('Enterprise');
+
+    expect({ maxHeapMb, maxConcurrent }).toEqual({ maxHeapMb: 256, maxConcurrent: 2 });
+    expect(pdfToDocxExtractionOptionsForPlan('Enterprise')).toMatchObject({ maxHeapMb, maxConcurrent });
+  });
+});
 
 describe('find-pdf size cap', () => {
   it.each(SIZE_CAPS_MB)('allows a %s plan exactly %d MB', (plan, capMb) => {

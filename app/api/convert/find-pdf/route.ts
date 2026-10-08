@@ -5,16 +5,53 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { handleConvertError } from '@/lib/convert/errors';
-import { assertFileSizeWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/find-pdf-limits';
-import { findInItems, type TextItemLike } from '@/lib/pdf/findPdfStream';
+import { ClientError, handleConvertError } from '@/lib/convert/errors';
+import { extractPdfTextItems, type PdfTextItem } from '@/lib/convert/find-pdf-extraction';
+import {
+  assertFileSizeWithinPlan,
+  assertPageCountWithinPlan,
+  extractionOptionsForPlan,
+  FIND_PDF_BUSY_MESSAGE,
+  PDF_TOO_COMPLEX_MESSAGE,
+} from '@/lib/convert/find-pdf-limits';
+import { isBusy, PdfExtractionError } from '@/lib/convert/pdf-worker';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
+import { findInItems } from '@/lib/pdf/findPdfStream';
 
+// The platform's own backstop; it only takes effect on Vercel, where 60s is the longest
+// duration every plan accepts. Extraction is bounded by its deadline (45s at most). The
+// search and highlighting after it run on the request's own event loop with no deadline:
+// about 14s for the largest document an Enterprise plan allows when most lines match.
+export const maxDuration = 60;
 
 interface Match {
   page: number;
   text: string;
   snippet: string;
+}
+
+function rethrowExtractionFailure(error: unknown, plan: string): never {
+  if (error instanceof PdfExtractionError) {
+    const { failure } = error;
+    if (failure.reason === 'page-limit') {
+      assertPageCountWithinPlan(plan, failure.pageCount);
+    }
+    if (failure.reason === 'deadline' || failure.reason === 'memory') {
+      throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
+    }
+    if (failure.reason === 'parser') {
+      throw error.cause;
+    }
+  }
+  throw error;
+}
+
+async function extractTextItems(data: Uint8Array, plan: string): Promise<PdfTextItem[][]> {
+  try {
+    return await extractPdfTextItems(data, extractionOptionsForPlan(plan));
+  } catch (error) {
+    rethrowExtractionFailure(error, plan);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -40,31 +77,18 @@ export async function POST(req: NextRequest) {
     assertFileSizeWithinPlan(plan, file.size);
 
     const arrayBuffer = await file.arrayBuffer();
-    // Slice a copy for each consumer — pdfjs.getDocument() detaches/transfers the
-    // underlying ArrayBuffer, so pdf-lib must have its own independent copy.
-    const pdfjsData = new Uint8Array(arrayBuffer.slice(0));
-    const pdfLibData = arrayBuffer.slice(0);
+    // The extraction worker takes ownership of the bytes it is given, so it gets a copy
+    // and pdf-lib keeps the original.
+    const pageTextItems = await extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan);
 
-    // Initial load for page count check
-    const loadingTask = pdfjs.getDocument({ data: pdfjsData, useSystemFonts: true });
-    const pdf = await loadingTask.promise;
-
-    assertPageCountWithinPlan(plan, pdf.numPages);
-
-    const pdfLibDoc = await PDFDocument.load(pdfLibData);
+    const pdfLibDoc = await PDFDocument.load(arrayBuffer);
     const matches: Match[] = [];
     let totalMatchCount = 0; // counted for ALL users, not just Pro
 
     // Loop through pages
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
+    for (let i = 1; i <= pageTextItems.length; i++) {
+      const textItems = pageTextItems[i - 1];
       const pdfLibPage = pdfLibDoc.getPage(i - 1);
-
-      // pdfjs yields TextItem | TextMarkedContent; only the former carries `str`.
-      const textItems = textContent.items.filter(
-        (itemOrMark) => typeof (itemOrMark as { str?: unknown }).str === 'string',
-      ) as unknown as TextItemLike[];
 
       const { matches: pageMatches, matchCount } = findInItems(textItems, searchTerm);
       totalMatchCount += matchCount; // always count, regardless of plan
@@ -107,7 +131,7 @@ export async function POST(req: NextRequest) {
     if (userId) {
       try {
         await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
-          pages: pdf.numPages,
+          pages: pageTextItems.length,
           matchesFound: totalMatchCount,
           searchTerm,
         });
@@ -124,6 +148,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
+    if (isBusy(error)) {
+      return busyResponse(FIND_PDF_BUSY_MESSAGE);
+    }
     return handleConvertError(error, 'Failed to search and highlight PDF');
   }
 }

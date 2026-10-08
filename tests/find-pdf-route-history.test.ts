@@ -45,17 +45,10 @@ jest.mock('@/lib/drive/resolveFiles', () => ({
   ),
 }));
 
-jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  getDocument: jest.fn().mockImplementation(() => ({
-    promise: Promise.resolve({
-      numPages: 1,
-      getPage: jest.fn().mockResolvedValue({
-        getTextContent: jest.fn().mockResolvedValue({
-          items: [{ str: 'quarterly report', hasEOL: false, width: 96, height: 12, transform: [12, 0, 0, 12, 30, 250] }],
-        }),
-      }),
-    }),
-  })),
+jest.mock('@/lib/convert/find-pdf-extraction', () => ({
+  extractPdfTextItems: jest.fn().mockResolvedValue([
+    [{ str: 'quarterly report', hasEOL: false, width: 96, height: 12, transform: [12, 0, 0, 12, 30, 250] }],
+  ]),
 }));
 
 jest.mock('pdf-lib', () => ({

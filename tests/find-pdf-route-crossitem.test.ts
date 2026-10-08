@@ -32,17 +32,8 @@ jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
 
-jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  getDocument: jest.fn().mockImplementation(() => ({
-    promise: Promise.resolve({
-      numPages: mockPageItems.length,
-      getPage: jest.fn().mockImplementation((n: number) =>
-        Promise.resolve({
-          getTextContent: jest.fn().mockResolvedValue({ items: mockPageItems[n - 1] }),
-        }),
-      ),
-    }),
-  })),
+jest.mock('@/lib/convert/find-pdf-extraction', () => ({
+  extractPdfTextItems: jest.fn().mockImplementation(() => Promise.resolve(mockPageItems)),
 }));
 
 const mockDrawRectangle = jest.fn();
