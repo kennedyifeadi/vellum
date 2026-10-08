@@ -6,7 +6,8 @@ import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { resolvePlanLimit } from '@/lib/plan-limits';
+import { handleConvertError } from '@/lib/convert/errors';
+import { assertFileSizeWithinPlan, assertPageCountWithinPlan } from '@/lib/convert/find-pdf-limits';
 import { findInItems, type TextItemLike } from '@/lib/pdf/findPdfStream';
 
 
@@ -28,17 +29,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
     }
 
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
+    }
     const isPro = plan === 'Pro';
-    
-    const maxPages = resolvePlanLimit(plan, {
-      guest: 10,
-      Basic: 50,
-      Pro: 100,
-      Enterprise: 500,
-    });
+
+    assertFileSizeWithinPlan(plan, file.size);
 
     const arrayBuffer = await file.arrayBuffer();
     // Slice a copy for each consumer — pdfjs.getDocument() detaches/transfers the
@@ -50,11 +49,7 @@ export async function POST(req: NextRequest) {
     const loadingTask = pdfjs.getDocument({ data: pdfjsData, useSystemFonts: true });
     const pdf = await loadingTask.promise;
 
-    if (pdf.numPages > maxPages) {
-      return NextResponse.json({ 
-        error: `Your current plan allows searching up to ${maxPages} pages per document.` 
-      }, { status: 400 });
-    }
+    assertPageCountWithinPlan(plan, pdf.numPages);
 
     const pdfLibDoc = await PDFDocument.load(pdfLibData);
     const matches: Match[] = [];
@@ -129,7 +124,6 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[API/Convert/Find-PDF] Error:', error);
-    return NextResponse.json({ error: 'Failed to search and highlight PDF' }, { status: 500 });
+    return handleConvertError(error, 'Failed to search and highlight PDF');
   }
 }
