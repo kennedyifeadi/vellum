@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Fallback: NextAuth session (Google/Microsoft OAuth)
+    // 2. Fallback: NextAuth session (Google OAuth)
     if (!userId) {
       const nextAuthToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
       if (nextAuthToken?.email) {

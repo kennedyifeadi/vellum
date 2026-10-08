@@ -93,19 +93,6 @@ export default function LoginPage() {
                 </svg>
               }
             />
-            <SocialButton
-              provider="microsoft"
-              onClick={() => signIn("azure-ad", { callbackUrl: "/dashboard" })}
-              label="Microsoft"
-              icon={
-                <svg viewBox="0 0 23 23" className="w-5 h-5">
-                  <path fill="#f35325" d="M0 0h11v11H0z" />
-                  <path fill="#81bc06" d="M12 0h11v11H12z" />
-                  <path fill="#05a6f0" d="M0 12h11v11H0z" />
-                  <path fill="#ffba08" d="M12 12h11v11H12z" />
-                </svg>
-              }
-            />
           </div>
 
           <p className="text-center text-[11px] text-[#9ca3af] mt-8 leading-relaxed">
