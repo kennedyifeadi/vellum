@@ -113,7 +113,7 @@ describe('image-to-pdf route error handling', () => {
   });
 
   it('returns 400, not 500, for a corrupted image', async () => {
-    mockResolvedFiles = [fakeFile(Buffer.from('\x89PNG\r\n\x1a\n rubbish rubbish rubbish'), 'broken.png')];
+    mockResolvedFiles = [fakeFile(Buffer.from('\x89PNG\r\n\x1a\n rubbish rubbish rubbish', 'latin1'), 'broken.png')];
 
     const res = await handleImageToPdf(imageRequest());
 

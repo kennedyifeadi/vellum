@@ -70,7 +70,7 @@ describe('convertImagesToPdf (lib/image/to-pdf.ts)', () => {
   });
 
   it('rejects a corrupted image buffer as a ClientError, not a generic failure', async () => {
-    const garbage = Buffer.from('\x89PNG\r\n\x1a\n then total nonsense that is not a real image');
+    const garbage = Buffer.from('\x89PNG\r\n\x1a\n then total nonsense that is not a real image', 'latin1');
 
     await expect(convertImagesToPdf({ imageBuffers: [garbage], limits: LIMITS })).rejects.toBeInstanceOf(ClientError);
     await expect(convertImagesToPdf({ imageBuffers: [garbage], limits: LIMITS })).rejects.toThrow(

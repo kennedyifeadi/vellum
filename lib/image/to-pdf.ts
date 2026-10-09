@@ -17,12 +17,24 @@ interface ValidatedImage {
   height: number;
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_START = Buffer.from([0xff, 0xd8, 0xff]);
+
 // What sharp detects from the content, whatever the file is called. Nothing else may
 // reach a decode: sharp also opens SVG, and rasterising one has no bound on its cost.
 const SUPPORTED_FORMATS: (string | undefined)[] = ['png', 'jpeg'];
 
 function unsupportedFormatError(): ClientError {
   return new ClientError('Unsupported image format. Only PNG and JPEG are supported.');
+}
+
+// sharp is not asked about a file that starts as neither. Its header read is not cheap
+// for every format it knows: to report the size of an SVG, librsvg parses the whole
+// document, which took 5.7s and 626 MB for an 18 MB file of 300,000 elements.
+function startsAsPngOrJpeg(imageBuffer: Buffer): boolean {
+  return [PNG_SIGNATURE, JPEG_START].some((signature) =>
+    imageBuffer.subarray(0, signature.length).equals(signature),
+  );
 }
 
 function corruptedImageError(imageNumber: number, cause?: unknown): ClientError {
@@ -53,6 +65,9 @@ async function assertPngDecodes(imageBuffer: Buffer, imageNumber: number): Promi
 async function validateImage(imageBuffer: Buffer, imageNumber: number): Promise<ValidatedImage> {
   if (!imageBuffer || imageBuffer.length === 0) {
     throw new ClientError(`Image ${imageNumber} is empty.`);
+  }
+  if (!startsAsPngOrJpeg(imageBuffer)) {
+    throw unsupportedFormatError();
   }
 
   const { format, width, height } = await readHeader(imageBuffer, imageNumber);
