@@ -5,8 +5,31 @@ import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
-import { resolvePlanLimit } from '@/lib/plan-limits';
-import { handleConvertError } from '@/lib/convert/errors';
+import { ClientError, handleConvertError } from '@/lib/convert/errors';
+import {
+  assertFileCountWithinPlan,
+  assertTotalSizeWithinPlan,
+  conversionLimitsForPlan,
+  IMAGE_TO_PDF_BUSY_MESSAGE,
+  IMAGES_TOO_COMPLEX_MESSAGE,
+} from '@/lib/convert/image-to-pdf-limits';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
+import { WorkerJobError } from '@/lib/convert/worker-job';
+
+function isBusy(error: unknown): boolean {
+  return error instanceof WorkerJobError && error.reason === 'busy';
+}
+
+async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<Buffer> {
+  try {
+    return await convertImagesToPdf({ imageBuffers, limits: conversionLimitsForPlan(plan) });
+  } catch (error) {
+    if (error instanceof WorkerJobError && (error.reason === 'deadline' || error.reason === 'memory')) {
+      throw new ClientError(IMAGES_TOO_COMPLEX_MESSAGE);
+    }
+    throw error;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,22 +41,18 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = await getAuthUserId(req);
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
-    
-    const maxAllowed = resolvePlanLimit(plan, {
-      guest: 3,
-      Basic: 30,
-      Pro: 50,
-      Enterprise: 250,
-    });
-
-    if (files.length > maxAllowed) {
-      return NextResponse.json({ 
-        error: `Your current plan allows up to ${maxAllowed} files per conversion.` 
-      }, { status: 400 });
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
     }
+
+    assertFileCountWithinPlan(plan, files.length);
+    assertTotalSizeWithinPlan(
+      plan,
+      files.map((file) => file.size),
+    );
 
     const imageBuffers: Buffer[] = [];
     for (const file of files) {
@@ -41,9 +60,7 @@ export async function POST(req: NextRequest) {
       imageBuffers.push(Buffer.from(arrayBuffer));
     }
 
-    const pdfBuffer = await convertImagesToPdf({
-      imageBuffers,
-    });
+    const pdfBuffer = await convertWithinPlan(imageBuffers, plan);
 
     if (userId) {
       try {
@@ -61,6 +78,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (isBusy(error)) {
+      return busyResponse(IMAGE_TO_PDF_BUSY_MESSAGE);
+    }
     return handleConvertError(error, 'Failed to convert images to PDF.');
   }
 }

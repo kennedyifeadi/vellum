@@ -38,8 +38,17 @@ jest.mock('@/lib/image/to-pdf', () => ({
 
 import { POST as handleImageToPdf } from '../app/api/convert/image-to-pdf/route';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
+import { CONVERSION_LIMITS } from '@/lib/convert/image-to-pdf-limits';
 
 const convertImagesToPdfMock = convertImagesToPdf as jest.Mock;
+
+// Every conversion starts a worker thread and loads pdf-lib in it, which alone can take
+// seconds while other suites compete for the CPU, so these conversions run under
+// deadlines no machine should reach, not the production ones.
+const GENEROUS_DEADLINES_MS = { guest: 30_000, Basic: 30_000, Pro: 30_000, Enterprise: 30_000 };
+jest.setTimeout(60_000);
+
+let deadlines: { restore(): void };
 
 async function createPng(size = 40): Promise<Buffer> {
   return sharp({ create: { width: size, height: size, channels: 3, background: { r: 10, g: 20, b: 30 } } })
@@ -74,9 +83,11 @@ beforeEach(() => {
     jest.requireActual('@/lib/image/to-pdf').convertImagesToPdf(opts)
   );
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  deadlines = jest.replaceProperty(CONVERSION_LIMITS, 'deadlineMs', GENEROUS_DEADLINES_MS);
 });
 
 afterEach(() => {
+  deadlines.restore();
   (console.error as jest.Mock).mockRestore?.();
 });
 
@@ -102,7 +113,7 @@ describe('image-to-pdf route error handling', () => {
   });
 
   it('returns 400, not 500, for a corrupted image', async () => {
-    mockResolvedFiles = [fakeFile(Buffer.from('\x89PNG\r\n\x1a\n rubbish rubbish rubbish'), 'broken.png')];
+    mockResolvedFiles = [fakeFile(Buffer.from('\x89PNG\r\n\x1a\n rubbish rubbish rubbish', 'latin1'), 'broken.png')];
 
     const res = await handleImageToPdf(imageRequest());
 
