@@ -1,8 +1,9 @@
 import path from 'path';
 import sharp from 'sharp';
 import { ClientError } from '@/lib/convert/errors';
-import { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-to-pdf-limits';
+import { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 import { runWorkerJob, type WorkerLimits } from '@/lib/convert/worker-job';
+import { detectImageFormat, readImageHeader } from '@/lib/image/input';
 
 const WORKER_PATH = path.join(process.cwd(), 'lib', 'image', 'to-pdf-worker.mjs');
 
@@ -17,9 +18,6 @@ interface ValidatedImage {
   height: number;
 }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const JPEG_START = Buffer.from([0xff, 0xd8, 0xff]);
-
 // What sharp detects from the content, whatever the file is called. Nothing else may
 // reach a decode: sharp also opens SVG, and rasterising one has no bound on its cost.
 const SUPPORTED_FORMATS: (string | undefined)[] = ['png', 'jpeg'];
@@ -28,13 +26,9 @@ function unsupportedFormatError(): ClientError {
   return new ClientError('Unsupported image format. Only PNG and JPEG are supported.');
 }
 
-// sharp is not asked about a file that starts as neither. Its header read is not cheap
-// for every format it knows: to report the size of an SVG, librsvg parses the whole
-// document, which took 5.7s and 626 MB for an 18 MB file of 300,000 elements.
 function startsAsPngOrJpeg(imageBuffer: Buffer): boolean {
-  return [PNG_SIGNATURE, JPEG_START].some((signature) =>
-    imageBuffer.subarray(0, signature.length).equals(signature),
-  );
+  const format = detectImageFormat(imageBuffer);
+  return format === 'png' || format === 'jpeg';
 }
 
 function corruptedImageError(imageNumber: number, cause?: unknown): ClientError {
@@ -43,9 +37,7 @@ function corruptedImageError(imageNumber: number, cause?: unknown): ClientError 
 
 async function readHeader(imageBuffer: Buffer, imageNumber: number) {
   try {
-    // sharp's own pixel limit is lifted for this header-only read, so that an image over
-    // ours is refused by name rather than reported as corrupted.
-    return await sharp(imageBuffer, { limitInputPixels: false }).metadata();
+    return await readImageHeader(imageBuffer);
   } catch (error) {
     throw corruptedImageError(imageNumber, error);
   }
