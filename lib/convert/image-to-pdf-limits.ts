@@ -1,33 +1,12 @@
-import { ClientError } from '@/lib/convert/errors';
+import { assertImageCountWithinPlan, assertImageTotalSizeWithinPlan } from '@/lib/convert/image-limits';
 import { PDF_WORKER_LIMITS, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import type { WorkerLimits } from '@/lib/convert/worker-job';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
-const BYTES_PER_MB = 1024 * 1024;
-const PIXELS_PER_MEGAPIXEL = 1_000_000;
-
-const MAX_FILES: PlanTierValues<number> = {
-  guest: 3,
-  Basic: 30,
-  Pro: 50,
-  Enterprise: 250,
-};
-
-// The same tiers as the PDF tools, applied to the sum of the images in one request. It
-// is the one cap that can refuse a request before any of it is read.
-const MAX_TOTAL_SIZE: PlanTierValues<number> = {
-  guest: 25 * BYTES_PER_MB,
-  Basic: 50 * BYTES_PER_MB,
-  Pro: 100 * BYTES_PER_MB,
-  Enterprise: 500 * BYTES_PER_MB,
-};
-
-// Read from the image's header, so it is checked before any pixel is decoded. A PNG's
-// cost follows its pixels, not its bytes: a flat-colour 100-megapixel PNG is under
-// 300 KB and took 1.15 GB to convert, a 268-megapixel one 2.9 GB. At this cap the
-// conversion of one PNG peaks at about 520 MB. A decoded image is held outside the
-// worker's JavaScript heap, so this cap, not `maxHeapMb`, is what bounds its memory.
-export const MAX_IMAGE_PIXELS = 50 * PIXELS_PER_MEGAPIXEL;
+// At the pixel cap the conversion of one PNG peaks at about 520 MB. A decoded image is
+// held outside the worker's JavaScript heap, so this cap, not `maxHeapMb`, is what
+// bounds its memory.
+export { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 
 // What bounds the conversion whatever the images contain. See #98 for the figures.
 export const CONVERSION_LIMITS = {
@@ -53,11 +32,6 @@ export const IMAGES_TOO_COMPLEX_MESSAGE =
 
 export const IMAGE_TO_PDF_BUSY_MESSAGE = pdfToolBusyMessage('Image to PDF');
 
-// Rounded up so that an image just over the cap never reads as being exactly at it.
-function formatMegapixels(pixels: number): string {
-  return (Math.ceil((pixels / PIXELS_PER_MEGAPIXEL) * 10) / 10).toFixed(1);
-}
-
 export function conversionLimitsForPlan(plan: string | null | undefined): WorkerLimits {
   return {
     deadlineMs: resolvePlanLimit(plan, CONVERSION_LIMITS.deadlineMs),
@@ -67,27 +41,13 @@ export function conversionLimitsForPlan(plan: string | null | undefined): Worker
 }
 
 export function assertFileCountWithinPlan(plan: string | null | undefined, fileCount: number): void {
-  const maxFiles = resolvePlanLimit(plan, MAX_FILES);
-  if (fileCount > maxFiles) {
-    throw new ClientError(`Your current plan allows up to ${maxFiles} files per conversion.`);
-  }
+  assertImageCountWithinPlan(plan, fileCount, (maxFiles) => `Your current plan allows up to ${maxFiles} files per conversion.`);
 }
 
 export function assertTotalSizeWithinPlan(plan: string | null | undefined, fileSizes: number[]): void {
-  const maxTotalSize = resolvePlanLimit(plan, MAX_TOTAL_SIZE);
-  const totalSize = fileSizes.reduce((total, fileSize) => total + fileSize, 0);
-  if (totalSize > maxTotalSize) {
-    throw new ClientError(
-      `Your current plan allows up to ${maxTotalSize / BYTES_PER_MB}MB of images per conversion.`,
-    );
-  }
-}
-
-export function assertPixelCountWithinLimit(imageNumber: number, width: number, height: number): void {
-  const pixels = width * height;
-  if (pixels > MAX_IMAGE_PIXELS) {
-    throw new ClientError(
-      `Image ${imageNumber} is ${formatMegapixels(pixels)} megapixels. Each image can be at most ${MAX_IMAGE_PIXELS / PIXELS_PER_MEGAPIXEL} megapixels.`,
-    );
-  }
+  assertImageTotalSizeWithinPlan(
+    plan,
+    fileSizes,
+    (maxMb) => `Your current plan allows up to ${maxMb}MB of images per conversion.`,
+  );
 }
