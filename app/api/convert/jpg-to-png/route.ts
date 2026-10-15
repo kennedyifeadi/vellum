@@ -6,7 +6,8 @@ import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
-import { convertJpegToPng } from '@/lib/image/to-png';
+import { acceptJpeg, convertJpegToPng } from '@/lib/image/to-png';
+import type { AcceptedImage } from '@/lib/image/input';
 import { handleConvertError } from '@/lib/convert/errors';
 import { bareFileName, claimUniqueName } from '@/lib/paths';
 
@@ -38,12 +39,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    const jpegs: AcceptedImage[] = [];
+    for (const [index, file] of images.entries()) {
+      jpegs.push(await acceptJpeg(Buffer.from(await file.arrayBuffer()), index + 1));
+    }
+
     // Process multiple images vs single image
     if (images.length === 1) {
       const file = images[0];
-      const buffer = Buffer.from(await file.arrayBuffer());
-
-      const pngBuffer = await convertJpegToPng({ jpegBuffer: buffer, quality: 100 });
+      const pngBuffer = await convertJpegToPng(jpegs[0]);
       const outputFileName = `converted_${file.name.replace(/\.[^/.]+$/, "")}.png`;
 
       if (userId) {
@@ -70,8 +74,7 @@ export async function POST(req: NextRequest) {
 
       for (let i = 0; i < images.length; i++) {
         const file = images[i];
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const pngBuffer = await convertJpegToPng({ jpegBuffer: buffer, quality: 100 });
+        const pngBuffer = await convertJpegToPng(jpegs[i]);
 
         const baseName = bareFileName(file.name, `image-${i + 1}`).replace(/\.[^.]+$/, '') || `image-${i + 1}`;
         zip.file(claimUniqueName(`${baseName}.png`, entryNames), pngBuffer);

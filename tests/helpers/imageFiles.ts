@@ -84,10 +84,10 @@ export function createPngThatHangsPdfLib(): Buffer {
 
 /**
  * A 233-byte SVG that an image decoder reads the size of at once and then spends minutes
- * rasterising: fractal noise blurred over 49 megapixels, just under the pixel limit.
+ * rasterising: fractal noise blurred over the whole canvas, by default 49 megapixels,
+ * just under the pixel limit.
  */
-export function createSvgThatTakesMinutesToRender(): string {
-  const size = 7000;
+export function createSvgThatTakesMinutesToRender(size = 7000): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><filter id="f">` +
     '<feTurbulence baseFrequency="0.9" numOctaves="8"/><feGaussianBlur stdDeviation="60"/></filter>' +

@@ -43,13 +43,43 @@ jest.mock('@/lib/drive/resolveFiles', () => ({
 }));
 
 jest.mock('@/lib/image/to-png', () => ({
-  convertJpegToPng: jest.fn((opts: any) => jest.requireActual('@/lib/image/to-png').convertJpegToPng(opts)),
+  ...jest.requireActual('@/lib/image/to-png'),
+  convertJpegToPng: jest.fn((...args: unknown[]) => jest.requireActual('@/lib/image/to-png').convertJpegToPng(...args)),
 }));
+
+// sharp itself, with every call recorded, so a test can tell whether an upload was
+// handed to it at all.
+jest.mock('sharp', () => {
+  const actual = jest.requireActual('sharp');
+  const recorded = Object.assign(
+    jest.fn((...args: unknown[]) => actual(...args)),
+    actual,
+  );
+  return { __esModule: true, default: recorded };
+});
 
 import { POST as handleJpgToPng } from '../app/api/convert/jpg-to-png/route';
 import { convertJpegToPng } from '@/lib/image/to-png';
+import {
+  createPhotoJpeg,
+  createSvgWithManyElements,
+  flatImage,
+  orientedPicture,
+  pngColourType,
+  rgbPixels,
+  storedCorners,
+  UPRIGHT_CORNERS,
+} from './helpers/imageSamples';
+import { createSvgThatTakesMinutesToRender } from './helpers/imageFiles';
 
 const convertJpegToPngMock = convertJpegToPng as jest.Mock;
+const sharpCalls = sharp as unknown as jest.Mock;
+
+jest.setTimeout(60_000);
+
+function wasGivenToSharp(upload: Buffer): boolean {
+  return sharpCalls.mock.calls.some(([input]) => Buffer.isBuffer(input) && input.equals(upload));
+}
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -83,8 +113,8 @@ beforeEach(() => {
   mockPlan = 'Free';
   mockResolvedFiles = [];
   mockStored.clear();
-  convertJpegToPngMock.mockImplementation((opts: any) =>
-    jest.requireActual('@/lib/image/to-png').convertJpegToPng(opts)
+  convertJpegToPngMock.mockImplementation((...args: unknown[]) =>
+    jest.requireActual('@/lib/image/to-png').convertJpegToPng(...args)
   );
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -131,16 +161,16 @@ describe('jpg-to-png route error handling', () => {
     const res = await handleJpgToPng(jpgRequest());
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/valid image/i);
+    expect((await res.json()).error).toBe('Image 1 is not a supported image type. Only JPEG images are accepted.');
   });
 
   it('returns 400, not 500, for a corrupted image', async () => {
-    mockResolvedFiles = [fakeFile(Buffer.from('\xff\xd8\xff rubbish rubbish rubbish'), 'broken.jpg')];
+    mockResolvedFiles = [fakeFile(Buffer.from('\xff\xd8\xff rubbish rubbish rubbish', 'latin1'), 'broken.jpg')];
 
     const res = await handleJpgToPng(jpgRequest());
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/valid image/i);
+    expect((await res.json()).error).toBe('Image 1 is damaged or incomplete and could not be read.');
   });
 
   it('still returns 500 for a genuine server fault', async () => {
@@ -178,6 +208,68 @@ describe('jpg-to-png route error handling', () => {
     const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
     expect(Object.keys(zip.files).sort()).toEqual(['one.png', 'two.png']);
     expect(conversionCreate).toHaveBeenCalledTimes(1);
+  });
+
+  describe('output', () => {
+    it('returns a lossless true-colour PNG of a photo', async () => {
+      const jpeg = await createPhotoJpeg();
+      mockResolvedFiles = [fakeFile(jpeg, 'photo.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(200);
+      const png = Buffer.from(await res.arrayBuffer());
+      expect(pngColourType(png)).toBe(2);
+      expect((await rgbPixels(png)).equals(await rgbPixels(jpeg))).toBe(true);
+    });
+
+    it('returns a phone photo tagged with orientation 6 upright', async () => {
+      mockResolvedFiles = [fakeFile(await orientedPicture(6).jpeg({ quality: 95 }).toBuffer(), 'portrait.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(200);
+      expect(await storedCorners(Buffer.from(await res.arrayBuffer()))).toEqual(UPRIGHT_CORNERS);
+    });
+  });
+
+  describe('input', () => {
+    it.each([
+      ['a PNG', () => flatImage().png().toBuffer()],
+      ['a WebP', () => flatImage().webp().toBuffer()],
+      ['an SVG with many elements', async () => createSvgWithManyElements()],
+      ['an SVG that takes minutes to render', async () => Buffer.from(createSvgThatTakesMinutesToRender(8000))],
+    ])('refuses %s named .jpg without asking sharp about it', async (_label, createUpload) => {
+      const upload = await createUpload();
+      mockResolvedFiles = [fakeFile(upload, 'photo.jpg', 'image/jpeg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Image 1 is not a supported image type. Only JPEG images are accepted.');
+      expect(wasGivenToSharp(upload)).toBe(false);
+    });
+
+    it('converts a normal JPEG straight after refusing the slow SVG', async () => {
+      mockResolvedFiles = [fakeFile(Buffer.from(createSvgThatTakesMinutesToRender(8000)), 'slow.jpg')];
+      expect((await handleJpgToPng(jpgRequest())).status).toBe(400);
+
+      mockResolvedFiles = [fakeFile(await createJpeg(), 'normal.jpg')];
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer()).subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    });
+
+    it('refuses a whole batch for one bad image, naming it, before converting any', async () => {
+      mockResolvedFiles = [fakeFile(await createJpeg(), 'one.jpg'), fakeFile(await flatImage().png().toBuffer(), 'two.jpg')];
+
+      const res = await handleJpgToPng(jpgRequest());
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Image 2 is not a supported image type. Only JPEG images are accepted.');
+      expect(convertJpegToPngMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('history', () => {

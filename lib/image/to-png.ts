@@ -1,23 +1,20 @@
 import sharp from 'sharp';
-import { ClientError } from '@/lib/convert/errors';
+import { acceptImage, damagedImageError, keepGreyscale, type AcceptedImage } from '@/lib/image/input';
 
-interface JpegToPngOptions {
-  jpegBuffer: Buffer;
-  quality?: number;
+export function acceptJpeg(bytes: Buffer, imageNumber: number): Promise<AcceptedImage> {
+  return acceptImage(bytes, imageNumber, ['jpeg']);
 }
 
-export async function convertJpegToPng({
-  jpegBuffer,
-  quality,
-}: JpegToPngOptions): Promise<Buffer> {
-  if (!jpegBuffer || jpegBuffer.length === 0) {
-    throw new ClientError('The image file is empty.');
-  }
-
+/**
+ * Returns a lossless true-colour PNG of what the JPEG shows: turned upright from its EXIF
+ * orientation, and in sRGB, which sharp converts any embedded profile to, or greyscale if
+ * the JPEG is. Giving `png()` a quality would quantise it to at most 256 colours. No
+ * metadata is carried over.
+ */
+export async function convertJpegToPng(jpeg: AcceptedImage): Promise<Buffer> {
   try {
-    const pipeline = sharp(jpegBuffer);
-    return await (quality != null ? pipeline.png({ quality }) : pipeline.png()).toBuffer();
+    return await keepGreyscale(sharp(jpeg.bytes).rotate(), jpeg).png().toBuffer();
   } catch (error) {
-    throw new ClientError("That doesn't look like a valid image.", 400, { cause: error });
+    throw damagedImageError(jpeg.imageNumber, error);
   }
 }
