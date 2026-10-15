@@ -35,6 +35,11 @@ export function bareFileName(name: string, fallback: string): string {
   return cleaned === '' || cleaned === '.' || cleaned === '..' ? fallback : cleaned;
 }
 
+/** `bareFileName` without its extension, for naming a converted copy of an upload. */
+export function bareFileStem(name: string, fallback: string): string {
+  return bareFileName(name, fallback).replace(/\.[^.]+$/, '') || fallback;
+}
+
 /**
  * Returns `name`, or `name (n)` when it is already in `taken`, and records the result.
  * Comparison is case-insensitive so entries don't overwrite each other when extracted

@@ -33,6 +33,38 @@ export function detectImageFormat(bytes: Buffer): ImageFormat | null {
   return null;
 }
 
+const PNG_CHUNKS_START = PNG_SIGNATURE.length;
+const PNG_ANIMATION_CONTROL = Buffer.from('acTL', 'latin1').readUInt32BE();
+const PNG_IMAGE_DATA = Buffer.from('IDAT', 'latin1').readUInt32BE();
+const WEBP_EXTENDED_HEADER = Buffer.from('VP8X', 'latin1');
+const WEBP_ANIMATION_FLAG = 0x02;
+
+// An animated PNG announces itself with an `acTL` chunk before its image data; a decoder
+// that does not know the chunk shows the first frame as a still image. Chunk types are
+// compared as numbers: a 25 MB file can hold two million empty chunks.
+function isAnimatedPng(bytes: Buffer): boolean {
+  for (let offset = PNG_CHUNKS_START; offset + 8 <= bytes.length; ) {
+    const type = bytes.readUInt32BE(offset + 4);
+    if (type === PNG_ANIMATION_CONTROL) {
+      return true;
+    }
+    if (type === PNG_IMAGE_DATA) {
+      return false;
+    }
+    offset += 12 + bytes.readUInt32BE(offset);
+  }
+  return false;
+}
+
+// An animated WebP sets the animation flag in its extended header, which comes first.
+function isAnimatedWebp(bytes: Buffer): boolean {
+  return hasBytesAt(bytes, 12, WEBP_EXTENDED_HEADER) && bytes.length > 20 && (bytes[20] & WEBP_ANIMATION_FLAG) !== 0;
+}
+
+function isAnimated(bytes: Buffer, format: ImageFormat): boolean {
+  return (format === 'png' && isAnimatedPng(bytes)) || (format === 'webp' && isAnimatedWebp(bytes));
+}
+
 /**
  * Reads an image's header without decoding its pixels. sharp's own pixel limit is
  * lifted here so that an image over ours can be refused by name rather than reported
@@ -47,8 +79,9 @@ export interface AcceptedImage {
   imageNumber: number;
   bytes: Buffer;
   format: ImageFormat;
-  /** The colour space the file stores its pixels in, from its header. */
+  /** How the file stores its pixels, from its header. */
   space: sharp.Metadata['space'];
+  depth: sharp.Metadata['depth'];
 }
 
 const FORMAT_NAMES: Record<ImageFormat, string> = { jpeg: 'JPEG', png: 'PNG', webp: 'WebP' };
@@ -75,8 +108,8 @@ export function damagedImageError(imageNumber: number, cause?: unknown): ClientE
 
 /**
  * Checks one upload before any of its pixels are decoded, and refuses it with a message
- * naming it: empty, not one of the `accepted` formats, a header sharp cannot read, or
- * over the pixel limit.
+ * naming it: empty, not one of the `accepted` formats, animated, a header sharp cannot
+ * read, or over the pixel limit.
  */
 export async function acceptImage(
   bytes: Buffer,
@@ -93,6 +126,9 @@ export async function acceptImage(
       `Image ${imageNumber} is not a supported image type. Only ${listFormats(accepted)} images are accepted.`,
     );
   }
+  if (isAnimated(bytes, format)) {
+    throw new ClientError(`Image ${imageNumber} is animated. Animated images are not supported.`);
+  }
 
   let header: sharp.Metadata;
   try {
@@ -105,5 +141,5 @@ export async function acceptImage(
   }
   assertPixelCountWithinLimit(imageNumber, header.width, header.height);
 
-  return { imageNumber, bytes, format, space: header.space };
+  return { imageNumber, bytes, format, space: header.space, depth: header.depth };
 }

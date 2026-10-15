@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import { assertInsideDir, bareFileName, claimUniqueName, ensureExtension } from '@/lib/paths';
+import { assertInsideDir, bareFileName, bareFileStem, claimUniqueName, ensureExtension } from '@/lib/paths';
 
 describe('assertInsideDir', () => {
   const root = path.join(os.tmpdir(), 'vellum-paths-test');
@@ -47,6 +47,20 @@ describe('bareFileName', () => {
       expect(bareFileName(input, 'fallback')).toBe('fallback');
     },
   );
+});
+
+describe('bareFileStem', () => {
+  it.each([
+    ['photo.jpg', 'photo'],
+    ['../../holiday.photo.png', 'holiday.photo'],
+    ['C:\\Users\\me\\scan.webp', 'scan'],
+    ['no-extension', 'no-extension'],
+    ['.png', 'image-1'],
+    ['', 'image-1'],
+    ['../..', 'image-1'],
+  ])('reduces %p to %p', (name, expected) => {
+    expect(bareFileStem(name, 'image-1')).toBe(expected);
+  });
 });
 
 describe('claimUniqueName', () => {

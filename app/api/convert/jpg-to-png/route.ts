@@ -16,7 +16,7 @@ import {
   MAX_STORED_OUTPUT_SIZE,
 } from '@/lib/convert/jpg-to-png-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
-import { bareFileName, claimUniqueName } from '@/lib/paths';
+import { bareFileStem, claimUniqueName } from '@/lib/paths';
 
 interface ConvertedOutput {
   toolUsed: string;
@@ -40,8 +40,7 @@ async function convertBatch(jpegs: AcceptedImage[], files: File[]): Promise<Conv
 
   for (const [i, jpeg] of jpegs.entries()) {
     const pngBuffer = await convertJpegToPng(jpeg);
-    const baseName = bareFileName(files[i].name, `image-${i + 1}`).replace(/\.[^.]+$/, '') || `image-${i + 1}`;
-    zip.file(claimUniqueName(`${baseName}.png`, entryNames), pngBuffer);
+    zip.file(claimUniqueName(`${bareFileStem(files[i].name, `image-${i + 1}`)}.png`, entryNames), pngBuffer);
   }
 
   return {

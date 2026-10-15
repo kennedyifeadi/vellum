@@ -233,3 +233,13 @@ export function uploadedFile(bytes: Buffer, name: string, reportedSize = bytes.l
     arrayBuffer: jest.fn().mockImplementation(async () => Uint8Array.from(bytes).buffer),
   };
 }
+
+export async function createAnimatedWebp(): Promise<Buffer> {
+  const frames = await Promise.all(
+    [
+      { r: 255, g: 0, b: 0 },
+      { r: 0, g: 255, b: 0 },
+    ].map((background) => flatImage(16, 16, background).png().toBuffer()),
+  );
+  return sharp(frames, { join: { animated: true } }).webp({ loop: 0 }).toBuffer();
+}

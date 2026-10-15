@@ -6,9 +6,78 @@ import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import JSZip from 'jszip';
 import { resolvePlanLimit } from '@/lib/plan-limits';
-import { compressImage } from '@/lib/image/compress';
+import {
+  acceptImageToCompress,
+  compressImage,
+  compressionLevel,
+  CONTENT_TYPES,
+  FILE_EXTENSIONS,
+  type CompressionLevel,
+} from '@/lib/image/compress';
+import type { AcceptedImage } from '@/lib/image/input';
 import { handleConvertError } from '@/lib/convert/errors';
-import { bareFileName, claimUniqueName } from '@/lib/paths';
+import { bareFileStem, claimUniqueName } from '@/lib/paths';
+
+interface CompressedOutput {
+  toolUsed: string;
+  /** The name and size the history row records: the upload's, or the batch's. */
+  recordedName: string;
+  recordedSize: number;
+  fileName: string;
+  contentType: string;
+  bytes: Buffer;
+  headers?: Record<string, string>;
+}
+
+async function compressSingle(image: AcceptedImage, file: File, level: CompressionLevel): Promise<CompressedOutput> {
+  const bytes = await compressImage(image, level);
+  const originalSize = image.bytes.length;
+
+  return {
+    toolUsed: 'Compress Image',
+    recordedName: file.name,
+    recordedSize: file.size,
+    fileName: `compressed_${file.name.replace(/\.[^/.]+$/, '')}.${FILE_EXTENSIONS[image.format]}`,
+    contentType: CONTENT_TYPES[image.format],
+    bytes,
+    headers: {
+      'X-Original-Size': String(originalSize),
+      'X-Compressed-Size': String(bytes.length),
+      'X-Saved-Percent': String(Math.round((1 - bytes.length / originalSize) * 100)),
+    },
+  };
+}
+
+async function compressBatch(images: AcceptedImage[], files: File[], level: CompressionLevel): Promise<CompressedOutput> {
+  const zip = new JSZip();
+  const entryNames = new Set<string>();
+
+  for (const [i, image] of images.entries()) {
+    const compressed = await compressImage(image, level);
+    const stem = bareFileStem(files[i].name, `image-${i + 1}`);
+    zip.file(claimUniqueName(`${stem}.${FILE_EXTENSIONS[image.format]}`, entryNames), compressed);
+  }
+
+  return {
+    toolUsed: 'Compress Image (Batch)',
+    recordedName: 'compressed_images.zip',
+    recordedSize: files.reduce((total, file) => total + file.size, 0),
+    fileName: 'compressed_images.zip',
+    contentType: 'application/zip',
+    bytes: await zip.generateAsync({ type: 'nodebuffer' }),
+  };
+}
+
+async function recordCompression(userId: string, output: CompressedOutput, pages: number): Promise<void> {
+  try {
+    await recordConversionHistory(userId, output.toolUsed, output.recordedName, output.recordedSize, {
+      pages,
+      processedSize: output.bytes.length,
+    });
+  } catch (recordError) {
+    console.error('Failed to record Compress Image conversion:', recordError);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +85,7 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const images = await resolveFiles(formData, 'images');
-    const level = formData.get('level') as string || 'medium';
+    const level = compressionLevel(formData.get('level'));
 
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
@@ -39,79 +108,31 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Determine quality map
-    let quality = 80;
-    if (level === 'low') quality = 90;
-    if (level === 'medium') quality = 80;
-    if (level === 'high') quality = 60;
-
-    // Process multiple images vs single image
-    if (images.length === 1) {
-      const file = images[0];
-      const buffer = Buffer.from(await file.arrayBuffer());
-
-      const compressedBuffer = await compressImage({ imageBuffer: buffer, quality });
-
-      if (userId) {
-        try {
-          await recordConversionHistory(userId, 'Compress Image', file.name, file.size, {
-            pages: 1,
-            processedSize: compressedBuffer.length,
-          });
-        } catch (recordError) {
-          console.error('Failed to record Compress Image conversion:', recordError);
-        }
-      }
-
-      return new NextResponse(compressedBuffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': file.type || 'image/jpeg',
-          'Content-Disposition': `attachment; filename="compressed_${file.name}"`,
-          'X-Original-Size': file.size.toString(),
-          'X-Compressed-Size': compressedBuffer.length.toString(),
-          'X-Saved-Percent': Math.max(0, Math.round((1 - compressedBuffer.length / file.size) * 100)).toString()
-        },
-      });
-    } else {
-      // Multiple Images - Create ZIP
-      const zip = new JSZip();
-      const entryNames = new Set<string>();
-      let totalOriginalSize = 0;
-      let totalCompressedSize = 0;
-
-      for (let i = 0; i < images.length; i++) {
-        const file = images[i];
-        totalOriginalSize += file.size;
-
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const compressedBuffer = await compressImage({ imageBuffer: buffer, quality });
-
-        totalCompressedSize += compressedBuffer.length;
-        const entryName = claimUniqueName(bareFileName(file.name, `image-${i + 1}`), entryNames);
-        zip.file(entryName, compressedBuffer);
-      }
-
-      const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-
-      if (userId) {
-        try {
-          await recordConversionHistory(userId, 'Compress Image (Batch)', 'compressed_images.zip', totalOriginalSize, {
-            pages: images.length,
-            processedSize: zipBuffer.length,
-          });
-        } catch (recordError) {
-          console.error('Failed to record Compress Image conversion:', recordError);
-        }
-      }
-
-      return new NextResponse(zipBuffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Disposition': `attachment; filename="compressed_images.zip"`,
-        },
-      });
+    const accepted: AcceptedImage[] = [];
+    for (const [index, file] of images.entries()) {
+      accepted.push(await acceptImageToCompress(Buffer.from(await file.arrayBuffer()), index + 1));
     }
 
+    const output =
+      accepted.length === 1
+        ? await compressSingle(accepted[0], images[0], level)
+        : await compressBatch(accepted, images, level);
+
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(output.bytes as unknown as BodyInit, {
+      headers: {
+        'Content-Type': output.contentType,
+        'Content-Disposition': `attachment; filename="${output.fileName}"`,
+        ...output.headers,
+      },
+    });
+
+    if (userId) {
+      await recordCompression(userId, output, images.length);
+    }
+
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to compress images');
   }
