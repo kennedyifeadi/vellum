@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { ClientError } from '@/lib/convert/errors';
+import { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 
 export type ImageFormat = 'jpeg' | 'png' | 'webp';
 
@@ -58,11 +59,14 @@ function listFormats(formats: readonly ImageFormat[]): string {
 }
 
 /**
- * Keeps a greyscale image greyscale: by default sharp writes one out as RGB, three times
- * the samples for the same picture.
+ * Opens an accepted image to be re-encoded: turned upright from its EXIF orientation,
+ * and in sRGB, which sharp converts any embedded profile to on output. A greyscale image
+ * stays greyscale, where by default sharp would write it out as RGB, three times the
+ * samples for the same picture. No metadata is carried over.
  */
-export function keepGreyscale(pipeline: sharp.Sharp, { space }: AcceptedImage): sharp.Sharp {
-  return space === 'b-w' ? pipeline.toColourspace('b-w') : pipeline;
+export function openAcceptedImage({ bytes, space }: AcceptedImage): sharp.Sharp {
+  const upright = sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
+  return space === 'b-w' ? upright.toColourspace('b-w') : upright;
 }
 
 export function damagedImageError(imageNumber: number, cause?: unknown): ClientError {
@@ -71,7 +75,8 @@ export function damagedImageError(imageNumber: number, cause?: unknown): ClientE
 
 /**
  * Checks one upload before any of its pixels are decoded, and refuses it with a message
- * naming it: empty, not one of the `accepted` formats, or a header sharp cannot read.
+ * naming it: empty, not one of the `accepted` formats, a header sharp cannot read, or
+ * over the pixel limit.
  */
 export async function acceptImage(
   bytes: Buffer,
@@ -98,6 +103,7 @@ export async function acceptImage(
   if (header.format !== format || !header.width || !header.height) {
     throw damagedImageError(imageNumber);
   }
+  assertPixelCountWithinLimit(imageNumber, header.width, header.height);
 
   return { imageNumber, bytes, format, space: header.space };
 }

@@ -219,3 +219,17 @@ export function createSvgWithManyElements(elementCount = 2_000): Buffer {
   );
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000">${rects.join('')}</svg>`);
 }
+
+/**
+ * The upload as a route receives it from `resolveFiles`. The bytes get their own
+ * ArrayBuffer, as `File.arrayBuffer()` gives them, and `arrayBuffer` is a spy so a test
+ * can tell whether the upload was read at all.
+ */
+export function uploadedFile(bytes: Buffer, name: string, reportedSize = bytes.length) {
+  return {
+    name,
+    type: 'application/octet-stream',
+    size: reportedSize,
+    arrayBuffer: jest.fn().mockImplementation(async () => Uint8Array.from(bytes).buffer),
+  };
+}

@@ -25,6 +25,13 @@ const MAX_TOTAL_SIZE: PlanTierValues<number> = {
 // under 800 KB and took 1.5 GB to re-encode.
 export const MAX_IMAGE_PIXELS = 50 * PIXELS_PER_MEGAPIXEL;
 
+// How many requests may re-encode images with sharp at once, across Compress Image and
+// JPEG to PNG. Each works on one image at a time, so this bounds the images decoded at
+// once, and memory with it: at the pixel cap one image peaks at up to 0.94 GB above the
+// server's own (a WebP photo compressed at low; 0.4 GB for JPEG to PNG), and two at once
+// at 1.9 GB. sharp's cache and thread settings made no difference to these peaks.
+export const MAX_CONCURRENT_IMAGE_JOBS = 2;
+
 // Rounded up so that an image just over the cap never reads as being exactly at it.
 function formatMegapixels(pixels: number): string {
   return (Math.ceil((pixels / PIXELS_PER_MEGAPIXEL) * 10) / 10).toFixed(1);
