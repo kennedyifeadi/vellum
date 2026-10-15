@@ -5,7 +5,6 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import JSZip from 'jszip';
-import { resolvePlanLimit } from '@/lib/plan-limits';
 import {
   acceptImageToCompress,
   compressImage,
@@ -15,7 +14,14 @@ import {
   type CompressionLevel,
 } from '@/lib/image/compress';
 import type { AcceptedImage } from '@/lib/image/input';
+import { ImageToolBusyError, runImageJob } from '@/lib/image/image-jobs';
 import { handleConvertError } from '@/lib/convert/errors';
+import {
+  assertFileCountWithinPlan,
+  assertTotalSizeWithinPlan,
+  COMPRESS_IMAGE_BUSY_MESSAGE,
+} from '@/lib/convert/image-compress-limits';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
 
 interface CompressedOutput {
@@ -81,8 +87,6 @@ async function recordCompression(userId: string, output: CompressedOutput, pages
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
-
     const formData = await req.formData();
     const images = await resolveFiles(formData, 'images');
     const level = compressionLevel(formData.get('level'));
@@ -91,32 +95,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
     }
 
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
-
-    const maxAllowed = resolvePlanLimit(plan, {
-      guest: 3,
-      Basic: 30,
-      Pro: 50,
-      Enterprise: 250,
-    });
-
-    if (images.length > maxAllowed) {
-      return NextResponse.json({
-        error: `Your current plan allows up to ${maxAllowed} images per compression.`
-      }, { status: 400 });
+    const userId = await getAuthUserId(req);
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
     }
+
+    assertFileCountWithinPlan(plan, images.length);
+    assertTotalSizeWithinPlan(
+      plan,
+      images.map((image) => image.size),
+    );
 
     const accepted: AcceptedImage[] = [];
     for (const [index, file] of images.entries()) {
       accepted.push(await acceptImageToCompress(Buffer.from(await file.arrayBuffer()), index + 1));
     }
 
-    const output =
-      accepted.length === 1
-        ? await compressSingle(accepted[0], images[0], level)
-        : await compressBatch(accepted, images, level);
+    const output = await runImageJob(() =>
+      accepted.length === 1 ? compressSingle(accepted[0], images[0], level) : compressBatch(accepted, images, level),
+    );
 
     // Built before anything is recorded, so a response that cannot be built leaves no
     // history row behind.
@@ -134,6 +134,9 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof ImageToolBusyError) {
+      return busyResponse(COMPRESS_IMAGE_BUSY_MESSAGE);
+    }
     return handleConvertError(error, 'Failed to compress images');
   }
 }
