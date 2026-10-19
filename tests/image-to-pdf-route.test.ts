@@ -118,10 +118,22 @@ describe('image-to-pdf route error handling', () => {
     const res = await handleImageToPdf(imageRequest());
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/image 1 is not a valid image or is corrupted/i);
+    expect((await res.json()).error).toMatch(/image 1 is damaged or incomplete and could not be read/i);
   });
 
-  it('returns 400 with the actionable message for an unsupported format (WebP)', async () => {
+  it('returns 400 with the actionable message for an unsupported format (SVG)', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"/>');
+    mockResolvedFiles = [fakeFile(svg, 'img.png', 'image/png')];
+
+    const res = await handleImageToPdf(imageRequest());
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      'Image 1 is not a supported image type. Only JPEG, PNG, WebP, GIF, TIFF, AVIF and BMP images are accepted.'
+    );
+  });
+
+  it('converts a WebP, as the documents page offers', async () => {
     const webp = await sharp({ create: { width: 30, height: 30, channels: 3, background: { r: 1, g: 2, b: 3 } } })
       .webp()
       .toBuffer();
@@ -129,10 +141,7 @@ describe('image-to-pdf route error handling', () => {
 
     const res = await handleImageToPdf(imageRequest());
 
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe(
-      'Unsupported image format. Only PNG and JPEG are supported.'
-    );
+    expect(res.status).toBe(200);
   });
 
   it('still returns 500 for a genuine server fault', async () => {

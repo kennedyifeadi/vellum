@@ -2,13 +2,13 @@ import { NextRequest } from 'next/server';
 import sharp from 'sharp';
 import { CONVERSION_LIMITS, IMAGE_TO_PDF_BUSY_MESSAGE, IMAGES_TOO_COMPLEX_MESSAGE } from '@/lib/convert/image-to-pdf-limits';
 import { extractPdfPages } from '@/lib/convert/pdf-extraction';
+import { runImageJob } from '@/lib/image/image-jobs';
 import {
-  createPngThatHangsPdfLib,
   createPngWithUnreadablePixels,
   createSvgThatTakesMinutesToRender,
   readPdfPageImages,
 } from './helpers/imageFiles';
-import { createSlowPdf, trackEventLoopStall } from './helpers/slowPdf';
+import { createSlowPdf } from './helpers/slowPdf';
 
 let mockUserId: string | null = null;
 let mockPlan = 'Free';
@@ -53,7 +53,6 @@ const USER_ID = '507f1f77bcf86cd799439011';
 let deadlines: { replaceValue(value: typeof GENEROUS_DEADLINES_MS): unknown };
 let png: Buffer;
 let jpeg: Buffer;
-let hangingPng: Buffer;
 
 function setDeadlines(overrides: Partial<typeof GENEROUS_DEADLINES_MS>) {
   deadlines.replaceValue({ ...GENEROUS_DEADLINES_MS, ...overrides });
@@ -99,7 +98,6 @@ beforeAll(async () => {
   jpeg = await sharp({ create: { width: 80, height: 80, channels: 3, background: { r: 0, g: 160, b: 60 } } })
     .jpeg()
     .toBuffer();
-  hangingPng = createPngThatHangsPdfLib();
 });
 
 beforeEach(() => {
@@ -147,7 +145,7 @@ describe('image-to-pdf route — conversion in a worker', () => {
     const res = await response;
 
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'Image 2 is not a valid image or is corrupted.' });
+    expect(await res.json()).toEqual({ error: 'Image 2 is damaged or incomplete and could not be read.' });
     expect(order).toEqual(['event loop turned', 'answered']);
     expect(hasRunningWorker()).toBe(false);
   });
@@ -157,7 +155,9 @@ describe('image-to-pdf route — conversion in a worker', () => {
     const converted = await convert(png);
 
     expect(refused.status).toBe(400);
-    expect(await refused.json()).toEqual({ error: 'Unsupported image format. Only PNG and JPEG are supported.' });
+    expect(await refused.json()).toEqual({
+      error: 'Image 1 is not a supported image type. Only JPEG, PNG, WebP, GIF, TIFF, AVIF and BMP images are accepted.',
+    });
     expect(converted.status).toBe(200);
   });
 
@@ -170,29 +170,22 @@ describe('image-to-pdf route — conversion in a worker', () => {
     });
   });
 
-  it('refuses a conversion that outlasts its deadline as too complex, without blocking the event loop', async () => {
-    setDeadlines({ guest: 3_000 });
-    const stopTracking = trackEventLoopStall();
-    const startedAt = performance.now();
+  it('refuses a conversion that outlasts its deadline as too complex, with no worker left', async () => {
+    setDeadlines({ guest: 0 });
 
-    const res = await convert(hangingPng);
-    const elapsed = performance.now() - startedAt;
-    const longestStall = stopTracking();
+    const res = await convert(png);
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: IMAGES_TOO_COMPLEX_MESSAGE });
-    expect(elapsed).toBeLessThan(30_000);
-    // A blocked event loop stalls for the whole conversion, not for a fraction of it.
-    expect(longestStall).toBeLessThan(elapsed / 2);
     expect(hasRunningWorker()).toBe(false);
   });
 
   it('applies the deadline of the plan making the request', async () => {
     mockUserId = USER_ID;
     mockPlan = 'Basic';
-    setDeadlines({ Basic: 1_000 });
+    setDeadlines({ Basic: 0 });
 
-    const res = await convert(hangingPng);
+    const res = await convert(png);
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: IMAGES_TOO_COMPLEX_MESSAGE });
@@ -210,28 +203,38 @@ describe('image-to-pdf route — conversion in a worker', () => {
     expect(hasRunningWorker()).toBe(false);
   });
 
-  it('answers 503 with Retry-After while a PDF extraction and a conversion hold both slots, then recovers', async () => {
-    setDeadlines({ guest: 5_000 });
+  it('answers 503 with Retry-After while two PDF extractions hold both worker slots, then recovers', async () => {
     const slowPdf = createSlowPdf(30, 20);
-    const extraction = extractPdfPages(new Uint8Array(slowPdf), {
-      maxPages: 20,
-      deadlineMs: 5_000,
-      maxHeapMb: 256,
-      maxConcurrent: 2,
-    }).catch(() => undefined);
-    const heldConversion = convert(hangingPng);
+    const extractions = [1, 2].map(() =>
+      extractPdfPages(new Uint8Array(slowPdf), { maxPages: 20, deadlineMs: 5_000, maxHeapMb: 256, maxConcurrent: 2 }).catch(
+        () => undefined,
+      ),
+    );
     await workersStarted(2);
 
-    setDeadlines({});
     const refused = await convert(png);
 
     expect(refused.status).toBe(503);
     expect(refused.headers.get('Retry-After')).toBe('5');
     expect(await refused.json()).toEqual({ error: IMAGE_TO_PDF_BUSY_MESSAGE });
 
-    await extraction;
-    expect((await heldConversion).status).toBe(400);
+    await Promise.all(extractions);
     expect(hasRunningWorker()).toBe(false);
+    expect((await convert(png)).status).toBe(200);
+  });
+
+  it('answers 503 with Retry-After while other image tools hold both image job slots, then recovers', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const jobs = [runImageJob(() => held), runImageJob(() => held)];
+
+    const refused = await convert(png);
+    release();
+    await Promise.all(jobs);
+
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get('Retry-After')).toBe('5');
+    expect(await refused.json()).toEqual({ error: IMAGE_TO_PDF_BUSY_MESSAGE });
     expect((await convert(png)).status).toBe(200);
   });
 });

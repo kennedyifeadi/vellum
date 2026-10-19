@@ -38,27 +38,34 @@ describe('convertImagesToPdf (lib/image/to-pdf.ts)', () => {
     await expect(convertImagesToPdf({ imageBuffers: [png, jpeg], limits: LIMITS })).resolves.toBeInstanceOf(Buffer);
   });
 
-  it('scales a wide image down to fit within the page while preserving aspect ratio', async () => {
-    // Page defaults to A4 (595.28 x 841.89pt); a very wide image must be shrunk to fit the width.
+  it('puts a wide image on a landscape A4 page, scaled down to fit', async () => {
     const wide = await createPng(4000, 100);
 
     const pdfBuffer = await convertImagesToPdf({ imageBuffers: [wide], limits: LIMITS });
     const doc = await PDFDocument.load(pdfBuffer);
     const page = doc.getPage(0);
 
-    expect(page.getWidth()).toBeCloseTo(595.28, 1);
-    expect(page.getHeight()).toBeCloseTo(841.89, 1);
+    expect(page.getWidth()).toBeCloseTo(841.89, 1);
+    expect(page.getHeight()).toBeCloseTo(595.28, 1);
   });
 
-  it('rejects an unsupported image format such as WebP', async () => {
+  it('rejects an unsupported image format such as SVG', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>');
+
+    await expect(convertImagesToPdf({ imageBuffers: [svg], limits: LIMITS })).rejects.toThrow(
+      'Image 1 is not a supported image type. Only JPEG, PNG, WebP, GIF, TIFF, AVIF and BMP images are accepted.'
+    );
+    await expect(convertImagesToPdf({ imageBuffers: [svg], limits: LIMITS })).rejects.toBeInstanceOf(ClientError);
+  });
+
+  it('accepts a WebP image', async () => {
     const webp = await sharp({ create: { width: 40, height: 40, channels: 3, background: { r: 0, g: 0, b: 255 } } })
       .webp()
       .toBuffer();
 
-    await expect(convertImagesToPdf({ imageBuffers: [webp], limits: LIMITS })).rejects.toThrow(
-      'Unsupported image format. Only PNG and JPEG are supported.'
-    );
-    await expect(convertImagesToPdf({ imageBuffers: [webp], limits: LIMITS })).rejects.toBeInstanceOf(ClientError);
+    const doc = await PDFDocument.load(await convertImagesToPdf({ imageBuffers: [webp], limits: LIMITS }));
+
+    expect(doc.getPageCount()).toBe(1);
   });
 
   it('rejects an empty image buffer as a ClientError naming its position', async () => {
@@ -74,7 +81,7 @@ describe('convertImagesToPdf (lib/image/to-pdf.ts)', () => {
 
     await expect(convertImagesToPdf({ imageBuffers: [garbage], limits: LIMITS })).rejects.toBeInstanceOf(ClientError);
     await expect(convertImagesToPdf({ imageBuffers: [garbage], limits: LIMITS })).rejects.toThrow(
-      /image 1 is not a valid image or is corrupted/i
+      /image 1 is damaged or incomplete and could not be read/i
     );
   });
 

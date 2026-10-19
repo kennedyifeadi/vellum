@@ -15,9 +15,12 @@ import {
 } from '@/lib/convert/image-to-pdf-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { WorkerJobError } from '@/lib/convert/worker-job';
+import { ImageToolBusyError } from '@/lib/image/image-jobs';
 
+// The images are decoded in one of the image tools' slots, then assembled in one of the
+// PDF workers' slots; either can be full.
 function isBusy(error: unknown): boolean {
-  return error instanceof WorkerJobError && error.reason === 'busy';
+  return error instanceof ImageToolBusyError || (error instanceof WorkerJobError && error.reason === 'busy');
 }
 
 async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<Buffer> {

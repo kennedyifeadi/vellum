@@ -3,20 +3,20 @@ import { PDF_WORKER_LIMITS, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-
 import type { WorkerLimits } from '@/lib/convert/worker-job';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
-// At the pixel cap the conversion of one PNG peaks at about 520 MB. A decoded image is
-// held outside the worker's JavaScript heap, so this cap, not `maxHeapMb`, is what
-// bounds its memory.
+// Images are decoded with sharp, outside the worker's JavaScript heap, so this cap, not
+// `maxHeapMb`, is what bounds their memory: at the cap one image peaks at 0.14 to 0.43 GB
+// above the server's own, and 0.94 GB for an AVIF, whose decoder holds the most.
 export { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 
-// What bounds the conversion whatever the images contain. See #98 for the figures.
+// What bounds the conversion whatever the images contain. See #98 and #99 for the figures.
 export const CONVERSION_LIMITS = {
-  // pdf-lib converts a PNG at 0.22 to 0.35s per megapixel with `maxConcurrent` jobs
-  // running (0.8 for one that does not compress, which the size cap keeps small); a
-  // JPEG is stored as it is and costs milliseconds. One PNG at the pixel cap takes 11
-  // to 13s, and up to 25s on a busy machine, which the guest deadline is sized on.
-  // No deadline can cover the worst request the other caps allow (250 PNGs of 50
-  // megapixels is close to an hour), so each one is in effect a budget of PNG pixels
-  // per request: roughly 85 to 135 megapixels for a guest, rising to 340 to 540 for
+  // The deadline covers the whole conversion: decoding, re-encoding and the worker. A
+  // JPEG kept as it is costs about a second at the pixel cap; any image that is decoded
+  // and stored losslessly (PNG, WebP, GIF, TIFF, AVIF, BMP, and JPEGs that need their
+  // colours converted) takes 7 to 18s there, which the guest deadline is sized on. No
+  // deadline can cover the worst request the other caps allow (250 such images is close
+  // to an hour), so each one is in effect a budget of re-encoded pixels per request:
+  // roughly two to four images at the cap for a guest, rising to eight to sixteen for
   // Enterprise. It is also how long one request can hold a slot.
   deadlineMs: {
     guest: 30_000,
