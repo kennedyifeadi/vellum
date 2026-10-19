@@ -1,3 +1,4 @@
+import path from 'path';
 import { NextRequest } from 'next/server';
 import sharp from 'sharp';
 
@@ -165,5 +166,30 @@ describe('image-to-pdf route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.subarray(0, 5).toString()).toBe('%PDF-');
     expect(saveConversionRecord).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('image-to-pdf history name', () => {
+  beforeEach(() => {
+    mockUserId = '507f1f77bcf86cd799439011';
+  });
+
+  it.each([
+    ['photo.jpg', 'photo.pdf'],
+    ['my.photo.2026.jpg', 'my.photo.2026.pdf'],
+    ['.hidden.png', '.hidden.pdf'],
+    ['scan', 'scan.pdf'],
+    ['.png', 'converted_images.pdf'],
+    ['C:\\Users\\me\\Pictures\\holiday.png', 'holiday.pdf'],
+  ])('records an upload named %s as %s', async (uploadName, recordedName) => {
+    mockResolvedFiles = [fakeFile(await createPng(), uploadName), fakeFile(await createPng(), 'second.png')];
+
+    const res = await handleImageToPdf(imageRequest());
+
+    expect(res.status).toBe(200);
+    expect(saveConversionRecord).toHaveBeenCalledTimes(1);
+    expect(saveConversionRecord.mock.calls[0][2]).toBe(recordedName);
+    // A name that is only an extension would be refused when the row is stored.
+    expect(path.extname(recordedName)).toBe('.pdf');
   });
 });
