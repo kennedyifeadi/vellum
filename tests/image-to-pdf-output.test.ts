@@ -9,6 +9,7 @@ import {
   createPhotoJpeg,
   displayP3Patch,
   displayP3ToSrgb,
+  firstPixel,
   flatImage,
   orientedPicture,
   photoLikePixels,
@@ -468,23 +469,84 @@ describe('convertImagesToPdf — colour', () => {
     return sharp(pixels, { raw: { width, height, channels: 3 } });
   }
 
-  it('shows a CMYK JPEG in the colours of its colour-managed decode', async () => {
+  // A JPEG re-encoded only for its colours stays a JPEG. Measured on photographs at
+  // quality 95 without chroma subsampling: 0.56 to 1.73 times the upload, a mean
+  // difference from the reference of 0.5 and at most 9.
+  const SIZE_BOUND = 2;
+  const PHOTO_MEAN_TOLERANCE = 1;
+  const PHOTO_MAX_TOLERANCE = 12;
+
+  // Every pixel as pdf.js draws it, one rendered pixel per image pixel, against the reference.
+  async function renderedDifference(pdf: Buffer, image: Buffer) {
+    const [placed] = await readPdfPageImages(pdf);
+    const scale = placed.pixelWidth / placed.placement.width;
+    const [page] = await renderPdfPages(pdf, scale);
+    const reference = await sharp(image).rotate().toColourspace('srgb').removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const shown = await sharp(page.rgba, { raw: { width: page.width, height: page.height, channels: 4 } })
+      .extract({
+        left: Math.round(placed.placement.x * scale),
+        top: Math.round((placed.pageHeight - placed.placement.y - placed.placement.height) * scale),
+        width: reference.info.width,
+        height: reference.info.height,
+      })
+      .removeAlpha()
+      .raw()
+      .toBuffer();
+    let total = 0;
+    let max = 0;
+    shown.forEach((value, index) => {
+      const difference = Math.abs(value - reference.data[index]);
+      total += difference;
+      max = Math.max(max, difference);
+    });
+    return { mean: total / shown.length, max };
+  }
+
+  it('shows a CMYK JPEG in the colours of its colour-managed decode, as a JPEG', async () => {
     const cmyk = await quadrants().toColourspace('cmyk').jpeg({ quality: 95 }).toBuffer();
     expect((await sharp(cmyk).metadata()).space).toBe('cmyk');
 
     const placed = await expectRenderedLikeReference(cmyk);
 
+    expect(placed.filter).toBe('DCTDecode');
     expect(placed.colourSpace).toBe('DeviceRGB');
   });
 
-  it('shows a Display P3 JPEG in the sRGB colours it was authored in', async () => {
+  it('shows a Display P3 JPEG in the sRGB colours it was authored in, as a JPEG', async () => {
     const p3 = await displayP3Patch().jpeg({ quality: 100 }).toBuffer();
     const stored = await storedFirstPixel(p3);
     expect(Math.max(...stored.map((value, channel) => Math.abs(value - AUTHORED_SRGB[channel])))).toBeGreaterThan(10);
 
     const placed = await expectRenderedLikeReference(p3);
 
-    expectWithin([...placed.decodedBytes.subarray(0, 3)], displayP3ToSrgb(stored), 2);
+    expect(placed.filter).toBe('DCTDecode');
+    expectWithin(await firstPixel(placed.storedBytes), displayP3ToSrgb(stored), 2);
+  });
+
+  it.each([
+    ['Display P3', (image: sharp.Sharp) => image.withIccProfile('p3').jpeg({ quality: 90 })],
+    ['CMYK', (image: sharp.Sharp) => image.toColourspace('cmyk').jpeg({ quality: 90 })],
+  ])('keeps a %s photograph within twice its size and close to its colour-managed decode', async (_label, encode) => {
+    const photo = await encode(photoLikePixels(400, 300).blur(1.2)).toBuffer();
+
+    const pdf = await convert([photo]);
+    const [placed] = await readPdfPageImages(pdf);
+    const { mean, max } = await renderedDifference(pdf, photo);
+
+    expect(placed.filter).toBe('DCTDecode');
+    expect(pdf.length).toBeLessThanOrEqual(SIZE_BOUND * photo.length);
+    expect(mean).toBeLessThanOrEqual(PHOTO_MEAN_TOLERANCE);
+    expect(max).toBeLessThanOrEqual(PHOTO_MAX_TOLERANCE);
+  });
+
+  it('turns a Display P3 JPEG upright when it converts its colours', async () => {
+    const p3 = await orientedPicture(6).withIccProfile('p3').jpeg({ quality: 95 }).toBuffer();
+    expect((await sharp(p3).metadata()).orientation).toBe(6);
+
+    const pdf = await convert([p3]);
+
+    expect((await readPdfPageImages(pdf))[0].filter).toBe('DCTDecode');
+    expect(await shownCorners(pdf)).toEqual([UPRIGHT_CORNERS.corners]);
   });
 
   it('converts a Display P3 PNG to sRGB', async () => {

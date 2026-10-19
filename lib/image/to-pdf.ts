@@ -18,6 +18,11 @@ type PdfImage = AcceptedImage<(typeof ACCEPTED_FORMATS)[number]>;
 // photograph against 28s at level 3, at about the size pdf-lib's own PNG embedding gave.
 const PNG_ENCODING: sharp.PngOptions = { compressionLevel: 1, adaptiveFiltering: true };
 
+// A JPEG re-encoded only to convert its colours (CMYK, or a Display P3 or Adobe RGB
+// profile) stays a JPEG: stored losslessly, a phone photo's PDF was 12 times the upload.
+// At quality 95 without chroma subsampling it is about the size of the upload.
+const CONVERTED_JPEG_ENCODING: sharp.JpegOptions = { quality: 95, chromaSubsampling: '4:4:4' };
+
 interface ImageToPdfOptions {
   imageBuffers: Buffer[];
   limits: WorkerLimits;
@@ -203,9 +208,37 @@ async function encodeStreams(pixels: RawPixels): Promise<Pick<PixelsPage, 'colou
   return { colour: pngPixelStream(colour), alpha: alpha && pngPixelStream(alpha) };
 }
 
+// Upright and in sRGB (grey stays grey), with no metadata, so it needs no transform.
+async function convertJpegColours(image: PdfImage, deadline: number): Promise<JpegPage> {
+  const pipeline = await openForDecoding(image, true, deadline);
+  let converted: { data: Buffer; info: sharp.OutputInfo };
+  try {
+    converted = await pipeline
+      .toColourspace(colourspaceFor(isGrey(image), false))
+      .jpeg(CONVERTED_JPEG_ENCODING)
+      .toBuffer({ resolveWithObject: true });
+  } catch (error) {
+    throw damagedImageError(image.imageNumber, error);
+  }
+  return {
+    kind: 'jpeg',
+    imageNumber: image.imageNumber,
+    bytes: ownedBytes(converted.data),
+    layout: layoutImagePage({
+      storedWidth: converted.info.width,
+      storedHeight: converted.info.height,
+      orientation: 1,
+      density: image.density,
+    }),
+  };
+}
+
 async function preparePage(image: PdfImage, deadline: number): Promise<PreparedPage> {
   const colourConversion = await needsColourConversion(image);
 
+  if (image.format === 'jpeg' && colourConversion) {
+    return convertJpegColours(image, deadline);
+  }
   if (canEmbedAsStored(image, colourConversion)) {
     await assertJpegDecodes(image);
     return {
@@ -268,7 +301,8 @@ function readPdf(message: unknown): Buffer {
  * Builds a PDF with one page per image, in order, each laid out by `layoutImagePage`.
  * Every image is accepted from its header first. Then, holding an image job slot, each
  * is fully decoded: a JPEG that needs no colour conversion is kept byte for byte and
- * turned upright by the page's drawing transform; anything else is decoded upright,
+ * turned upright by the page's drawing transform; a JPEG that does is decoded upright,
+ * converted to sRGB and stored as a quality-95 JPEG; anything else is decoded upright,
  * converted to sRGB (greyscale stays grey, 16 bits stay 16) and stored losslessly.
  * pdf-lib then assembles the pages in a worker thread, see `runWorkerJob` for how that
  * is bounded. `limits.deadlineMs` covers the whole conversion.

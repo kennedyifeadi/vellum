@@ -11,9 +11,9 @@ export { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/ima
 // What bounds the conversion whatever the images contain. See #98 and #99 for the figures.
 export const CONVERSION_LIMITS = {
   // The deadline covers the whole conversion: decoding, re-encoding and the worker. A
-  // JPEG kept as it is costs about a second at the pixel cap; any image that is decoded
-  // and stored losslessly (PNG, WebP, GIF, TIFF, AVIF, BMP, and JPEGs that need their
-  // colours converted) takes 7 to 18s there, which the guest deadline is sized on. No
+  // JPEG kept as it is costs about a second at the pixel cap, and one re-encoded as a JPEG
+  // to convert its colours 4 to 6s; any image that is decoded and stored losslessly (PNG,
+  // WebP, GIF, TIFF, AVIF, BMP) takes 7 to 18s there, which the guest deadline is sized on. No
   // deadline can cover the worst request the other caps allow (250 such images is close
   // to an hour), so each one is in effect a budget of re-encoded pixels per request:
   // roughly two to four images at the cap for a guest, rising to eight to sixteen for
