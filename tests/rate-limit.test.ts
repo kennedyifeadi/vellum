@@ -10,6 +10,16 @@ jest.mock('@/lib/auth/jwt', () => ({
 }));
 
 describe('Rate Limiting System Tests (proxy.ts)', () => {
+  beforeEach(() => {
+    process.env.CLIENT_IP_HEADER = 'x-real-ip';
+    delete process.env.CLIENT_IP_HEADER_ENTRY;
+  });
+
+  afterEach(() => {
+    delete process.env.CLIENT_IP_HEADER;
+    delete process.env.CLIENT_IP_HEADER_ENTRY;
+  });
+
   function createApiRequest(ip: string, path = '/api/convert/compress-pdf', spoofedForwardedFor?: string) {
     const url = `http://localhost:3000${path}`;
     const headers: Record<string, string> = {
@@ -86,13 +96,27 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     expect(blocked.status).toBe(429);
   });
 
-  it('should fall back to the rightmost x-forwarded-for entry when no trusted header is present', async () => {
+  it('should key on the rightmost x-forwarded-for entry when configured to', async () => {
+    process.env.CLIENT_IP_HEADER = 'x-forwarded-for';
+    process.env.CLIENT_IP_HEADER_ENTRY = 'rightmost';
     const trustedHop = '198.51.100.4';
     for (let i = 1; i <= 30; i++) {
       await proxy(createForwardedForOnlyRequest(`10.0.0.${i}, ${trustedHop}`));
     }
     const blocked = await proxy(createForwardedForOnlyRequest(`10.0.0.250, ${trustedHop}`));
     expect(blocked.status).toBe(429);
+  });
+
+  it('should not let a client choose its key with x-vercel-forwarded-for', async () => {
+    const realIp = '203.0.113.9';
+    for (let i = 1; i <= 30; i++) {
+      const request = createApiRequest(realIp);
+      request.headers.set('x-vercel-forwarded-for', `10.1.0.${i}`);
+      await proxy(request);
+    }
+    const blocked = createApiRequest(realIp);
+    blocked.headers.set('x-vercel-forwarded-for', '10.1.0.250');
+    expect((await proxy(blocked)).status).toBe(429);
   });
 
   it('should apply rate limit to /api/documents/ and /api/auth/verify-otp endpoints as well', async () => {
@@ -104,5 +128,15 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     }
     expect((await proxy(createApiRequest(docIp, '/api/documents/upload'))).status).toBe(429);
     expect((await proxy(createApiRequest(otpIp, '/api/auth/verify-otp'))).status).toBe(429);
+  });
+
+  it('should put every caller in one shared bucket when no header is trusted', async () => {
+    delete process.env.CLIENT_IP_HEADER;
+    for (let i = 1; i <= 30; i++) {
+      const request = createApiRequest(`192.0.2.${i}`, '/api/convert/compress-pdf', `198.18.0.${i}`);
+      request.headers.set('x-vercel-forwarded-for', `198.19.0.${i}`);
+      expect((await proxy(request)).status).not.toBe(429);
+    }
+    expect((await proxy(createApiRequest('192.0.2.250'))).status).toBe(429);
   });
 });
