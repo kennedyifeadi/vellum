@@ -68,23 +68,13 @@ jest.mock('@/lib/image/to-pdf', () => ({
   convertImagesToPdf: jest.fn().mockResolvedValue(Buffer.from('image-pdf')),
 }));
 
-jest.mock('ffmpeg-static', () => ({ __esModule: true, default: '/fake/ffmpeg' }));
-
-jest.mock('fluent-ffmpeg', () => {
-  const chain: any = {
-    videoCodec: () => chain,
-    outputOptions: () => chain,
-    size: () => chain,
-    on: (event: string, cb: (...a: any[]) => void) => {
-      if (event === 'end') setImmediate(cb);
-      return chain;
-    },
-    save: () => chain,
-  };
-  const fn: any = jest.fn(() => chain);
-  fn.setFfmpegPath = jest.fn();
-  return { __esModule: true, default: fn };
-});
+jest.mock('@/lib/video/compress', () => ({
+  compressVideo: jest.fn().mockResolvedValue({
+    bytes: Buffer.from('compressed-video'),
+    compressed: true,
+    format: { extension: 'mp4', contentType: 'video/mp4' },
+  }),
+}));
 
 // Stands in for the extraction worker, which refuses a PDF over the page cap it is given.
 jest.mock('@/lib/convert/find-pdf-extraction', () => ({
@@ -107,7 +97,6 @@ jest.mock('pdf-lib', () => ({
   rgb: jest.fn().mockReturnValue({}),
 }));
 
-import fs from 'fs';
 import { POST as handleSplitPdf } from '../app/api/convert/split-pdf/route';
 import { POST as handleMergePdf } from '../app/api/convert/merge-pdf/route';
 import { POST as handleImageToPdf } from '../app/api/convert/image-to-pdf/route';
@@ -131,10 +120,6 @@ function postReq(path: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined as any);
-  jest.spyOn(fs, 'readFileSync').mockReturnValue(Buffer.from('compressed-video'));
-  jest.spyOn(fs, 'existsSync').mockReturnValue(true);
-  jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined as any);
   mockUserId = VALID_HEX_ENTERPRISE;
   mockPlan = 'Enterprise';
   mockResolvedFiles = [];
@@ -245,18 +230,19 @@ describe('Enterprise plan limits — file count (image-compress, jpg-to-png)', (
 });
 
 describe('Enterprise plan limits — video size (video-compress)', () => {
-  it('allows an Enterprise user a video larger than the Pro cap (500MB)', async () => {
-    mockResolvedFiles = [fakeFile(600 * MB, 'clip.mp4')];
+  // Enterprise shares Pro's cap: next.config.ts's body limit (520MB) truncates anything larger.
+  it('allows an Enterprise user a video at the 500MB cap', async () => {
+    mockResolvedFiles = [fakeFile(500 * MB, 'clip.mp4')];
     const res = await handleVideoCompress(postReq('/api/convert/video-compress'));
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
   });
 
-  it('rejects an Enterprise user only past the Enterprise cap (2500MB)', async () => {
-    mockResolvedFiles = [fakeFile(2501 * MB, 'movie.mp4')];
+  it('rejects an Enterprise user past the 500MB cap', async () => {
+    mockResolvedFiles = [fakeFile(501 * MB, 'movie.mp4')];
     const res = await handleVideoCompress(postReq('/api/convert/video-compress'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('2500MB');
+    expect((await res.json()).error).toContain('500MB');
   });
 
   it('still caps a guest at 50MB', async () => {

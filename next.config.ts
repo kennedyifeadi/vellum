@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     'puppeteer', 'puppeteer-core',
     'pdfjs-dist',
-    'ffmpeg-static', 'fluent-ffmpeg',
+    'ffmpeg-static',
     'sharp',
     'mongoose',
     '@getbrevo/brevo',
