@@ -2,13 +2,21 @@ import NextAuth, { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
-import clientPromise from "@/lib/db/mongodb"; // Your MongoDB connection
+import { getMongoClient } from "@/lib/db/mongodb";
 import { verifyOtp } from "@/lib/auth/verifyOtp"; // Your existing OTP verification logic
 import { buildSessionEntry } from "@/lib/auth/session";
 import User from "@/models/user"; // Your existing User model
 
+type Adapter = NonNullable<AuthOptions["adapter"]>;
+let adapter: Adapter | undefined;
+
 export const authOptions: AuthOptions = {
-  adapter: MongoDBAdapter(clientPromise) as NonNullable<AuthOptions["adapter"]>,
+  // The adapter starts connecting as soon as it is created, so it is created on the first
+  // auth request rather than when the build imports this route.
+  get adapter(): Adapter {
+    adapter ??= MongoDBAdapter(getMongoClient()) as Adapter;
+    return adapter;
+  },
   providers: [
     // Google OAuth Provider
     GoogleProvider({
