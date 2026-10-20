@@ -231,7 +231,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       case 'pdf-to-docx':
         return 'application/pdf';
       case 'image-to-pdf':
-        return 'image/jpeg,image/png';
+        return 'image/jpeg,image/png,image/webp,image/gif,image/tiff,image/avif,image/bmp';
       case 'jpg-to-png':
         return 'image/jpeg';
       case 'docx-to-pdf':
@@ -704,7 +704,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       case 'find-pdf':
         return '.pdf';
       case 'image-to-pdf':
-        return '.jpg,.jpeg,.png';
+        return '.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.avif,.bmp';
       case 'jpg-to-png':
         return '.jpg,.jpeg';
       case 'docx-to-pdf':

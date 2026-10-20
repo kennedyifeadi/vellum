@@ -1,4 +1,5 @@
 import { crc32, deflateSync } from 'zlib';
+import sharp from 'sharp';
 import {
   decodePDFRawStream,
   PDFArray,
@@ -98,14 +99,18 @@ export function createSvgThatTakesMinutesToRender(size = 7000): string {
 export interface PdfPageImage {
   pageWidth: number;
   pageHeight: number;
-  /** Where the page's content stream places the image, in points. */
+  /** The transformation matrix the page's content stream draws the image with. */
+  matrix: number[];
+  /** The box that matrix maps the image onto, in points. */
   placement: { x: number; y: number; width: number; height: number };
   pixelWidth: number;
   pixelHeight: number;
   filter: string;
+  colourSpace: string;
+  bitsPerComponent: number;
   /** The image stream exactly as stored in the PDF. */
   storedBytes: Buffer;
-  /** The stream decoded: RGB samples for an image pdf-lib stored from a PNG. */
+  /** The samples the stream decodes to; 16-bit samples in the machine's byte order. */
   decodedBytes: Buffer;
   /** The decoded soft mask, when the image has transparency. */
   alpha?: Buffer;
@@ -115,14 +120,20 @@ function numberAt(dict: PDFDict, key: string): number {
   return dict.lookup(PDFName.of(key), PDFNumber).asNumber();
 }
 
-function readPlacement(contentStream: string): PdfPageImage['placement'] {
-  const matrices = [...contentStream.matchAll(/((?:-?[\d.]+(?:e-?\d+)?\s+){6})cm/g)].map((match) =>
-    match[1].trim().split(/\s+/).map(Number),
-  );
-  // pdf-lib writes four matrices for an image: translate, rotate, scale, skew.
-  const [, , , , x, y] = matrices[0];
-  const [width, , , height] = matrices[2];
-  return { x, y, width, height };
+function readMatrix(contentStream: string): number[] {
+  const [match] = contentStream.matchAll(/((?:-?[\d.]+(?:e-?\d+)?\s+){6})cm/g);
+  return match[1].trim().split(/\s+/).map(Number);
+}
+
+function boxOf([a, b, c, d, e, f]: number[]): PdfPageImage['placement'] {
+  const xs = [e, e + a, e + c, e + a + c];
+  const ys = [f, f + b, f + d, f + b + d];
+  return {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
 }
 
 function readContentStream(doc: PDFDocument, contents: unknown): string {
@@ -132,30 +143,62 @@ function readContentStream(doc: PDFDocument, contents: unknown): string {
     .join('\n');
 }
 
+// A stream stored with a PNG predictor holds a PNG's filtered rows, so wrapping it in a
+// PNG header lets an image decoder undo the filters.
+async function decodeImageStream(image: PDFRawStream): Promise<Buffer> {
+  const filter = image.dict.lookup(PDFName.of('Filter'), PDFName).asString();
+  if (filter !== '/FlateDecode') {
+    return Buffer.from(image.contents);
+  }
+  const parameters = image.dict.lookup(PDFName.of('DecodeParms'));
+  if (!(parameters instanceof PDFDict) || numberAt(parameters, 'Predictor') < 10) {
+    return Buffer.from(decodePDFRawStream(image).decode());
+  }
+  const fields = Buffer.alloc(13);
+  fields.writeUInt32BE(numberAt(image.dict, 'Width'), 0);
+  fields.writeUInt32BE(numberAt(image.dict, 'Height'), 4);
+  fields[8] = numberAt(parameters, 'BitsPerComponent');
+  fields[9] = numberAt(parameters, 'Colors') === 1 ? 0 : 2;
+  const png = Buffer.concat([
+    PNG_SIGNATURE,
+    chunk('IHDR', fields),
+    chunk('IDAT', Buffer.from(image.contents)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  // sharp writes out every image as RGB unless told otherwise.
+  const decoder = fields[9] === 0 ? sharp(png).extractChannel(0) : sharp(png);
+  return decoder.raw({ depth: fields[8] === 16 ? 'ushort' : 'uchar' }).toBuffer();
+}
+
 /** Reads back, page by page, the one image each page of a converted PDF carries. */
 export async function readPdfPageImages(pdf: Buffer): Promise<PdfPageImage[]> {
   const doc = await PDFDocument.load(pdf);
 
-  return doc.getPages().map((page) => {
-    const xObjects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
-    const [[, imageRef]] = xObjects.entries();
-    const image = doc.context.lookup(imageRef, PDFStream) as PDFRawStream;
-    const filter = image.dict.lookup(PDFName.of('Filter'), PDFName).asString().slice(1);
-    const softMaskRef = image.dict.get(PDFName.of('SMask'));
+  return Promise.all(
+    doc.getPages().map(async (page) => {
+      const xObjects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+      const [[, imageRef]] = xObjects.entries();
+      const image = doc.context.lookup(imageRef, PDFStream) as PDFRawStream;
+      const softMaskRef = image.dict.get(PDFName.of('SMask'));
+      const matrix = readMatrix(readContentStream(doc, page.node.Contents()));
 
-    return {
-      pageWidth: page.getWidth(),
-      pageHeight: page.getHeight(),
-      placement: readPlacement(readContentStream(doc, page.node.Contents())),
-      pixelWidth: numberAt(image.dict, 'Width'),
-      pixelHeight: numberAt(image.dict, 'Height'),
-      filter,
-      storedBytes: Buffer.from(image.contents),
-      decodedBytes: filter === 'FlateDecode' ? Buffer.from(decodePDFRawStream(image).decode()) : Buffer.from(image.contents),
-      alpha:
-        softMaskRef instanceof PDFRef
-          ? Buffer.from(decodePDFRawStream(doc.context.lookup(softMaskRef, PDFStream) as PDFRawStream).decode())
-          : undefined,
-    };
-  });
+      return {
+        pageWidth: page.getWidth(),
+        pageHeight: page.getHeight(),
+        matrix,
+        placement: boxOf(matrix),
+        pixelWidth: numberAt(image.dict, 'Width'),
+        pixelHeight: numberAt(image.dict, 'Height'),
+        filter: image.dict.lookup(PDFName.of('Filter'), PDFName).asString().slice(1),
+        colourSpace: image.dict.lookup(PDFName.of('ColorSpace'), PDFName).asString().slice(1),
+        bitsPerComponent: numberAt(image.dict, 'BitsPerComponent'),
+        storedBytes: Buffer.from(image.contents),
+        decodedBytes: await decodeImageStream(image),
+        alpha:
+          softMaskRef instanceof PDFRef
+            ? await decodeImageStream(doc.context.lookup(softMaskRef, PDFStream) as PDFRawStream)
+            : undefined,
+      };
+    }),
+  );
 }

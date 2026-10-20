@@ -1,3 +1,4 @@
+import path from 'path';
 import { NextRequest } from 'next/server';
 import sharp from 'sharp';
 
@@ -118,10 +119,22 @@ describe('image-to-pdf route error handling', () => {
     const res = await handleImageToPdf(imageRequest());
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/image 1 is not a valid image or is corrupted/i);
+    expect((await res.json()).error).toMatch(/image 1 is damaged or incomplete and could not be read/i);
   });
 
-  it('returns 400 with the actionable message for an unsupported format (WebP)', async () => {
+  it('returns 400 with the actionable message for an unsupported format (SVG)', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"/>');
+    mockResolvedFiles = [fakeFile(svg, 'img.png', 'image/png')];
+
+    const res = await handleImageToPdf(imageRequest());
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      'Image 1 is not a supported image type. Only JPEG, PNG, WebP, GIF, TIFF, AVIF and BMP images are accepted.'
+    );
+  });
+
+  it('converts a WebP, as the documents page offers', async () => {
     const webp = await sharp({ create: { width: 30, height: 30, channels: 3, background: { r: 1, g: 2, b: 3 } } })
       .webp()
       .toBuffer();
@@ -129,10 +142,7 @@ describe('image-to-pdf route error handling', () => {
 
     const res = await handleImageToPdf(imageRequest());
 
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe(
-      'Unsupported image format. Only PNG and JPEG are supported.'
-    );
+    expect(res.status).toBe(200);
   });
 
   it('still returns 500 for a genuine server fault', async () => {
@@ -156,5 +166,30 @@ describe('image-to-pdf route error handling', () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(body.subarray(0, 5).toString()).toBe('%PDF-');
     expect(saveConversionRecord).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('image-to-pdf history name', () => {
+  beforeEach(() => {
+    mockUserId = '507f1f77bcf86cd799439011';
+  });
+
+  it.each([
+    ['photo.jpg', 'photo.pdf'],
+    ['my.photo.2026.jpg', 'my.photo.2026.pdf'],
+    ['.hidden.png', '.hidden.pdf'],
+    ['scan', 'scan.pdf'],
+    ['.png', 'converted_images.pdf'],
+    ['C:\\Users\\me\\Pictures\\holiday.png', 'holiday.pdf'],
+  ])('records an upload named %s as %s', async (uploadName, recordedName) => {
+    mockResolvedFiles = [fakeFile(await createPng(), uploadName), fakeFile(await createPng(), 'second.png')];
+
+    const res = await handleImageToPdf(imageRequest());
+
+    expect(res.status).toBe(200);
+    expect(saveConversionRecord).toHaveBeenCalledTimes(1);
+    expect(saveConversionRecord.mock.calls[0][2]).toBe(recordedName);
+    // A name that is only an extension would be refused when the row is stored.
+    expect(path.extname(recordedName)).toBe('.pdf');
   });
 });

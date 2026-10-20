@@ -15,9 +15,13 @@ import {
 } from '@/lib/convert/image-to-pdf-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { WorkerJobError } from '@/lib/convert/worker-job';
+import { ImageToolBusyError } from '@/lib/image/image-jobs';
+import { bareFileStem } from '@/lib/paths';
 
+// The images are decoded in one of the image tools' slots, then assembled in one of the
+// PDF workers' slots; either can be full.
 function isBusy(error: unknown): boolean {
-  return error instanceof WorkerJobError && error.reason === 'busy';
+  return error instanceof ImageToolBusyError || (error instanceof WorkerJobError && error.reason === 'busy');
 }
 
 async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<Buffer> {
@@ -64,8 +68,8 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        const originalFileName = files[0]?.name ? `${files[0].name.split('.')[0]}.pdf` : 'converted_images.pdf';
-        await saveConversionRecord(userId, 'Image to PDF', originalFileName, Buffer.from(pdfBuffer));
+        const recordedName = `${bareFileStem(files[0].name, 'converted_images')}.pdf`;
+        await saveConversionRecord(userId, 'Image to PDF', recordedName, Buffer.from(pdfBuffer));
       } catch (recordError) {
         console.error('Failed to record Image to PDF conversion:', recordError);
       }

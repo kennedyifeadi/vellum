@@ -176,6 +176,6 @@ describe('image-to-pdf database use', () => {
     expect(Buffer.from(await res.arrayBuffer()).equals(PDF)).toBe(true);
     expect(dbConnect).toHaveBeenCalled();
     expect(saveConversionRecord).toHaveBeenCalledTimes(1);
-    expect(saveConversionRecord).toHaveBeenCalledWith(USER_ID, 'Image to PDF', 'holiday.pdf', PDF);
+    expect(saveConversionRecord).toHaveBeenCalledWith(USER_ID, 'Image to PDF', 'holiday.photo.pdf', PDF);
   });
 });
