@@ -4,10 +4,15 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import { resolvePlanLimit } from '@/lib/plan-limits';
 import { compressVideo, type CompressedVideo } from '@/lib/video/compress';
+import { runVideoJob, VideoToolBusyError } from '@/lib/video/video-jobs';
 import { handleConvertError } from '@/lib/convert/errors';
-import { encodeLimitsForPlan } from '@/lib/convert/video-compress-limits';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
+import {
+  assertFileSizeWithinPlan,
+  COMPRESS_VIDEO_BUSY_MESSAGE,
+  encodeLimitsForPlan,
+} from '@/lib/convert/video-compress-limits';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
 function crfForQuality(quality: FormDataEntryValue | null): number {
@@ -29,8 +34,6 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
-
     const formData = await req.formData();
     const video = (await resolveFiles(formData, 'video'))[0] as File;
     const crf = crfForQuality(formData.get('quality'));
@@ -40,32 +43,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No video provided' }, { status: 400 });
     }
 
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
-
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 50 * 1024 * 1024,
-      Basic: 100 * 1024 * 1024,
-      Pro: 500 * 1024 * 1024,
-      Enterprise: 2500 * 1024 * 1024,
-    });
-
-    if (video.size > maxSize) {
-      return NextResponse.json({
-        error: `Your current plan allows videos up to ${maxSize / (1024 * 1024)}MB.`
-      }, { status: 400 });
+    const userId = await getAuthUserId(req);
+    let plan = 'Free';
+    if (userId) {
+      await dbConnect();
+      const user = await User.findById(userId);
+      plan = user?.plan || 'Free';
     }
 
+    assertFileSizeWithinPlan(plan, video.size);
+
     const inputBuffer = Buffer.from(await video.arrayBuffer());
-    const output = await compressVideo({
-      inputBuffer,
-      fileName: video.name,
-      crf,
-      resolution,
-      ...encodeLimitsForPlan(plan),
-      signal: req.signal,
-    });
+    const output = await runVideoJob(() =>
+      compressVideo({
+        inputBuffer,
+        fileName: video.name,
+        crf,
+        resolution,
+        ...encodeLimitsForPlan(plan),
+        signal: req.signal,
+      }),
+    );
 
     // Built before anything is recorded, so a response that cannot be built leaves no
     // history row behind.
@@ -86,6 +84,9 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof VideoToolBusyError) {
+      return busyResponse(COMPRESS_VIDEO_BUSY_MESSAGE);
+    }
     return handleConvertError(error, 'Failed to compress video');
   }
 }

@@ -230,18 +230,19 @@ describe('Enterprise plan limits — file count (image-compress, jpg-to-png)', (
 });
 
 describe('Enterprise plan limits — video size (video-compress)', () => {
-  it('allows an Enterprise user a video larger than the Pro cap (500MB)', async () => {
-    mockResolvedFiles = [fakeFile(600 * MB, 'clip.mp4')];
+  // Enterprise shares Pro's cap: next.config.ts's body limit (520MB) truncates anything larger.
+  it('allows an Enterprise user a video at the 500MB cap', async () => {
+    mockResolvedFiles = [fakeFile(500 * MB, 'clip.mp4')];
     const res = await handleVideoCompress(postReq('/api/convert/video-compress'));
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
   });
 
-  it('rejects an Enterprise user only past the Enterprise cap (2500MB)', async () => {
-    mockResolvedFiles = [fakeFile(2501 * MB, 'movie.mp4')];
+  it('rejects an Enterprise user past the 500MB cap', async () => {
+    mockResolvedFiles = [fakeFile(501 * MB, 'movie.mp4')];
     const res = await handleVideoCompress(postReq('/api/convert/video-compress'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('2500MB');
+    expect((await res.json()).error).toContain('500MB');
   });
 
   it('still caps a guest at 50MB', async () => {

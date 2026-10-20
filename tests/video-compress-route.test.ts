@@ -197,6 +197,125 @@ describe('video-compress encode limits', () => {
   });
 });
 
+const MB = 1024 * 1024;
+
+function oversizedFile(size: number, name = 'clip.mp4') {
+  return {
+    name,
+    type: 'video/mp4',
+    size,
+    arrayBuffer: jest.fn().mockRejectedValue(new Error('an over-cap upload must not be read')),
+  };
+}
+
+function deferred() {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { released, release };
+}
+
+async function untilCalled(mock: jest.Mock, times: number): Promise<void> {
+  while (mock.mock.calls.length < times) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+describe('video-compress size caps', () => {
+  it.each([
+    ['a guest', null, 'Free', 50],
+    ['an unknown plan', '507f1f77bcf86cd799439011', 'Platinum', 50],
+    ['a Basic user', '507f1f77bcf86cd799439011', 'Basic', 100],
+    ['a Pro user', '507f1f77bcf86cd799439011', 'Pro', 500],
+    ['an Enterprise user', '507f1f77bcf86cd799439011', 'Enterprise', 500],
+  ])('refuses %s a video over the plan cap, before reading it', async (_label, userId, plan, capMb) => {
+    mockUserId = userId;
+    mockPlan = plan;
+    const file = oversizedFile(capMb * MB + 1);
+    mockResolvedFiles = [file];
+
+    const res = await handleVideoCompress(videoRequest());
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(`Your current plan allows videos up to ${capMb}MB.`);
+    expect(file.arrayBuffer).not.toHaveBeenCalled();
+    expect(compressVideo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a guest', null, 'Free', 50],
+    ['an Enterprise user', '507f1f77bcf86cd799439011', 'Enterprise', 500],
+  ])('accepts %s a video exactly at the cap', async (_label, userId, plan, capMb) => {
+    mockUserId = userId;
+    mockPlan = plan;
+    mockResolvedFiles = [{ ...fakeFile(Buffer.from('raw-input')), size: capMb * MB }];
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+
+    const res = await handleVideoCompress(videoRequest());
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('video-compress for guests', () => {
+  it('never connects to the database, and serves a guest while it is down', async () => {
+    const dbConnect = jest.requireMock('@/lib/db/mongoose').default as jest.Mock;
+    dbConnect.mockRejectedValue(new Error('MongoServerSelectionError: connect ECONNREFUSED'));
+    try {
+      mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
+      compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+      const served = await handleVideoCompress(videoRequest());
+
+      mockResolvedFiles = [oversizedFile(51 * MB)];
+      const refused = await handleVideoCompress(videoRequest());
+
+      expect(served.status).toBe(200);
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error).toBe('Your current plan allows videos up to 50MB.');
+      expect(dbConnect).not.toHaveBeenCalled();
+    } finally {
+      dbConnect.mockResolvedValue(true);
+    }
+  });
+});
+
+describe('video-compress when busy', () => {
+  it('answers 503 with Retry-After while two encodes run, and compresses again once they finish', async () => {
+    const gate = deferred();
+    compressVideo.mockImplementation(async () => {
+      await gate.released;
+      return encoded(Buffer.from('mp4'));
+    });
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
+
+    const running = [handleVideoCompress(videoRequest()), handleVideoCompress(videoRequest())];
+    await untilCalled(compressVideo, 2);
+
+    const refused = await handleVideoCompress(videoRequest());
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get('Retry-After')).toBe('5');
+    expect((await refused.json()).error).toBe('Compress Video is busy right now. Please try again in a few seconds.');
+    expect(compressVideo).toHaveBeenCalledTimes(2);
+
+    gate.release();
+    expect((await Promise.all(running)).map((res) => res.status)).toEqual([200, 200]);
+    expect((await handleVideoCompress(videoRequest())).status).toBe(200);
+  });
+
+  it('frees its slot when an encode fails', async () => {
+    compressVideo.mockRejectedValueOnce(new Error('ffmpeg crashed')).mockRejectedValueOnce(new ClientError('bad'));
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
+    await handleVideoCompress(videoRequest());
+    await handleVideoCompress(videoRequest());
+
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4'))).mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+    const statuses = await Promise.all([handleVideoCompress(videoRequest()), handleVideoCompress(videoRequest())]);
+
+    expect(statuses.map((res) => res.status)).toEqual([200, 200]);
+  });
+});
+
 describe('video-compress response', () => {
   it("hands the request's abort signal to the encode", async () => {
     mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
