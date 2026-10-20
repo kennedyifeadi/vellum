@@ -38,6 +38,8 @@ jest.mock('@/lib/drive/resolveFiles', () => ({
 }));
 
 const compressVideo = jest.fn();
+const MP4 = { extension: 'mp4', contentType: 'video/mp4' };
+const encoded = (bytes: Buffer) => ({ bytes, compressed: true, format: MP4 });
 jest.mock('@/lib/video/compress', () => ({
   compressVideo: (...args: any[]) => compressVideo(...args),
 }));
@@ -71,6 +73,7 @@ function videoRequest() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  compressVideo.mockReset();
   mockUserId = null;
   mockPlan = 'Free';
   mockResolvedFiles = [];
@@ -83,16 +86,16 @@ afterEach(() => {
 
 describe('video-compress route error handling', () => {
   it('compresses a valid video: 200, mp4 body returned unchanged', async () => {
-    const encoded = Buffer.from('fake-mp4-payload');
+    const encodedBytes = Buffer.from('fake-mp4-payload');
     mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
-    compressVideo.mockResolvedValueOnce(encoded);
+    compressVideo.mockResolvedValueOnce(encoded(encodedBytes));
 
     const res = await handleVideoCompress(videoRequest());
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
     const body = Buffer.from(await res.arrayBuffer());
-    expect(body.equals(encoded)).toBe(true);
+    expect(body.equals(encodedBytes)).toBe(true);
   });
 
   it('returns 400, not 500, for a 0-byte file', async () => {
@@ -142,7 +145,7 @@ describe('video-compress route error handling', () => {
   it('does not turn a history-write failure into a 500', async () => {
     mockUserId = '507f1f77bcf86cd799439011';
     mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
-    compressVideo.mockResolvedValueOnce(Buffer.from('fake-mp4-payload'));
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('fake-mp4-payload')));
     conversionCreate.mockRejectedValueOnce(new Error('mongo timeout'));
 
     const res = await handleVideoCompress(videoRequest());
@@ -156,9 +159,9 @@ describe('video-compress route error handling', () => {
   it('records the compression as history-only: no stored output', async () => {
     mockUserId = '507f1f77bcf86cd799439011';
     const input = Buffer.from('raw-input');
-    const encoded = Buffer.from('fake-mp4-payload');
+    const encodedBytes = Buffer.from('fake-mp4-payload');
     mockResolvedFiles = [fakeFile(input)];
-    compressVideo.mockResolvedValueOnce(encoded);
+    compressVideo.mockResolvedValueOnce(encoded(encodedBytes));
     const startedAt = Date.now();
 
     const res = await handleVideoCompress(videoRequest());
@@ -171,11 +174,66 @@ describe('video-compress route error handling', () => {
       fileName: 'clip.mp4',
       fileSize: input.length,
       status: 'Completed',
-      metadata: { pages: 1, processedSize: encoded.length },
+      metadata: { pages: 1, processedSize: encodedBytes.length },
     });
     expect(record.outputUrl).toBeUndefined();
     expect(record.diskFileName).toBeUndefined();
     expectStandardRetention(record, startedAt);
     expect(mockStoragePut).not.toHaveBeenCalled();
+  });
+});
+
+describe('video-compress encode limits', () => {
+  it('gives each plan its own length cap and deadline', async () => {
+    mockUserId = '507f1f77bcf86cd799439011';
+    mockPlan = 'Pro';
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+
+    await handleVideoCompress(videoRequest());
+
+    expect(compressVideo.mock.calls[0][0]).toMatchObject({ maxDurationSeconds: 30 * 60 });
+    expect(compressVideo.mock.calls[0][0].encodeDeadlineMs).toBeGreaterThan(0);
+  });
+});
+
+describe('video-compress response', () => {
+  it("hands the request's abort signal to the encode", async () => {
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+    const req = videoRequest();
+
+    await handleVideoCompress(req);
+
+    expect(compressVideo.mock.calls[0][0].signal).toBe(req.signal);
+  });
+
+  it('returns an original that was not made smaller with its own type, name and a 0% saving', async () => {
+    const original = Buffer.from('original-mov-bytes');
+    mockResolvedFiles = [fakeFile(original, 'holiday.mov', 'video/quicktime')];
+    compressVideo.mockResolvedValueOnce({
+      bytes: original,
+      compressed: false,
+      format: { extension: 'mov', contentType: 'video/quicktime' },
+    });
+
+    const res = await handleVideoCompress(videoRequest());
+
+    expect(res.headers.get('Content-Type')).toBe('video/quicktime');
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="compressed_holiday.mov"');
+    expect(res.headers.get('X-Original-Size')).toBe(String(original.length));
+    expect(res.headers.get('X-Compressed-Size')).toBe(String(original.length));
+    expect(res.headers.get('X-Saved-Percent')).toBe('0');
+  });
+
+  it('records nothing when the response cannot be built', async () => {
+    mockUserId = '507f1f77bcf86cd799439011';
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'), '動画.mp4')];
+    compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+
+    const res = await handleVideoCompress(videoRequest());
+
+    expect(res.status).toBe(500);
+    expect(conversionCreate).not.toHaveBeenCalled();
   });
 });

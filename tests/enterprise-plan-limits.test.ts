@@ -68,23 +68,13 @@ jest.mock('@/lib/image/to-pdf', () => ({
   convertImagesToPdf: jest.fn().mockResolvedValue(Buffer.from('image-pdf')),
 }));
 
-jest.mock('ffmpeg-static', () => ({ __esModule: true, default: '/fake/ffmpeg' }));
-
-jest.mock('fluent-ffmpeg', () => {
-  const chain: any = {
-    videoCodec: () => chain,
-    outputOptions: () => chain,
-    size: () => chain,
-    on: (event: string, cb: (...a: any[]) => void) => {
-      if (event === 'end') setImmediate(cb);
-      return chain;
-    },
-    save: () => chain,
-  };
-  const fn: any = jest.fn(() => chain);
-  fn.setFfmpegPath = jest.fn();
-  return { __esModule: true, default: fn };
-});
+jest.mock('@/lib/video/compress', () => ({
+  compressVideo: jest.fn().mockResolvedValue({
+    bytes: Buffer.from('compressed-video'),
+    compressed: true,
+    format: { extension: 'mp4', contentType: 'video/mp4' },
+  }),
+}));
 
 // Stands in for the extraction worker, which refuses a PDF over the page cap it is given.
 jest.mock('@/lib/convert/find-pdf-extraction', () => ({
@@ -107,7 +97,6 @@ jest.mock('pdf-lib', () => ({
   rgb: jest.fn().mockReturnValue({}),
 }));
 
-import fs from 'fs';
 import { POST as handleSplitPdf } from '../app/api/convert/split-pdf/route';
 import { POST as handleMergePdf } from '../app/api/convert/merge-pdf/route';
 import { POST as handleImageToPdf } from '../app/api/convert/image-to-pdf/route';
@@ -131,10 +120,6 @@ function postReq(path: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined as any);
-  jest.spyOn(fs, 'readFileSync').mockReturnValue(Buffer.from('compressed-video'));
-  jest.spyOn(fs, 'existsSync').mockReturnValue(true);
-  jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined as any);
   mockUserId = VALID_HEX_ENTERPRISE;
   mockPlan = 'Enterprise';
   mockResolvedFiles = [];
