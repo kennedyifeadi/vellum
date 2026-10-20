@@ -19,11 +19,6 @@ import {
   PDF_TOO_COMPLEX_MESSAGE,
 } from '@/lib/convert/pdf-to-docx-limits';
 
-// The extraction deadline (25s at most) and the DOCX build the page and line caps allow
-// (about 2.5s at most) bound a request well inside this; it is the platform's own backstop
-// and only takes effect on Vercel, where 60s is the longest duration every plan accepts.
-export const maxDuration = 60;
-
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
     ? page.lines.map(line => new TextRun(line))
