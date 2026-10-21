@@ -45,6 +45,11 @@ export const MAX_CONCURRENT_VIDEO_ENCODES = 2;
 // ffmpeg's automatic choice this made one encode 1.9x slower and two at once 1.4x slower.
 export const FFMPEG_THREADS = 2;
 
+// x264's veryfast preset: with two encodes at once it was 2.0-2.7x as fast as the default
+// (medium) at 1080p, its files 7-17% smaller on camera video and within 3% on screen
+// recordings and already compressed video, and SSIM 0.001-0.003 lower (#115).
+export const X264_PRESET = 'veryfast';
+
 export const COMPRESS_VIDEO_BUSY_MESSAGE = pdfToolBusyMessage('Compress Video');
 
 export const VIDEO_TOO_SLOW_MESSAGE =

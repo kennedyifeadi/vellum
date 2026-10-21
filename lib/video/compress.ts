@@ -8,6 +8,7 @@ import {
   FFMPEG_THREADS,
   PROBE_DEADLINE_MS,
   VIDEO_TOO_SLOW_MESSAGE,
+  X264_PRESET,
 } from '@/lib/convert/video-compress-limits';
 import { assertInsideDir } from '@/lib/paths';
 import { FfmpegExitError, FfmpegStoppedError, runFfmpeg } from '@/lib/video/ffmpeg';
@@ -158,6 +159,7 @@ function encodeArguments(inputPath: string, outputPath: string, video: NonNullab
     '-filter_threads', '1',
     '-vf', `scale=${target.width}:${target.height},format=yuv420p`,
     '-c:v', 'libx264',
+    '-preset', X264_PRESET,
     '-profile:v', 'high',
     '-crf', String(crf),
     '-threads', threads,

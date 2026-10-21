@@ -3,6 +3,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { compressVideo, outputDimensions } from '../lib/video/compress';
 import { ClientError } from '../lib/convert/errors';
+import { X264_PRESET } from '../lib/convert/video-compress-limits';
 import * as ffmpegRunner from '../lib/video/ffmpeg';
 import { FfmpegExitError } from '../lib/video/ffmpeg';
 import { makeVideo, trackSpawnedProcesses } from './helpers/videoSamples';
@@ -123,6 +124,13 @@ describe('compressVideo (lib/video/compress.ts)', () => {
     expect(error).toBeInstanceOf(ClientError);
     expect(error.message).toMatch(/cancelled/i);
     expect(encode.exitCode !== null || encode.signalCode !== null).toBe(true);
+  });
+
+  it('encodes with the chosen x264 preset', async () => {
+    await compressVideo({ inputBuffer: sampleVideo, fileName: 'clip.mp4', crf: 28, ...GENEROUS_LIMITS });
+
+    const [encode] = processes.encodes();
+    expect(encode.args[encode.args.indexOf('-preset') + 1]).toBe(X264_PRESET);
   });
 
   describe('client-supplied file names never reach the filesystem', () => {
