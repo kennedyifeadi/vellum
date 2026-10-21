@@ -1,6 +1,8 @@
 // Sends one ordinary guest request to each tool family of a running server and checks the
-// output's format. Run from the repository root (it uses the app's own dependencies to
-// generate inputs): node scripts/container-smoke.mjs http://localhost:3000
+// output's format. With --heavy it then sends two image jobs at the pixel cap at once, to
+// measure the server's memory under its heaviest in-memory work. Run from the repository
+// root (it uses the app's own dependencies to generate inputs):
+//   node scripts/container-smoke.mjs http://localhost:3000 [--heavy]
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -11,6 +13,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { Document, Packer, Paragraph } from 'docx';
 
 const baseUrl = process.argv[2] ?? 'http://localhost:3000';
+const heavy = process.argv.includes('--heavy');
 
 const SIGNATURES = {
   pdf: Buffer.from('%PDF-'),
@@ -20,6 +23,11 @@ const SIGNATURES = {
 
 async function jpeg() {
   return sharp({ create: { width: 320, height: 240, channels: 3, background: '#3a7bd5' } }).jpeg().toBuffer();
+}
+
+// 7000 x 7000 is 49 MP, just under MAX_IMAGE_PIXELS; one flat colour keeps the file small.
+async function pngAtPixelCap() {
+  return sharp({ create: { width: 7000, height: 7000, channels: 3, background: '#88aa44' } }).png().toBuffer();
 }
 
 async function textPdf() {
@@ -100,8 +108,7 @@ const checks = [
   }), (bytes) => bytes.subarray(4, 8).toString('latin1') === 'ftyp'],
 ];
 
-let failed = 0;
-for (const [name, send, expected] of checks) {
+async function runCheck([name, send, expected]) {
   const started = Date.now();
   try {
     const res = await send();
@@ -111,15 +118,36 @@ for (const [name, send, expected] of checks) {
       : bytes.subarray(0, SIGNATURES[expected].length).equals(SIGNATURES[expected]));
     const detail = ok ? `${bytes.length} bytes` : bytes.subarray(0, 300).toString('utf8');
     console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: HTTP ${res.status}, ${Date.now() - started} ms, ${detail}`);
-    if (!ok) failed++;
+    return ok;
   } catch (error) {
     console.log(`FAIL ${name}: ${error.message}`);
-    failed++;
+    return false;
   }
 }
 
+async function heavyChecks() {
+  const png = await pngAtPixelCap();
+  const pair = (name, path, check) => [1, 2].map((n) => [`${name} at the pixel cap (${n} of 2, concurrent)`, async () =>
+    fetch(`${baseUrl}${path}`, { method: 'POST', body: form('images', [['large.png', png, 'image/png']]) }), check]);
+  return [
+    pair('image-to-pdf', '/api/convert/image-to-pdf', 'pdf'),
+    pair('image-compress', '/api/convert/image-compress', (bytes) => bytes.length > 0),
+  ];
+}
+
+let failed = 0;
+for (const check of checks) {
+  if (!(await runCheck(check))) failed++;
+}
+const heavyGroups = heavy ? await heavyChecks() : [];
+for (const group of heavyGroups) {
+  const results = await Promise.all(group.map(runCheck));
+  failed += results.filter((ok) => !ok).length;
+}
+
+const total = checks.length + heavyGroups.flat().length;
 if (failed) {
-  console.log(`${failed} of ${checks.length} smoke checks failed`);
+  console.log(`${failed} of ${total} smoke checks failed`);
   process.exit(1);
 }
-console.log(`All ${checks.length} smoke checks passed`);
+console.log(`All ${total} smoke checks passed`);

@@ -45,13 +45,28 @@ jobs:
           echo "Server did not answer /api/health within 60 seconds"
           exit 1
 
+      - name: Memory at idle
+        run: |
+          current=$(docker exec app cat /sys/fs/cgroup/memory.current)
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.current after start: $current bytes; memory.peak: $peak bytes"
+
       - name: Smoke-test each tool family
         run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000
 
-      - name: Report container memory
+      - name: Memory after one request per tool
         run: |
-          echo "Peak memory of the app container (cgroup memory.peak, bytes):"
-          docker exec app cat /sys/fs/cgroup/memory.peak
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.peak after the smoke requests: $peak bytes"
+
+      # Two Image to PDF jobs and then two Compress Image jobs at the pixel cap, concurrently.
+      - name: Heavy image jobs
+        run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000 --heavy
+
+      - name: Memory after the heavy image jobs
+        run: |
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.peak after the heavy jobs: $peak bytes"
           docker stats --no-stream app
 
       - name: Stop gracefully on SIGTERM
