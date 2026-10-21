@@ -30,13 +30,27 @@ jobs:
       - name: Run the test suite in the build stage
         run: docker run --rm vellum-build npm test
 
+      # Reports whether Chromium starts with its sandbox in a container on this runner. It
+      # does not here (the runner refuses the user namespaces it needs), which says nothing
+      # about Railway: the first real deployment must check it there.
+      - name: Chromium sandbox check (report only)
+        run: |
+          docker run --rm vellum node -e '
+            require("puppeteer").launch({ headless: true, args: ["--disable-dev-shm-usage"] })
+              .then((browser) => { console.log("Sandboxed Chromium started"); return browser.close(); })
+              .catch((error) => console.log("Sandboxed Chromium did not start: " +
+                (error.message.split("\n").find((line) => line.includes("sandbox")) || error.message)));
+          '
+
       # Placeholder values, not secrets: guest conversions never use them, but the proxy
-      # reads NEXTAUTH_SECRET on every request. No database is configured.
+      # reads NEXTAUTH_SECRET on every request. No database is configured. The sandbox is
+      # turned off explicitly because of the check above, so the PDF routes can be tested.
       - name: Start the runtime image
         run: |
           docker run --detach --name app --publish 3000:3000 \
             --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
             --env JWT_SECRET=ci-placeholder-not-a-secret \
+            --env CHROMIUM_DISABLE_SANDBOX=true \
             vellum
           for i in $(seq 1 60); do
             if curl --silent --fail http://localhost:3000/api/health; then echo; exit 0; fi
