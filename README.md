@@ -130,12 +130,11 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    - `NEXT_PUBLIC_GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_API_KEY` if the Drive picker is
      used: the Dockerfile declares them as build arguments, which is how Railway passes a
      variable to the build.
-   - `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=180`. Railway's default is 0: the old deployment
+   - `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=300`. Railway's default is 0: the old deployment
      is killed as soon as it gets SIGTERM, which cuts off conversions in progress
-     ([Deployments reference](https://docs.railway.com/deployments/reference)). 180
-     seconds covers the longest deadline of any PDF, image or Chromium job (Image to PDF on
-     Enterprise, 120 seconds) with time for the upload; video encodes longer than that are
-     cut off, as they are by Railway's own request limits (see Limits).
+     ([Deployments reference](https://docs.railway.com/deployments/reference)). 300
+     seconds covers Compress Video's 4-minute time budget (see Limits), the longest of any
+     job, once its upload has arrived.
    - Do not set `CHROMIUM_DISABLE_SANDBOX` unless the first deployment shows it is needed.
 2. **Healthcheck.** Set the service's healthcheck path to `/api/health`. Railway calls it
    only while starting a deployment, from the hostname `healthcheck.railway.app`
@@ -181,11 +180,40 @@ video uploads. Watch the memory graph during the first weeks and adjust.
   (`experimental.proxyClientMaxBodySize` in `next.config.ts`). Railway documents no body
   size limit, but a request body must finish uploading within 5 minutes
   ([Specs & Limits](https://docs.railway.com/networking/public-networking/specs-and-limits)),
-  which a 500 MB upload meets only above about 14 Mbit/s.
+  which a 500 MB upload meets only above about 14 Mbit/s. The video size caps (50 / 100 /
+  500 / 500 MB) are unchanged, so on a slower connection a large Pro or Enterprise upload
+  can be cut off before the app sees it.
 - **Request duration.** Railway closes a request after 5 minutes without data transferred,
   and after 15 minutes in any case (same page). Compress Video returns nothing until the
-  encode finishes, and its encode deadlines are 25 to 300 minutes depending on the plan,
-  so any encode longer than 5 minutes will fail on Railway.
+  encode finishes, so until it runs as a background job (#115) every accepted video must
+  be probed, encoded and ready within a **4-minute time budget**, for every plan
+  (`VIDEO_TIME_BUDGET_MS` in `lib/convert/video-compress-limits.ts`):
+  - It encodes with x264's `veryfast` preset, 2-2.7x as fast as the default at 1080p, with
+    files of about the same size or smaller.
+  - Before encoding, it estimates the encode time from the probe (frames, pixels decoded,
+    pixels encoded at the chosen resolution) and the measured cost in `ENCODE_COST`, and
+    refuses the video with a 400 if 1.5 times the estimate does not fit. The message says
+    roughly how long a video at that resolution and frame rate can be, and suggests 720p or
+    480p when that helps. Nothing is encoded for a refused video.
+  - The plan length caps (5 / 15 / 30 / 60 minutes) still apply, but only bind for small
+    videos, such as 480p30 for a guest.
+  - If an estimate is wrong, the encode is killed when the budget runs out and the user is
+    told the video could not be compressed in time.
+
+  With the cost measured on a 4-core laptop, the longest video accepted is:
+
+  | Source | fps | Original | 720p | 480p |
+  | --- | --- | --- | --- | --- |
+  | 4K | 30 | 16 s | 40 s | 45 s |
+  | 1440p | 30 | 37 s | 1.2 min | 1.5 min |
+  | 1080p | 30 | 1.1 min | 1.7 min | 2.4 min |
+  | 1080p | 60 | 33 s | 52 s | 1.2 min |
+  | 720p | 30 | 2.5 min | 2.5 min | 3.9 min |
+  | 720p | 60 | 1.2 min | 1.2 min | 2.0 min |
+  | 480p | 30 | 5.6 min (guests: 5) | same | same |
+
+  These scale with the server's speed: **re-measure `ENCODE_COST` on Railway** (see the
+  checklist).
 
 ### First deployment checklist
 
@@ -200,6 +228,11 @@ video uploads. Watch the memory graph during the first weeks and adjust.
    client and check that it does not reset the limit.
 6. Upload a large file (for example a 400 MB video on a Pro account) and see whether it
    completes inside Railway's 5-minute upload window.
-7. Redeploy while a conversion is running and check that it completes (draining time).
-8. Check memory and CPU under real use against the sizing above.
-9. Confirm files land in, and are served from, the R2 bucket.
+7. Re-measure Compress Video's cost on Railway's CPU and update `ENCODE_COST` in
+   `lib/convert/video-compress-limits.ts`: as a guest, time two 1080p30 uploads at once
+   (Original, High quality) and divide each encode's seconds by its megapixel-frames. Then
+   check that a clip just under the new limit finishes within 4 minutes while a second
+   encode runs, and that one just over it is refused at once.
+8. Redeploy while a conversion is running and check that it completes (draining time).
+9. Check memory and CPU under real use against the sizing above.
+10. Confirm files land in, and are served from, the R2 bucket.
