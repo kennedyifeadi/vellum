@@ -83,12 +83,23 @@ jobs:
           echo "memory.peak after the heavy jobs: $peak bytes"
           docker stats --no-stream app
 
+      # SIGTERM arrives while an HTML to PDF render that takes about 3 seconds is running;
+      # that request must still complete before the server exits.
       - name: Stop gracefully on SIGTERM
         run: |
+          echo '<script>const t = Date.now(); while (Date.now() - t < 3000) {}</script><p>slow</p>' > slow.html
+          curl --silent --output in-flight.pdf --write-out '%{http_code}' \
+            --form 'html=@slow.html;type=text/html' \
+            http://localhost:3000/api/convert/html-to-pdf > in-flight.status &
+          sleep 1
           started=$(date +%s)
           docker stop --time 30 app
+          wait
           echo "Stopped in $(( $(date +%s) - started ))s with exit code $(docker inspect app --format '{{.State.ExitCode}}')"
+          echo "In-flight request finished with HTTP $(cat in-flight.status)"
           test "$(docker inspect app --format '{{.State.ExitCode}}')" = 0
+          test "$(cat in-flight.status)" = 200
+          head -c 5 in-flight.pdf | grep -q '%PDF-'
 
       - name: Server log
         if: always()
