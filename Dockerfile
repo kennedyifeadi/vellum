@@ -22,9 +22,12 @@ ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer \
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-# Postinstall scripts fetch the Linux ffmpeg (ffmpeg-static) and Chrome (puppeteer) at the
-# versions package-lock.json pins.
-RUN npm ci
+# Postinstall scripts fetch Chrome (puppeteer, at the version package-lock.json pins) and a
+# static ffmpeg (ffmpeg-static). Its release for this package version, b6.1.1, is FFmpeg
+# 7.0.2 on Linux but 6.1.1 on Windows; the checksum pins the Linux binary's exact bytes.
+RUN npm ci \
+ && echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  node_modules/ffmpeg-static/ffmpeg" \
+    | sha256sum --check -
 
 # Has the full dependency tree and sources: CI runs the test suite in this stage.
 FROM deps AS build
