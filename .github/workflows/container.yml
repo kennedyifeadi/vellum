@@ -1,0 +1,66 @@
+name: Container
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The build stage runs `next build` with no MONGODB_URI or other configuration.
+      - name: Build the build stage
+        run: docker build --target build --tag vellum-build .
+
+      - name: Build the runtime image
+        run: docker build --tag vellum .
+
+      - name: Report image size
+        run: |
+          docker image ls vellum
+          docker image inspect vellum --format 'Runtime image: {{.Size}} bytes'
+
+      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need.
+      - name: Run the test suite in the build stage
+        run: docker run --rm vellum-build npm test
+
+      # Placeholder values, not secrets: guest conversions never use them, but the proxy
+      # reads NEXTAUTH_SECRET on every request. No database is configured.
+      - name: Start the runtime image
+        run: |
+          docker run --detach --name app --publish 3000:3000 \
+            --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
+            --env JWT_SECRET=ci-placeholder-not-a-secret \
+            vellum
+          for i in $(seq 1 60); do
+            if curl --silent --fail http://localhost:3000/api/health; then echo; exit 0; fi
+            sleep 1
+          done
+          echo "Server did not answer /api/health within 60 seconds"
+          exit 1
+
+      - name: Smoke-test each tool family
+        run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000
+
+      - name: Report container memory
+        run: |
+          echo "Peak memory of the app container (cgroup memory.peak, bytes):"
+          docker exec app cat /sys/fs/cgroup/memory.peak
+          docker stats --no-stream app
+
+      - name: Stop gracefully on SIGTERM
+        run: |
+          started=$(date +%s)
+          docker stop --time 30 app
+          echo "Stopped in $(( $(date +%s) - started ))s with exit code $(docker inspect app --format '{{.State.ExitCode}}')"
+          test "$(docker inspect app --format '{{.State.ExitCode}}')" = 0
+
+      - name: Server log
+        if: always()
+        run: docker logs app || true
