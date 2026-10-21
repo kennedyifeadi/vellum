@@ -78,6 +78,7 @@ describe('runFfmpeg', () => {
     expect(log.length).toBeLessThanOrEqual(64 * 1024 + 8 * 1024 + 16);
     expect(log).toMatch(/\[\.\.\.\]/);
     expect(log).toMatch(/Input #0, lavfi/);
-    expect(log.slice(-8 * 1024)).toMatch(/video:\d+kB/);
+    // FFmpeg 6 (the Windows build) writes kB, FFmpeg 7 (the Linux build) KiB.
+    expect(log.slice(-8 * 1024)).toMatch(/video:\d+(?:kB|KiB)/);
   });
 });
