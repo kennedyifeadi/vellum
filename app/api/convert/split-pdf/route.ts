@@ -53,6 +53,15 @@ export async function POST(req: NextRequest) {
       if (!firstEntry) throw new Error('splitPdf returned an empty result set');
       const [fileName, buffer] = firstEntry;
 
+      // Built before anything is recorded, so a response that cannot be built leaves no
+      // history row behind.
+      const response = new NextResponse(buffer as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': attachmentDisposition(fileName, 'split_document.pdf'),
+        },
+      });
+
       if (userId) {
         try {
           await saveConversionRecord(userId, 'Split PDF', fileName, Buffer.from(buffer));
@@ -61,12 +70,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return new NextResponse(buffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': attachmentDisposition(fileName, 'split_document.pdf'),
-        },
-      });
+      return response;
     }
 
     if (splitPdfBuffers.size > 1) {
@@ -78,6 +82,15 @@ export async function POST(req: NextRequest) {
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
+      // Built before anything is recorded, so a response that cannot be built leaves no
+      // history row behind.
+      const response = new NextResponse(zipBuffer as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="split_documents.zip"`,
+        },
+      });
+
       if (userId) {
         try {
           const originalFileName = file?.name ? `split_${file.name.replace('.pdf', '')}.zip` : 'split_documents.zip';
@@ -87,12 +100,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return new NextResponse(zipBuffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Disposition': `attachment; filename="split_documents.zip"`,
-        },
-      });
+      return response;
     }
 
     throw new Error('splitPdf returned no documents');

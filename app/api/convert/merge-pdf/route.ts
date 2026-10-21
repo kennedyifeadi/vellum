@@ -58,6 +58,15 @@ export async function POST(req: NextRequest) {
       pdfBuffers,
     });
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(mergedPdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="merged.pdf"',
+      },
+    });
+
     if (userId) {
       try {
         const originalFileName = ensureExtension(files[0]?.name ? `merged_${files[0].name}` : 'merged.pdf', '.pdf');
@@ -67,12 +76,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(mergedPdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="merged.pdf"',
-      },
-    });
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to merge PDFs.');
   }

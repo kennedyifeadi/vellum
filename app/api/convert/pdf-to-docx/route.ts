@@ -90,6 +90,15 @@ export async function POST(req: NextRequest) {
     const docxBuffer = await Packer.toBuffer(doc);
     const outputFileName = `${file.name.replace(/\.[^/.]+$/, "")}.docx`;
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(docxBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
+      },
+    });
+
     if (userId) {
       try {
         await saveConversionRecord(userId, 'PDF to DOCX', outputFileName, docxBuffer, {
@@ -101,12 +110,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(docxBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
-      },
-    });
+    return response;
 
   } catch (error) {
     if (isBusy(error)) {

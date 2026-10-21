@@ -56,6 +56,15 @@ export async function POST(req: NextRequest) {
 
     const pdfBuffer = await convertHtmlToPdf({ htmlContent, url });
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.pdf'),
+      },
+    });
+
     if (userId) {
       try {
         await saveConversionRecord(userId, 'HTML to PDF', ensureExtension(outputFileName, '.pdf'), Buffer.from(pdfBuffer));
@@ -64,12 +73,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.pdf'),
-      },
-    });
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to convert HTML to PDF.');
   }

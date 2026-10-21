@@ -45,6 +45,15 @@ export async function POST(req: NextRequest) {
       password,
     });
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(lockedPdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="locked.pdf"',
+      },
+    });
+
     if (userId) {
       try {
         const originalFileName = ensureExtension(file?.name ? `locked_${file.name}` : 'locked.pdf', '.pdf');
@@ -54,12 +63,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(lockedPdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="locked.pdf"',
-      },
-    });
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to lock PDF.');
   }

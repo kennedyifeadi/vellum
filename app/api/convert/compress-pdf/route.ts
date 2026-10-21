@@ -57,6 +57,21 @@ export async function POST(req: NextRequest) {
 
   const { buffer: compressedPdfBuffer, originalSize, compressedSize } = compressed;
 
+  const savedBytes = originalSize - compressedSize;
+  const savedPercent = originalSize > 0 ? Math.max(0, Math.round((savedBytes / originalSize) * 100)) : 0;
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = new NextResponse(compressedPdfBuffer as unknown as BodyInit, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': attachmentDisposition(`compressed_${file.name || 'document.pdf'}`, 'compressed.pdf'),
+      'X-Original-Size': String(originalSize),
+      'X-Compressed-Size': String(compressedSize),
+      'X-Saved-Percent': String(savedPercent),
+    },
+  });
+
   try {
     if (userId) {
       const originalFileName = ensureExtension(file?.name ? `compressed_${file.name}` : 'compressed.pdf', '.pdf');
@@ -66,16 +81,5 @@ export async function POST(req: NextRequest) {
     console.error('Failed to record Compress PDF conversion:', recordError);
   }
 
-  const savedBytes = originalSize - compressedSize;
-  const savedPercent = originalSize > 0 ? Math.max(0, Math.round((savedBytes / originalSize) * 100)) : 0;
-
-  return new NextResponse(compressedPdfBuffer as unknown as BodyInit, {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': attachmentDisposition(`compressed_${file.name || 'document.pdf'}`, 'compressed.pdf'),
-      'X-Original-Size': String(originalSize),
-      'X-Compressed-Size': String(compressedSize),
-      'X-Saved-Percent': String(savedPercent),
-    },
-  });
+  return response;
 }

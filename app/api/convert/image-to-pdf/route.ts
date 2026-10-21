@@ -61,6 +61,15 @@ export async function POST(req: NextRequest) {
 
     const pdfBuffer = await convertWithinPlan(imageBuffers, plan);
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="converted_images.pdf"',
+      },
+    });
+
     if (userId) {
       try {
         const recordedName = `${bareFileStem(files[0].name, 'converted_images')}.pdf`;
@@ -70,12 +79,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="converted_images.pdf"',
-      },
-    });
+    return response;
   } catch (error) {
     if (isBusy(error)) {
       return busyResponse(IMAGE_TO_PDF_BUSY_MESSAGE);

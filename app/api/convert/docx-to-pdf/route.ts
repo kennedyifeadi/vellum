@@ -74,6 +74,15 @@ export async function POST(req: NextRequest) {
 
     const pdfBuffer = await convertDocxToPdf({ docxBuffer });
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
+      },
+    });
+
     if (userId) {
       try {
         const originalFileName = file.name.replace(/\.[^/.]+$/, '') + '.pdf';
@@ -83,12 +92,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
-      },
-    });
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to convert DOCX to PDF.');
   }

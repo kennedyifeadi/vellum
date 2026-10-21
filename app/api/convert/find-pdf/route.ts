@@ -117,6 +117,15 @@ export async function POST(req: NextRequest) {
     const modifiedPdfBytes = await pdfLibDoc.save();
     const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = NextResponse.json({
+      success: true,
+      pdfBase64,
+      matches: isPro ? matches : [],
+      matchCount: totalMatchCount
+    });
+
     if (userId) {
       try {
         await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
@@ -129,12 +138,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      pdfBase64,
-      matches: isPro ? matches : [],
-      matchCount: totalMatchCount
-    });
+    return response;
 
   } catch (error) {
     if (isBusy(error)) {
