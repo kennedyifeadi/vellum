@@ -16,6 +16,12 @@ function isChromiumSandboxDisabled(): boolean {
 export function launchBrowser(): Promise<Browser> {
   return puppeteer.launch({
     headless: true,
+    // By default puppeteer kills its browsers as soon as Node gets one of these signals,
+    // failing every render in progress. next start's own shutdown waits for requests to
+    // finish, and each render closes its browser when it ends.
+    handleSIGTERM: false,
+    handleSIGINT: false,
+    handleSIGHUP: false,
     args: isChromiumSandboxDisabled() ? [...BASE_ARGS, ...NO_SANDBOX_ARGS] : BASE_ARGS,
   });
 }

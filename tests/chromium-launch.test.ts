@@ -39,6 +39,15 @@ describe('launchBrowser', () => {
     expect(launchArgs()).toEqual(expect.arrayContaining(['--no-sandbox', '--disable-setuid-sandbox']));
   });
 
+  it('leaves shutdown signals to the server, so renders in progress can finish', async () => {
+    await launchBrowser();
+    expect(launch.mock.calls[0][0]).toMatchObject({
+      handleSIGTERM: false,
+      handleSIGINT: false,
+      handleSIGHUP: false,
+    });
+  });
+
   async function docxBuffer(): Promise<Buffer> {
     const docx = await import('docx');
     return docx.Packer.toBuffer(new docx.Document({ sections: [{ children: [new docx.Paragraph('x')] }] }));
