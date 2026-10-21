@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertHtmlToPdf } from '@/lib/html/to-pdf';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
-import { ClientError, handleConvertError } from '@/lib/convert/errors';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
+import { handleConvertError } from '@/lib/convert/errors';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
-    }
+    const { userId, plan } = await resolveCaller(req);
 
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
@@ -34,15 +27,14 @@ export async function POST(req: NextRequest) {
 
     if (contentType.includes('multipart/form-data')) {
       // File upload mode
-      const formData = await req.formData();
+      const budget = uploadBudget(maxSize, `Your current plan allows HTML files up to ${maxSize / (1024 * 1024)}MB.`);
+      const formData = await readMultipartForm(req, budget);
       const file = (await resolveFiles(formData, 'html'))[0] as File | null;
       if (!file) {
         return NextResponse.json({ error: 'No HTML file provided.' }, { status: 400 });
       }
       if (file.size > maxSize) {
-        throw new ClientError(
-          `Your current plan allows HTML files up to ${maxSize / (1024 * 1024)}MB.`,
-        );
+        throw budget.tooLarge(file.size);
       }
       htmlContent = await file.text();
       outputFileName = file.name.replace(/\.html?$/i, '.pdf');

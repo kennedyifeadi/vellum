@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import {
   assertFileCountWithinPlan,
@@ -12,11 +10,13 @@ import {
   conversionLimitsForPlan,
   IMAGE_TO_PDF_BUSY_MESSAGE,
   IMAGES_TOO_COMPLEX_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/image-to-pdf-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { WorkerJobError } from '@/lib/convert/worker-job';
 import { ImageToolBusyError } from '@/lib/image/image-jobs';
 import { bareFileStem } from '@/lib/paths';
+import { readMultipartForm } from '@/lib/http/read-upload';
 
 // The images are decoded in one of the image tools' slots, then assembled in one of the
 // PDF workers' slots; either can be full.
@@ -37,19 +37,13 @@ async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { userId, plan } = await resolveCaller(req);
+
+    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
     const files = await resolveFiles(formData, 'images');
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No image files provided.' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileCountWithinPlan(plan, files.length);

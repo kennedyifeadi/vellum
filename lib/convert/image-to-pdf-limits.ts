@@ -1,4 +1,5 @@
-import { assertImageCountWithinPlan, assertImageTotalSizeWithinPlan } from '@/lib/convert/image-limits';
+import { assertImageCountWithinPlan, assertImageTotalSizeWithinPlan, imageUploadBudget } from '@/lib/convert/image-limits';
+import type { UploadBudget } from '@/lib/http/read-upload';
 import { PDF_WORKER_LIMITS, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import type { WorkerLimits } from '@/lib/convert/worker-job';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
@@ -44,10 +45,14 @@ export function assertFileCountWithinPlan(plan: string | null | undefined, fileC
   assertImageCountWithinPlan(plan, fileCount, (maxFiles) => `Your current plan allows up to ${maxFiles} files per conversion.`);
 }
 
+function totalSizeCapMessage(maxMb: number): string {
+  return `Your current plan allows up to ${maxMb}MB of images per conversion.`;
+}
+
+export function uploadBudgetForPlan(plan: string | null | undefined): UploadBudget {
+  return imageUploadBudget(plan, totalSizeCapMessage);
+}
+
 export function assertTotalSizeWithinPlan(plan: string | null | undefined, fileSizes: number[]): void {
-  assertImageTotalSizeWithinPlan(
-    plan,
-    fileSizes,
-    (maxMb) => `Your current plan allows up to ${maxMb}MB of images per conversion.`,
-  );
+  assertImageTotalSizeWithinPlan(plan, fileSizes, totalSizeCapMessage);
 }

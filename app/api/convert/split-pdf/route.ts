@@ -1,18 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { splitPdf } from '@/lib/pdf/split';
 import JSZip from 'jszip';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { userId, plan } = await resolveCaller(req);
+
+    const maxSize = resolvePlanLimit(plan, {
+      guest: 25 * 1024 * 1024,
+      Basic: 50 * 1024 * 1024,
+      Pro: 100 * 1024 * 1024,
+      Enterprise: 500 * 1024 * 1024,
+    });
+    const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
+
+    const formData = await readMultipartForm(req, budget);
     const file = (await resolveFiles(formData, 'pdf'))[0] as File;
     const startPage = parseInt(formData.get('startPage') as string, 10) || 1;
     const endPage = parseInt(formData.get('endPage') as string, 10) || 1;
@@ -22,22 +31,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });
     }
 
-    const userId = await getAuthUserId(req);
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
-
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 25 * 1024 * 1024,
-      Basic: 50 * 1024 * 1024,
-      Pro: 100 * 1024 * 1024,
-      Enterprise: 500 * 1024 * 1024,
-    });
-
     if (file.size > maxSize) {
-      return NextResponse.json({
-        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`
-      }, { status: 400 });
+      throw budget.tooLarge(file.size);
     }
 
     const arrayBuffer = await file.arrayBuffer();

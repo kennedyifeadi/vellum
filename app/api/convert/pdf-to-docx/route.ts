@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -17,7 +15,9 @@ import {
   CONVERTER_BUSY_MESSAGE,
   extractionOptionsForPlan,
   PDF_TOO_COMPLEX_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/pdf-to-docx-limits';
+import { readMultipartForm } from '@/lib/http/read-upload';
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -64,20 +64,13 @@ function countLines(pages: ConvertiblePage[]): number {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
+    const { userId, plan } = await resolveCaller(req);
 
-    const formData = await req.formData();
+    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
     const file = (await resolveFiles(formData, 'pdf'))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });
-    }
-
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileSizeWithinPlan(plan, file.size);

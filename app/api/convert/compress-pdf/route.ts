@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { compressPdf } from '@/lib/pdf/compress';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 
 const COMPRESSION_LEVELS = ['low', 'medium', 'high'] as const;
 type CompressionLevel = (typeof COMPRESSION_LEVELS)[number];
@@ -18,7 +17,18 @@ export async function POST(req: NextRequest) {
   let userId: string | null = null;
 
   try {
-    const formData = await req.formData();
+    const caller = await resolveCaller(req);
+    userId = caller.userId;
+
+    const maxSize = resolvePlanLimit(caller.plan, {
+      guest: 25 * 1024 * 1024,
+      Basic: 50 * 1024 * 1024,
+      Pro: 100 * 1024 * 1024,
+      Enterprise: 500 * 1024 * 1024,
+    });
+    const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
+
+    const formData = await readMultipartForm(req, budget);
     file = (await resolveFiles(formData, 'pdf'))[0] as File;
 
     if (!file) {
@@ -33,25 +43,8 @@ export async function POST(req: NextRequest) {
     }
     const level: CompressionLevel = (rawLevel as CompressionLevel) || 'medium';
 
-    userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
-    }
-
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 25 * 1024 * 1024,
-      Basic: 50 * 1024 * 1024,
-      Pro: 100 * 1024 * 1024,
-      Enterprise: 500 * 1024 * 1024,
-    });
-
     if (file.size > maxSize) {
-      throw new ClientError(
-        `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`,
-      );
+      throw budget.tooLarge(file.size);
     }
 
     const pdfBuffer = Buffer.from(await file.arrayBuffer());

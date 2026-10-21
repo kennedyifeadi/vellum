@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -13,10 +11,12 @@ import {
   extractionOptionsForPlan,
   FIND_PDF_BUSY_MESSAGE,
   PDF_TOO_COMPLEX_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/find-pdf-limits';
 import { isBusy, PdfExtractionError } from '@/lib/convert/pdf-worker';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { findInItems } from '@/lib/pdf/findPdfStream';
+import { readMultipartForm } from '@/lib/http/read-upload';
 
 interface Match {
   page: number;
@@ -50,9 +50,9 @@ async function extractTextItems(data: Uint8Array, plan: string): Promise<PdfText
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
+    const { userId, plan } = await resolveCaller(req);
 
-    const formData = await req.formData();
+    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
     const file = (await resolveFiles(formData, 'pdf'))[0] as File;
     const searchTerm = (formData.get('searchTerm') as string)?.toLowerCase();
 
@@ -60,12 +60,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
     }
 
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
-    }
     const isPro = plan === 'Pro';
 
     assertFileSizeWithinPlan(plan, file.size);

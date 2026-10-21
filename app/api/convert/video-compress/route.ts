@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
+import { resolveCaller } from '@/lib/auth/caller';
 import { recordConversionHistory } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { compressVideo, type CompressedVideo } from '@/lib/video/compress';
@@ -12,7 +10,9 @@ import {
   assertFileSizeWithinPlan,
   COMPRESS_VIDEO_BUSY_MESSAGE,
   encodeLimitsForPlan,
+  uploadBudgetForPlan,
 } from '@/lib/convert/video-compress-limits';
+import { readMultipartForm } from '@/lib/http/read-upload';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
 function crfForQuality(quality: FormDataEntryValue | null): number {
@@ -34,21 +34,15 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { userId, plan } = await resolveCaller(req);
+
+    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
     const video = (await resolveFiles(formData, 'video'))[0] as File;
     const crf = crfForQuality(formData.get('quality'));
     const resolution = formData.get('resolution') as string || 'Original';
 
     if (!video) {
       return NextResponse.json({ error: 'No video provided' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileSizeWithinPlan(plan, video.size);

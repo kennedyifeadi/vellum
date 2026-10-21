@@ -1,5 +1,6 @@
 import { ClientError } from '@/lib/convert/errors';
 import { pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
+import type { UploadBudget } from '@/lib/http/read-upload';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -61,10 +62,18 @@ export function encodeLimitsForPlan(plan: string | null | undefined): VideoEncod
   };
 }
 
+export function uploadBudgetForPlan(plan: string | null | undefined): UploadBudget {
+  const maxBytes = resolvePlanLimit(plan, MAX_FILE_SIZE);
+  return {
+    maxBytes,
+    tooLarge: () => new ClientError(`Your current plan allows videos up to ${maxBytes / BYTES_PER_MB}MB.`),
+  };
+}
+
 export function assertFileSizeWithinPlan(plan: string | null | undefined, fileSize: number): void {
-  const maxFileSize = resolvePlanLimit(plan, MAX_FILE_SIZE);
-  if (fileSize > maxFileSize) {
-    throw new ClientError(`Your current plan allows videos up to ${maxFileSize / BYTES_PER_MB}MB.`);
+  const budget = uploadBudgetForPlan(plan);
+  if (fileSize > budget.maxBytes) {
+    throw budget.tooLarge(fileSize);
   }
 }
 

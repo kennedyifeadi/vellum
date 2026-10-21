@@ -1,4 +1,5 @@
 import { ClientError } from '@/lib/convert/errors';
+import type { UploadBudget } from '@/lib/http/read-upload';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -48,15 +49,23 @@ export function assertImageCountWithinPlan(
   }
 }
 
+export function imageUploadBudget(
+  plan: string | null | undefined,
+  capMessage: (maxMb: number) => string,
+): UploadBudget {
+  const maxBytes = resolvePlanLimit(plan, MAX_TOTAL_SIZE);
+  return { maxBytes, tooLarge: () => new ClientError(capMessage(maxBytes / BYTES_PER_MB)) };
+}
+
 export function assertImageTotalSizeWithinPlan(
   plan: string | null | undefined,
   fileSizes: number[],
   capMessage: (maxMb: number) => string,
 ): void {
-  const maxTotalSize = resolvePlanLimit(plan, MAX_TOTAL_SIZE);
+  const budget = imageUploadBudget(plan, capMessage);
   const totalSize = fileSizes.reduce((total, fileSize) => total + fileSize, 0);
-  if (totalSize > maxTotalSize) {
-    throw new ClientError(capMessage(maxTotalSize / BYTES_PER_MB));
+  if (totalSize > budget.maxBytes) {
+    throw budget.tooLarge(totalSize);
   }
 }
 

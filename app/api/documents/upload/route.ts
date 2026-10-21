@@ -9,6 +9,8 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { ClientError } from '@/lib/convert/errors';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +50,22 @@ export async function POST(req: NextRequest) {
   ]);
   const currentUsed = (convAgg[0]?.total ?? 0) + (docAgg[0]?.total ?? 0);
 
-  const formData = await req.formData();
+  let formData: FormData;
+  try {
+    formData = await readMultipartForm(
+      req,
+      uploadBudget(
+        Math.max(0, limitBytes - currentUsed),
+        'Storage limit reached. Cannot upload these files. Upgrade to Pro for more space.',
+        507,
+      ),
+    );
+  } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
   const files = formData.getAll('files') as File[];
 
   if (!files.length) return NextResponse.json({ error: 'No files provided' }, { status: 400 });

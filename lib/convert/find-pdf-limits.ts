@@ -1,5 +1,6 @@
 import { ClientError } from '@/lib/convert/errors';
 import type { PdfTextItemsOptions } from '@/lib/convert/find-pdf-extraction';
+import type { UploadBudget } from '@/lib/http/read-upload';
 import { PDF_WORKER_LIMITS, pdfTooComplexMessage, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
@@ -51,10 +52,18 @@ export function extractionOptionsForPlan(plan: string | null | undefined): PdfTe
   };
 }
 
+export function uploadBudgetForPlan(plan: string | null | undefined): UploadBudget {
+  const maxBytes = resolvePlanLimit(plan, MAX_FILE_SIZE);
+  return {
+    maxBytes,
+    tooLarge: () => new ClientError(`Your current plan allows PDFs up to ${maxBytes / BYTES_PER_MB}MB.`),
+  };
+}
+
 export function assertFileSizeWithinPlan(plan: string | null | undefined, fileSize: number): void {
-  const maxFileSize = resolvePlanLimit(plan, MAX_FILE_SIZE);
-  if (fileSize > maxFileSize) {
-    throw new ClientError(`Your current plan allows PDFs up to ${maxFileSize / BYTES_PER_MB}MB.`);
+  const budget = uploadBudgetForPlan(plan);
+  if (fileSize > budget.maxBytes) {
+    throw budget.tooLarge(fileSize);
   }
 }
 

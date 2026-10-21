@@ -1,28 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mergePdfs } from '@/lib/pdf/merge';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { userId, plan } = await resolveCaller(req);
+
+    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
+    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
+    const MAX_PRO_SIZE = 100 * 1024 * 1024;
+    const MAX_ENTERPRISE_SIZE = 250 * 1024 * 1024;
+
+    let maxSize = MAX_GUEST_SIZE;
+    if (plan === 'Enterprise') maxSize = MAX_ENTERPRISE_SIZE;
+    else if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
+    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+    const budget = uploadBudget(maxSize, `Your current plan allows merges totaling up to ${maxSize / (1024 * 1024)}MB.`);
+
+    const formData = await readMultipartForm(req, budget);
     const files = await resolveFiles(formData, 'pdfs');
 
     if (!files || files.length < 2) {
       return NextResponse.json({ error: 'Please provide at least two PDF files to merge.' }, { status: 400 });
     }
 
-    const userId = await getAuthUserId(req);
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
-    
     const maxAllowed = resolvePlanLimit(plan, {
       guest: 3,
       Basic: 30,
@@ -36,21 +43,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
-    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
-    const MAX_PRO_SIZE = 100 * 1024 * 1024;
-    const MAX_ENTERPRISE_SIZE = 250 * 1024 * 1024;
-
-    let maxSize = MAX_GUEST_SIZE;
-    if (plan === 'Enterprise') maxSize = MAX_ENTERPRISE_SIZE;
-    else if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
-    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
-
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
     if (totalSize > maxSize) {
-      return NextResponse.json({
-        error: `Your current plan allows merges totaling up to ${maxSize / (1024 * 1024)}MB.`
-      }, { status: 400 });
+      throw budget.tooLarge(totalSize);
     }
 
     const pdfBuffers: Buffer[] = [];

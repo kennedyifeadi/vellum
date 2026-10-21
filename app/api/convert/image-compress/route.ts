@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import JSZip from 'jszip';
 import {
@@ -20,9 +18,11 @@ import {
   assertFileCountWithinPlan,
   assertTotalSizeWithinPlan,
   COMPRESS_IMAGE_BUSY_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/image-compress-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
+import { readMultipartForm } from '@/lib/http/read-upload';
 
 interface CompressedOutput {
   toolUsed: string;
@@ -87,20 +87,14 @@ async function recordCompression(userId: string, output: CompressedOutput, pages
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { userId, plan } = await resolveCaller(req);
+
+    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
     const images = await resolveFiles(formData, 'images');
     const level = compressionLevel(formData.get('level'));
 
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileCountWithinPlan(plan, images.length);
