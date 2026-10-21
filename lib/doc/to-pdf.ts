@@ -1,11 +1,11 @@
 import mammoth from 'mammoth'; // You'll need to install this: npm install mammoth
-import puppeteer from 'puppeteer'; // You'll need to install this: npm install puppeteer
 import { ClientError } from '@/lib/convert/errors';
 import {
   RENDER_TIMEOUT_MS,
   closeBrowser,
   withRenderDeadline,
 } from '@/lib/puppeteer/lifecycle';
+import { launchBrowser } from '@/lib/puppeteer/launch';
 
 interface DocxToPdfOptions {
   docxBuffer: Buffer;
@@ -151,7 +151,7 @@ export async function convertDocxToPdf({
   `;
 
   // 3. Render HTML to PDF using puppeteer
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await launchBrowser();
 
   try {
     const render = (async () => {

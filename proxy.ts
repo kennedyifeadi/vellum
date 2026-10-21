@@ -2,32 +2,15 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth/jwt';
 import { getToken } from 'next-auth/jwt';
+import { getClientIp } from '@/lib/http/client-ip';
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 30; // 30 requests per minute
 
-function getClientIp(request: NextRequest): string {
-  // On Vercel, x-vercel-forwarded-for and x-real-ip are set by the Edge Network
-  // from the real client connection and cannot be spoofed by the client.
-  // x-vercel-forwarded-for is preferred because a customer proxy layered on top
-  // of Vercel can overwrite x-forwarded-for but not this header.
-  const trusted = request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-real-ip');
-  if (trusted) {
-    return trusted.trim();
-  }
-
-  // Fallback for non-Vercel / local environments, where no trusted header
-  // exists. The rightmost x-forwarded-for entry is the hop added by the closest
-  // proxy; entries to its left are client-supplied and must not be trusted.
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    const parts = forwardedFor.split(',');
-    return parts[parts.length - 1].trim();
-  }
-
-  return 'unknown';
-}
+// Next.js does not expose the connection's address to the proxy, so without a trusted
+// header every caller shares this one bucket: the limit becomes site-wide, never bypassable.
+const SHARED_RATE_LIMIT_KEY = 'unknown';
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -58,7 +41,7 @@ export async function proxy(request: NextRequest) {
 
   // Rate Limiting for API routes
   if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp') || pathname.startsWith('/api/auth/request-otp')) {
-    const ip = getClientIp(request);
+    const ip = getClientIp(request.headers) ?? SHARED_RATE_LIMIT_KEY;
     if (isRateLimited(ip)) {
       return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
     }

@@ -18,12 +18,6 @@ import { isBusy, PdfExtractionError } from '@/lib/convert/pdf-worker';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { findInItems } from '@/lib/pdf/findPdfStream';
 
-// The platform's own backstop; it only takes effect on Vercel, where 60s is the longest
-// duration every plan accepts. Extraction is bounded by its deadline (45s at most). The
-// search and highlighting after it run on the request's own event loop with no deadline:
-// about 14s for the largest document an Enterprise plan allows when most lines match.
-export const maxDuration = 60;
-
 interface Match {
   page: number;
   text: string;

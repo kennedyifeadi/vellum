@@ -1,36 +1,205 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vellum
 
-## Getting Started
+Vellum is a web app for converting and editing documents, images and video: Image to PDF,
+Merge, Split, Lock and Compress PDF, Find in PDF, PDF to DOCX, DOCX to PDF, HTML to PDF,
+JPEG to PNG, Compress Image and Compress Video. Guests can use the tools within guest
+limits; signed-in users (Google or an emailed one-time code) get plan limits, a conversion
+history and a document library.
 
-First, run the development server:
+It is a Next.js 16 (App Router) app in TypeScript with MongoDB (mongoose). The heavy work
+runs on the server: sharp for images, a bundled Chromium (puppeteer) for HTML and DOCX to
+PDF, a bundled ffmpeg (ffmpeg-static) for video and BMP decoding, and pdf.js / pdf-lib in
+worker threads for PDF work.
+
+## Running locally
+
+Requires Node.js 22.3 or later (`process.getBuiltinModule` is used).
 
 ```bash
+npm ci
+cp .env.example .env.local   # then fill in the values
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm ci` downloads Chromium for puppeteer and an ffmpeg binary for ffmpeg-static. Open
+http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Testing and checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test                          # the Jest suite (not bare `jest`; it needs the VM-modules flag)
+npx tsc --noEmit -p tsconfig.json
+npm run lint
+npm run build                     # needs no database or other configuration
+```
 
-## Learn More
+The tests generate their own inputs and need no database: `jest.setup.ts` supplies
+placeholder secrets and a placeholder `MONGODB_URI`.
 
-To learn more about Next.js, take a look at the following resources:
+CI (`.github/workflows/container.yml`) builds the Docker image on every push and pull
+request, runs the test suite inside it, starts the image and sends one request to each tool
+family (`scripts/container-smoke.mjs`), measures the container's memory, and checks that
+the server shuts down cleanly on SIGTERM.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Configuration
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Every environment variable the app reads is listed and explained in
+[`.env.example`](.env.example). The app builds and starts without any of them; requests that
+need a missing one fail with an error that names it. For production you need at least
+`MONGODB_URI`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, the Google sign-in pair,
+`BREVO_API_KEY` and `EMAIL_USER`, the storage settings (`STORAGE_DRIVER=s3` and the `S3_*`
+variables for the R2 bucket; the local-disk default loses files on every redeploy) and
+`CLIENT_IP_HEADER`.
 
-## Deploy on Vercel
+### Client IP (`CLIENT_IP_HEADER`)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The per-IP rate limit (30 requests a minute on the convert, documents and OTP routes) and
+the location recorded for a sign-in session need the caller's address, which only the
+reverse proxy in front of the app knows. `CLIENT_IP_HEADER` names the one header to trust,
+and `CLIENT_IP_HEADER_ENTRY` says which entry to use if it holds a list (`single`, the
+default, refuses a list; `leftmost`; `rightmost`).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Only name a header that the proxy overwrites on every request; any other header can be sent
+by the client to choose its own rate-limit key. With `CLIENT_IP_HEADER` unset, no header is
+trusted. Next.js does not give the app the connection's own address, so then every caller
+shares one rate-limit bucket: the limit becomes 30 requests a minute for the whole site.
+That is safe but will refuse legitimate traffic, so set it in production.
+
+### Chromium sandbox (`CHROMIUM_DISABLE_SANDBOX`)
+
+HTML to PDF and DOCX to PDF launch Chromium with its sandbox on. HTML to PDF renders pages
+users choose (fetched under the policy in `lib/html/url-policy.ts`), and the sandbox is what
+confines a renderer that a hostile page has compromised. If Chromium cannot start sandboxed
+on the host, both tools fail with `No usable sandbox!` in the server log. Setting
+`CHROMIUM_DISABLE_SANDBOX=true` then makes them work, at the cost that a Chromium exploit
+runs with the app's own user, its environment variables (database and storage credentials)
+and its network access. Use it only after checking that the sandbox cannot be made to work,
+and treat it as a known risk.
+
+In CI, Chromium does not start sandboxed inside a Docker container on GitHub's Ubuntu 24.04
+runners (the host refuses the unprivileged user namespaces it needs), so CI runs the
+smoke test with the sandbox off and reports the sandboxed result separately. Whether it
+starts sandboxed on Railway is unknown until a real deployment.
+
+## Building and running the container
+
+```bash
+docker build -t vellum .
+docker run -p 3000:3000 --env-file .env.local vellum
+```
+
+The image runs `next start` as the non-root `node` user under `tini`, listening on `$PORT`
+(3000 by default). It ships the full production `node_modules` rather than Next's
+`standalone` output: the worker threads, Chromium and ffmpeg are all found at runtime by
+path, and the working directory keeps them where the code looks. The runtime image is about
+2.1 GB, most of it Chromium and `node_modules`.
+
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_API_KEY` are compiled into the
+browser bundle, so they must be given at build time (`docker build --build-arg ...`). Never
+pass a server-side secret as a build argument.
+
+The ffmpeg that ffmpeg-static installs differs by platform: FFmpeg 6.1.1 on Windows,
+FFmpeg 7.0.2 on Linux (the Dockerfile checks the Linux binary's checksum). CI runs the
+whole test suite against the Linux one.
+
+`GET /api/health` answers `{"status":"ok"}` when the process is serving. It does not touch
+the database, so a database outage cannot block or roll back a deployment.
+
+On SIGTERM, `next start` stops accepting connections, lets requests in progress finish
+(including their conversions), then exits. Worker threads end with the process; ffmpeg and
+Chromium child processes are stopped when the container stops.
+
+## Deploying on Railway
+
+The app runs as one container built from the `Dockerfile` at the repository root, which
+Railway uses automatically. Files are stored in Cloudflare R2.
+
+1. **Variables.** Set everything from `.env.example` that production needs (see
+   Configuration), plus:
+   - `NEXTAUTH_URL` = the public `https://` URL of the service (its Railway domain or a
+     custom domain), with no trailing slash.
+   - `CLIENT_IP_HEADER=x-real-ip` (leave `CLIENT_IP_HEADER_ENTRY` unset). Railway's
+     [Specs & Limits](https://docs.railway.com/networking/public-networking/specs-and-limits)
+     page lists `X-Real-IP` as the header carrying the client's address, and a Railway
+     employee stated on 2026-10-05 that the edge overwrites any caller-supplied
+     `X-Real-IP` and `X-Forwarded-For`
+     ([Central Station](https://station.railway.com/questions/need-authoritative-client-ip-proxy-tru-090eac86)),
+     while noting this is current behaviour, not a guarantee. Requests over Railway's
+     private network (`*.railway.internal`) bypass the edge, and a CDN in front of Railway
+     changes what `X-Real-IP` holds. **Unverified until a real deployment.**
+   - `NEXT_PUBLIC_GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_API_KEY` if the Drive picker is
+     used: the Dockerfile declares them as build arguments, which is how Railway passes a
+     variable to the build.
+   - `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=180`. Railway's default is 0: the old deployment
+     is killed as soon as it gets SIGTERM, which cuts off conversions in progress
+     ([Deployments reference](https://docs.railway.com/deployments/reference)). 180
+     seconds covers the longest deadline of any PDF, image or Chromium job (Image to PDF on
+     Enterprise, 120 seconds) with time for the upload; video encodes longer than that are
+     cut off, as they are by Railway's own request limits (see Limits).
+   - Do not set `CHROMIUM_DISABLE_SANDBOX` unless the first deployment shows it is needed.
+2. **Healthcheck.** Set the service's healthcheck path to `/api/health`. Railway calls it
+   only while starting a deployment, from the hostname `healthcheck.railway.app`
+   ([Healthchecks](https://docs.railway.com/reference/healthchecks)).
+3. **One replica.** Keep the service at a single instance. The rate limiter (`proxy.ts`),
+   the worker slot counter (`lib/convert/worker-job.ts`) and the image and video job
+   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`) live in the process's
+   memory. With more than one instance each instance would apply its own limits, so the
+   real limits would multiply.
+4. **Google OAuth.** In Google Cloud Console, add
+   `<NEXTAUTH_URL>/api/auth/callback/google` as an authorised redirect URI of the OAuth
+   client, and `<NEXTAUTH_URL>` as an authorised JavaScript origin if the Drive picker is
+   used.
+5. **Region.** Choose the region closest to the expected users.
+
+### Instance size
+
+Measured in CI (GitHub's `ubuntu-24.04` runner, 4 vCPU, 16 GB, container without a memory
+limit, peak read from the container's cgroup `memory.peak`; ranges are over three runs):
+
+| State | Container memory |
+| --- | --- |
+| Started, idle | 185-188 MB |
+| After one request to each tool family | 345-348 MB peak |
+| Two Image to PDF jobs, then two Compress Image jobs, each on a 49-megapixel PNG, two at a time | 764-1,064 MB peak |
+
+The CI images are flat-colour PNGs, which are cheap to compress. Earlier measurements on
+Windows (in the PRs that set the image limits) put two Image to PDF or Compress Image jobs at
+the pixel cap on photographic images at about 1.9 GB above the idle server. On top of that,
+at the same time, the server can be running two PDF extraction workers (up to 256 MB of heap
+each, plus decoded data outside the heap), a Chromium per HTML or DOCX to PDF request, two
+ffmpeg encodes, and holding whole uploads in memory (`req.formData()` buffers each body, up
+to the 520 MB request limit).
+
+Recommendation: **8 GB of memory and 4 vCPU**. Two video encodes alone take four cores
+(`-threads 2` each, at most two at once), and the sum of the peaks above comes to about
+5 GB with two large uploads in flight. 4 GB is enough for light traffic without large
+video uploads. Watch the memory graph during the first weeks and adjust.
+
+### Limits
+
+- **Request body.** The app accepts bodies up to 520 MB
+  (`experimental.proxyClientMaxBodySize` in `next.config.ts`). Railway documents no body
+  size limit, but a request body must finish uploading within 5 minutes
+  ([Specs & Limits](https://docs.railway.com/networking/public-networking/specs-and-limits)),
+  which a 500 MB upload meets only above about 14 Mbit/s.
+- **Request duration.** Railway closes a request after 5 minutes without data transferred,
+  and after 15 minutes in any case (same page). Compress Video returns nothing until the
+  encode finishes, and its encode deadlines are 25 to 300 minutes depending on the plan,
+  so any encode longer than 5 minutes will fail on Railway.
+
+### First deployment checklist
+
+1. `GET /api/health` returns 200, and the deployment became active.
+2. Sign in with Google and with an emailed code; check the redirect URI.
+3. HTML to PDF and DOCX to PDF produce a PDF with the sandbox on. If the log shows
+   `No usable sandbox!`, decide on `CHROMIUM_DISABLE_SANDBOX` (see above).
+4. Run one conversion per tool family: an image tool, PDF to DOCX, HTML or DOCX to PDF,
+   Compress Video, and Image to PDF with a BMP.
+5. Confirm the client IP: send 31 convert requests in a minute and check that the 31st gets
+   429, then repeat with a different `X-Real-IP` and `X-Forwarded-For` header sent by the
+   client and check that it does not reset the limit.
+6. Upload a large file (for example a 400 MB video on a Pro account) and see whether it
+   completes inside Railway's 5-minute upload window.
+7. Redeploy while a conversion is running and check that it completes (draining time).
+8. Check memory and CPU under real use against the sizing above.
+9. Confirm files land in, and are served from, the R2 bucket.

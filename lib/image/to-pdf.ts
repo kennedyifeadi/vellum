@@ -97,10 +97,34 @@ function canEmbedAsStored(image: PdfImage, colourConversion: boolean): boolean {
   );
 }
 
+const START_OF_SCAN = 0xda;
+// Arithmetic-coded frames (SOF9-11, SOF13-15). Whether libvips decodes them depends on how
+// its libjpeg was built: sharp's Windows build refuses them, its Linux build does not.
+const ARITHMETIC_FRAME_MARKERS = new Set([0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+
+function usesArithmeticCoding(bytes: Uint8Array): boolean {
+  let at = 2;
+  while (at + 3 < bytes.length && bytes[at] === 0xff) {
+    const marker = bytes[at + 1];
+    if (marker === 0xff) {
+      at += 1;
+      continue;
+    }
+    if (ARITHMETIC_FRAME_MARKERS.has(marker)) return true;
+    if (marker === START_OF_SCAN) return false;
+    at += 2 + ((bytes[at + 2] << 8) | bytes[at + 3]);
+  }
+  return false;
+}
+
 // pdf-lib only scans a JPEG's markers, so a file cut off half-way would be embedded and
 // shown half grey. libvips reads every scan; reducing to one pixel keeps it from holding
-// the decoded image.
+// the decoded image. An arithmetic-coded JPEG is refused on every platform, whatever the
+// local libjpeg can decode, because PDF readers need not support it.
 async function assertJpegDecodes({ bytes, imageNumber }: PdfImage): Promise<void> {
+  if (usesArithmeticCoding(bytes)) {
+    throw damagedImageError(imageNumber);
+  }
   try {
     await sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS }).resize(1, 1, { fit: 'fill' }).raw().toBuffer();
   } catch (error) {

@@ -1,0 +1,106 @@
+name: Container
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The build stage runs `next build` with no MONGODB_URI or other configuration.
+      - name: Build the build stage
+        run: docker build --target build --tag vellum-build .
+
+      - name: Build the runtime image
+        run: docker build --tag vellum .
+
+      - name: Report image size
+        run: |
+          docker image ls vellum
+          docker image inspect vellum --format 'Runtime image: {{.Size}} bytes'
+
+      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need.
+      - name: Run the test suite in the build stage
+        run: docker run --rm vellum-build npm test
+
+      # Reports whether Chromium starts with its sandbox in a container on this runner. It
+      # does not here (the runner refuses the user namespaces it needs), which says nothing
+      # about Railway: the first real deployment must check it there.
+      - name: Chromium sandbox check (report only)
+        run: |
+          docker run --rm vellum node -e '
+            require("puppeteer").launch({ headless: true, args: ["--disable-dev-shm-usage"] })
+              .then((browser) => { console.log("Sandboxed Chromium started"); return browser.close(); })
+              .catch((error) => console.log("Sandboxed Chromium did not start: " +
+                (error.message.split("\n").find((line) => line.includes("sandbox")) || error.message)));
+          '
+
+      # Placeholder values, not secrets: guest conversions never use them, but the proxy
+      # reads NEXTAUTH_SECRET on every request. No database is configured. The sandbox is
+      # turned off explicitly because of the check above, so the PDF routes can be tested.
+      - name: Start the runtime image
+        run: |
+          docker run --detach --name app --publish 3000:3000 \
+            --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
+            --env JWT_SECRET=ci-placeholder-not-a-secret \
+            --env CHROMIUM_DISABLE_SANDBOX=true \
+            vellum
+          for i in $(seq 1 60); do
+            if curl --silent --fail http://localhost:3000/api/health; then echo; exit 0; fi
+            sleep 1
+          done
+          echo "Server did not answer /api/health within 60 seconds"
+          exit 1
+
+      - name: Memory at idle
+        run: |
+          current=$(docker exec app cat /sys/fs/cgroup/memory.current)
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.current after start: $current bytes; memory.peak: $peak bytes"
+
+      - name: Smoke-test each tool family
+        run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000
+
+      - name: Memory after one request per tool
+        run: |
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.peak after the smoke requests: $peak bytes"
+
+      # Two Image to PDF jobs and then two Compress Image jobs at the pixel cap, concurrently.
+      - name: Heavy image jobs
+        run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000 --heavy
+
+      - name: Memory after the heavy image jobs
+        run: |
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
+          echo "memory.peak after the heavy jobs: $peak bytes"
+          docker stats --no-stream app
+
+      # SIGTERM arrives while an HTML to PDF render that takes about 3 seconds is running;
+      # that request must still complete before the server exits.
+      - name: Stop gracefully on SIGTERM
+        run: |
+          echo '<script>const t = Date.now(); while (Date.now() - t < 3000) {}</script><p>slow</p>' > slow.html
+          curl --silent --output in-flight.pdf --write-out '%{http_code}' \
+            --form 'html=@slow.html;type=text/html' \
+            http://localhost:3000/api/convert/html-to-pdf > in-flight.status &
+          sleep 1
+          started=$(date +%s)
+          docker stop --time 30 app
+          wait
+          echo "Stopped in $(( $(date +%s) - started ))s with exit code $(docker inspect app --format '{{.State.ExitCode}}')"
+          echo "In-flight request finished with HTTP $(cat in-flight.status)"
+          test "$(docker inspect app --format '{{.State.ExitCode}}')" = 0
+          test "$(cat in-flight.status)" = 200
+          head -c 5 in-flight.pdf | grep -q '%PDF-'
+
+      - name: Server log
+        if: always()
+        run: docker logs app || true

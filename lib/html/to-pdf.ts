@@ -1,4 +1,3 @@
-import puppeteer from 'puppeteer';
 import { ClientError } from '@/lib/convert/errors';
 import { assertNavigableUrl, isRequestAllowed } from '@/lib/html/url-policy';
 import {
@@ -6,6 +5,7 @@ import {
   closeBrowser,
   withRenderDeadline,
 } from '@/lib/puppeteer/lifecycle';
+import { launchBrowser } from '@/lib/puppeteer/launch';
 
 interface HtmlToPdfOptions {
   htmlContent?: string;
@@ -26,14 +26,7 @@ export async function convertHtmlToPdf({
     await assertNavigableUrl(url);
   }
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-    ],
-  });
+  const browser = await launchBrowser();
 
   try {
     const render = (async () => {

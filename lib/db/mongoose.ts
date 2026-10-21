@@ -1,11 +1,5 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
-}
-
 // Use a module-level cache that survives hot reloads in dev
 // In production, the module is loaded once so this is effectively a singleton
 declare global {
@@ -26,7 +20,12 @@ async function dbConnect() {
   }
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI!, {
+    // Checked here, not at import, so the app builds and starts without a database.
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    }
+    cached.promise = mongoose.connect(uri, {
       bufferCommands: false,
       // Connection pool — allows multiple concurrent API routes to share connections
       maxPoolSize: 10,
