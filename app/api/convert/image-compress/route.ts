@@ -24,6 +24,7 @@ import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
 import { readMultipartForm, textField } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 interface CompressedOutput {
   toolUsed: string;
@@ -88,6 +89,8 @@ async function recordCompression(userId: string, output: CompressedOutput, pages
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

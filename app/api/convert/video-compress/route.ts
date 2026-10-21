@@ -14,6 +14,7 @@ import {
 } from '@/lib/convert/video-compress-limits';
 import { readMultipartForm, textField } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
 function crfForQuality(quality: string | null): number {
@@ -38,6 +39,8 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

@@ -18,6 +18,7 @@ import { isBusy, parserFailure, PdfExtractionError } from '@/lib/convert/pdf-wor
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { findInItems } from '@/lib/pdf/findPdfStream';
 import { readMultipartForm, textField } from '@/lib/http/read-upload';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 interface Match {
   page: number;
@@ -67,6 +68,8 @@ async function loadForHighlighting(data: ArrayBuffer): Promise<PDFDocument> {
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

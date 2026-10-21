@@ -8,10 +8,13 @@ import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const maxSize = resolvePlanLimit(plan, {

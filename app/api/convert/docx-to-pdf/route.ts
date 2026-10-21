@@ -8,6 +8,7 @@ import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // A malicious .docx can be a few KB on disk yet declare gigabytes of decompressed XML.
 // Reject anything whose entries expand far beyond their upload size, or past an absolute
@@ -32,6 +33,8 @@ function declaredUncompressedSize(zip: JSZip): number {
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const maxSize = resolvePlanLimit(plan, {

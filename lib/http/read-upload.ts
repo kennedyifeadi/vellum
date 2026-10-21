@@ -34,7 +34,20 @@ function declaredLength(req: Request): number | null {
   return header !== null && /^\d+$/.test(header) ? Number(header) : null;
 }
 
-async function readCountedBody(req: Request, maxRequestBytes: number, budget: UploadBudget): Promise<Blob> {
+/**
+ * The request's body, refused with `tooLarge` past `maxRequestBytes`: before any of it is
+ * read when its Content-Length says so, otherwise as soon as the count passes it.
+ */
+export async function readBoundedBody(
+  req: Request,
+  maxRequestBytes: number,
+  tooLarge: () => ClientError,
+): Promise<Blob> {
+  const length = declaredLength(req);
+  if (length !== null && length > maxRequestBytes) {
+    throw tooLarge();
+  }
+
   const chunks: Uint8Array[] = [];
   if (!req.body) return new Blob();
 
@@ -52,7 +65,7 @@ async function readCountedBody(req: Request, maxRequestBytes: number, budget: Up
     received += chunk.value.byteLength;
     if (received > maxRequestBytes) {
       await reader.cancel().catch(() => undefined);
-      throw budget.tooLarge();
+      throw tooLarge();
     }
     chunks.push(chunk.value);
   }
@@ -70,13 +83,7 @@ export async function readMultipartForm(req: Request, budget: UploadBudget): Pro
     throw new ClientError(NOT_MULTIPART_MESSAGE);
   }
 
-  const maxRequestBytes = budget.maxBytes + MULTIPART_OVERHEAD_BYTES;
-  const length = declaredLength(req);
-  if (length !== null && length > maxRequestBytes) {
-    throw budget.tooLarge();
-  }
-
-  const body = await readCountedBody(req, maxRequestBytes, budget);
+  const body = await readBoundedBody(req, budget.maxBytes + MULTIPART_OVERHEAD_BYTES, () => budget.tooLarge());
   try {
     return await new Response(body, { headers: { 'content-type': req.headers.get('content-type')! } }).formData();
   } catch (error) {

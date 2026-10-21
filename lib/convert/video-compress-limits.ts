@@ -7,8 +7,8 @@ const BYTES_PER_MB = 1024 * 1024;
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_MINUTE = 60_000;
 
-// Enterprise matches Pro because next.config.ts's proxyClientMaxBodySize (520 MB) cuts
-// off any larger body before the route can read it.
+// Enterprise matches Pro. It was held there by proxy.ts's 520 MB body clone, which no
+// longer applies to uploads; raising it is a separate decision.
 const MAX_FILE_SIZE: PlanTierValues<number> = {
   guest: 50 * BYTES_PER_MB,
   Basic: 100 * BYTES_PER_MB,

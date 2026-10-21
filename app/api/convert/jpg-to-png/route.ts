@@ -18,6 +18,7 @@ import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
 import { readMultipartForm } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 interface ConvertedOutput {
   toolUsed: string;
@@ -67,6 +68,8 @@ async function recordConversion(userId: string, output: ConvertedOutput, pages: 
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

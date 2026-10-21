@@ -20,6 +20,7 @@ import {
 } from '@/lib/convert/pdf-to-docx-limits';
 import { readMultipartForm } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -69,6 +70,8 @@ function countLines(pages: ConvertiblePage[]): number {
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

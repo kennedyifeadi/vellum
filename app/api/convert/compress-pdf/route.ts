@@ -8,6 +8,7 @@ import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 const COMPRESSION_LEVELS = ['low', 'medium', 'high'] as const;
 type CompressionLevel = (typeof COMPRESSION_LEVELS)[number];
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest) {
   let userId: string | null = null;
 
   try {
+    assertWithinRateLimit(req);
+
     const caller = await resolveCaller(req);
     userId = caller.userId;
 

@@ -17,6 +17,7 @@ import { WorkerJobError } from '@/lib/convert/worker-job';
 import { ImageToolBusyError } from '@/lib/image/image-jobs';
 import { bareFileStem } from '@/lib/paths';
 import { readMultipartForm } from '@/lib/http/read-upload';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // The images are decoded in one of the image tools' slots, then assembled in one of the
 // PDF workers' slots; either can be full.
@@ -37,6 +38,8 @@ async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     const { userId, plan } = await resolveCaller(req);
 
     const budget = uploadBudgetForPlan(plan);

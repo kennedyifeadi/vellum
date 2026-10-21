@@ -11,6 +11,7 @@ import mongoose from 'mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget, uploadedFiles } from '@/lib/http/read-upload';
+import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,10 @@ function storageExtension(fileName: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) {
+    return NextResponse.json({ error: RATE_LIMITED_MESSAGE }, { status: 429 });
+  }
+
   const userId = await getAuthUserId(req);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
