@@ -18,6 +18,8 @@ const MAX_FILE_SIZE: PlanTierValues<number> = {
 
 // An encode's time follows the video's length, not its size: a 16x16 clip an hour long
 // is a few kilobytes. Read by the probe, so it refuses a video before anything is encoded.
+// The time budget below now limits most videos to less than these; they still bound
+// videos small enough to encode faster than that, such as 480p30 for a guest.
 const MAX_DURATION_SECONDS: PlanTierValues<number> = {
   guest: 5 * SECONDS_PER_MINUTE,
   Basic: 15 * SECONDS_PER_MINUTE,
@@ -40,10 +42,82 @@ export const MAX_CONCURRENT_VIDEO_ENCODES = 2;
 // ffmpeg's automatic choice this made one encode 1.9x slower and two at once 1.4x slower.
 export const FFMPEG_THREADS = 2;
 
+export interface EncodeCost {
+  /** Seconds to encode a million output pixel-frames while MAX_CONCURRENT_VIDEO_ENCODES run. */
+  encodeSecondsPerMegapixelFrame: number;
+  /** Seconds to decode and scale a million input pixel-frames, likewise. */
+  decodeSecondsPerMegapixelFrame: number;
+  /** How many times over the estimate must fit in the time left. */
+  safetyFactor: number;
+}
+
 // x264's veryfast preset: with two encodes at once it was 2.0-2.7x as fast as the default
 // (medium) at 1080p, its files 7-17% smaller on camera video and within 3% on screen
 // recordings and already compressed video, and SSIM 0.001-0.003 lower (#115).
 export const X264_PRESET = 'veryfast';
+
+// THE NUMBERS TO RE-MEASURE ON THE PRODUCTION CPU (Railway's is unknown). Measured with
+// X264_PRESET and FFMPEG_THREADS, two encodes at once, on a 4-core i5-10310U under Windows
+// with FFmpeg 6.1.1 and a busy desktop: medians of three runs of 8 s of 16 Mbit/s 1080p30
+// test pattern with noise, at CRF 23 (the slowest quality). Encoding cost 0.020-0.026 s
+// per output megapixel-frame; decoding and scaling 0.007-0.013 s per input megapixel-frame.
+// With the larger figures every median, screen recordings and already compressed video
+// included, came within 1.06x of the estimate; single runs reached 1.15x, and once 1.9x
+// under desktop load. The factor covers the first two; VIDEO_TOO_SLOW_MESSAGE the rest.
+export const ENCODE_COST: EncodeCost = {
+  encodeSecondsPerMegapixelFrame: 0.026,
+  decodeSecondsPerMegapixelFrame: 0.013,
+  safetyFactor: 1.5,
+};
+
+export interface EncodeWork {
+  /** Frames the encode writes. */
+  frames: number;
+  /** Pixels in each frame decoded, as stored. */
+  inputPixels: number;
+  /** Pixels in each frame encoded, after the resolution ceiling. */
+  outputPixels: number;
+}
+
+export function estimateEncodeSeconds({ frames, inputPixels, outputPixels }: EncodeWork, cost: EncodeCost): number {
+  const secondsPerFrame =
+    outputPixels * cost.encodeSecondsPerMegapixelFrame + inputPixels * cost.decodeSecondsPerMegapixelFrame;
+  return (frames * secondsPerFrame) / 1_000_000;
+}
+
+export function encodeFitsTimeBudget(work: EncodeWork, budgetMs: number, cost: EncodeCost): boolean {
+  return estimateEncodeSeconds(work, cost) * cost.safetyFactor * 1000 <= budgetMs;
+}
+
+/** The length of the longest video at `frameRate` whose encode fits in `budgetMs`. */
+export function longestEncodableSeconds(
+  { frameRate, inputPixels, outputPixels }: Omit<EncodeWork, 'frames'> & { frameRate: number },
+  budgetMs: number,
+  cost: EncodeCost,
+): number {
+  const secondsPerVideoSecond = estimateEncodeSeconds({ frames: frameRate, inputPixels, outputPixels }, cost);
+  return budgetMs / 1000 / cost.safetyFactor / secondsPerVideoSecond;
+}
+
+function roughLength(seconds: number): string {
+  if (seconds >= 2 * SECONDS_PER_MINUTE) return `${Math.floor(seconds / SECONDS_PER_MINUTE)} minutes`;
+  if (seconds >= SECONDS_PER_MINUTE) return '1 minute';
+  if (seconds >= 20) return `${Math.floor(seconds / 10) * 10} seconds`;
+  const wholeSeconds = Math.max(1, Math.floor(seconds));
+  return wholeSeconds === 1 ? '1 second' : `${wholeSeconds} seconds`;
+}
+
+/**
+ * Refuses a video whose encode would not finish in time, naming how long a video like it
+ * can be and, when one would let this video through or at least help, a lower resolution.
+ */
+export function tooMuchWorkMessage(longestSeconds: number, lowerResolution: string | null): string {
+  const choice = lowerResolution ? `choose ${lowerResolution} or a shorter clip` : 'choose a shorter clip';
+  return (
+    'This video would take too long to compress. Videos at this resolution and frame rate can be ' +
+    `up to about ${roughLength(longestSeconds)} long; ${choice}.`
+  );
+}
 
 export const COMPRESS_VIDEO_BUSY_MESSAGE = pdfToolBusyMessage('Compress Video');
 
