@@ -31,6 +31,12 @@ RUN npm ci \
 
 # Has the full dependency tree and sources: CI runs the test suite in this stage.
 FROM deps AS build
+# NEXT_PUBLIC_ variables are compiled into the browser bundle, so they must exist when
+# `next build` runs (Railway passes a service variable to the build only when an ARG names
+# it). Both are public by design. Never add a server-side secret here: build arguments
+# stay readable in the image's build history.
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
+ARG NEXT_PUBLIC_GOOGLE_API_KEY
 COPY . .
 RUN npm run build && rm -rf .next/cache
 
