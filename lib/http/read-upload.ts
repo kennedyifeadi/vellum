@@ -84,6 +84,19 @@ export async function readMultipartForm(req: Request, budget: UploadBudget): Pro
   }
 }
 
+/** The files uploaded under `fieldName`; text there, or a file without a name, is refused. */
+export function uploadedFiles(formData: FormData, fieldName: string): File[] {
+  return formData.getAll(fieldName).map((entry) => {
+    if (typeof entry === 'string') {
+      throw new ClientError(`The "${fieldName}" field must be a file.`);
+    }
+    if (entry.name === '') {
+      throw new ClientError('Every uploaded file must have a name.');
+    }
+    return entry;
+  });
+}
+
 /**
  * A text field of the form, or null when it is absent. A file sent where text is
  * expected is the caller's mistake.

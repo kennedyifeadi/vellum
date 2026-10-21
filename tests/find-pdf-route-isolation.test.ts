@@ -48,7 +48,6 @@ import { POST as handleFindPdf } from '../app/api/convert/find-pdf/route';
 const GENEROUS_DEADLINES_MS = { guest: 30_000, Basic: 30_000, Pro: 30_000, Enterprise: 30_000 };
 jest.setTimeout(60_000);
 
-const GENERIC_FAILURE = 'Failed to search and highlight PDF';
 
 let deadlines: { replaceValue(value: typeof GENEROUS_DEADLINES_MS): unknown };
 let drawRectangle: jest.SpyInstance;
@@ -249,22 +248,18 @@ describe('find-pdf route — extraction in a worker', () => {
     });
 
     it.each([
-      ['a corrupt PDF', async (pdf: Buffer) => pdf.subarray(0, Math.floor(pdf.length / 2)), 'InvalidPDFException'],
-      ['a file that is not a PDF', async () => Buffer.from('not a pdf at all'), 'InvalidPDFException'],
+      ['a corrupt PDF', async (pdf: Buffer) => pdf.subarray(0, Math.floor(pdf.length / 2)), 'The PDF file is not a valid PDF or is corrupted.'],
+      ['a file that is not a PDF', async () => Buffer.from('not a pdf at all'), 'The PDF file is not a valid PDF or is corrupted.'],
       [
         'an encrypted PDF',
         (pdf: Buffer) => lockPdf({ pdfBuffer: pdf, password: 'correct-Horse-7!' }),
-        'PasswordException',
+        'The PDF file is password-protected. Please remove the password before continuing.',
       ],
-    ])('still returns a generic 500 for %s and logs the parser error', async (_label, damage, parserErrorName) => {
+    ])('answers %s the parser refuses with a 400 that says why', async (_label, damage, message) => {
       const res = await search(await damage(reportPdf));
 
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: GENERIC_FAILURE });
-      expect(console.error).toHaveBeenCalledWith(
-        `[convert] ${GENERIC_FAILURE}`,
-        expect.objectContaining({ name: parserErrorName }),
-      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: message });
     });
 
     it('answers 503 with Retry-After while searches and PDF to Word hold every slot, then recovers', async () => {

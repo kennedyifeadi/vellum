@@ -12,11 +12,11 @@ import {
   encodeLimitsForPlan,
   uploadBudgetForPlan,
 } from '@/lib/convert/video-compress-limits';
-import { readMultipartForm } from '@/lib/http/read-upload';
+import { readMultipartForm, textField } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
-function crfForQuality(quality: FormDataEntryValue | null): number {
+function crfForQuality(quality: string | null): number {
   if (quality === 'High') return 23;
   if (quality === 'Low') return 32;
   return 28;
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudgetForPlan(plan);
     const formData = await readMultipartForm(req, budget);
     const video = (await resolveFiles(formData, 'video', budget))[0] as File;
-    const crf = crfForQuality(formData.get('quality'));
-    const resolution = formData.get('resolution') as string || 'Original';
+    const crf = crfForQuality(textField(formData, 'quality'));
+    const resolution = textField(formData, 'resolution') || 'Original';
 
     if (!video) {
       return NextResponse.json({ error: 'No video provided' }, { status: 400 });

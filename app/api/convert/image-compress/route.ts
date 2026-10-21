@@ -22,7 +22,7 @@ import {
 } from '@/lib/convert/image-compress-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
-import { readMultipartForm } from '@/lib/http/read-upload';
+import { readMultipartForm, textField } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 interface CompressedOutput {
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudgetForPlan(plan);
     const formData = await readMultipartForm(req, budget);
     const images = await resolveFiles(formData, 'images', budget);
-    const level = compressionLevel(formData.get('level'));
+    const level = compressionLevel(textField(formData, 'level'));
 
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });

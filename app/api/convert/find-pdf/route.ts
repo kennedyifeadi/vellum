@@ -3,6 +3,7 @@ import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
+import { corruptPdfMessage, emptyPdfMessage, encryptedPdfMessage } from '@/lib/pdf/loadPdf';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { extractPdfTextItems, type PdfTextItem } from '@/lib/convert/find-pdf-extraction';
 import {
@@ -13,10 +14,10 @@ import {
   PDF_TOO_COMPLEX_MESSAGE,
   uploadBudgetForPlan,
 } from '@/lib/convert/find-pdf-limits';
-import { isBusy, PdfExtractionError } from '@/lib/convert/pdf-worker';
+import { isBusy, parserFailure, PdfExtractionError } from '@/lib/convert/pdf-worker';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { findInItems } from '@/lib/pdf/findPdfStream';
-import { readMultipartForm } from '@/lib/http/read-upload';
+import { readMultipartForm, textField } from '@/lib/http/read-upload';
 
 interface Match {
   page: number;
@@ -34,7 +35,7 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
       throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
     }
     if (failure.reason === 'parser') {
-      throw error.cause;
+      throw parserFailure(error);
     }
   }
   throw error;
@@ -48,6 +49,22 @@ async function extractTextItems(data: Uint8Array, plan: string): Promise<PdfText
   }
 }
 
+// pdf.js has already read the PDF, but pdf-lib refuses some that pdf.js accepts: one
+// with only an owner password (pdf.js opens it, pdf-lib cannot decrypt it), or one
+// pdf.js could repair.
+async function loadForHighlighting(data: ArrayBuffer): Promise<PDFDocument> {
+  let pdfDoc: PDFDocument;
+  try {
+    pdfDoc = await PDFDocument.load(data, { ignoreEncryption: true });
+  } catch (error) {
+    throw new ClientError(corruptPdfMessage(), 400, { cause: error });
+  }
+  if (pdfDoc.isEncrypted) {
+    throw new ClientError(encryptedPdfMessage());
+  }
+  return pdfDoc;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { userId, plan } = await resolveCaller(req);
@@ -55,7 +72,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudgetForPlan(plan);
     const formData = await readMultipartForm(req, budget);
     const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
-    const searchTerm = (formData.get('searchTerm') as string)?.toLowerCase();
+    const searchTerm = textField(formData, 'searchTerm')?.toLowerCase();
 
     if (!file || !searchTerm) {
       return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
@@ -66,11 +83,14 @@ export async function POST(req: NextRequest) {
     assertFileSizeWithinPlan(plan, file.size);
 
     const arrayBuffer = await file.arrayBuffer();
+    if (arrayBuffer.byteLength === 0) {
+      throw new ClientError(emptyPdfMessage());
+    }
     // The extraction worker takes ownership of the bytes it is given, so it gets a copy
     // and pdf-lib keeps the original.
     const pageTextItems = await extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan);
 
-    const pdfLibDoc = await PDFDocument.load(arrayBuffer);
+    const pdfLibDoc = await loadForHighlighting(arrayBuffer);
     const matches: Match[] = [];
     let totalMatchCount = 0; // counted for ALL users, not just Pro
 

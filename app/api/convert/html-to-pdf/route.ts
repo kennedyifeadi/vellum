@@ -5,9 +5,24 @@ import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
-import { handleConvertError } from '@/lib/convert/errors';
+import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+
+const HTML_REQUEST_MESSAGE = 'Send an HTML file as multipart/form-data, or JSON with a "url".';
+
+async function readJsonObject(req: NextRequest): Promise<Record<string, unknown>> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch (error) {
+    throw new ClientError(HTML_REQUEST_MESSAGE, 400, { cause: error });
+  }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ClientError(HTML_REQUEST_MESSAGE);
+  }
+  return body as Record<string, unknown>;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,12 +52,15 @@ export async function POST(req: NextRequest) {
       if (file.size > maxSize) {
         throw budget.tooLarge(file.size);
       }
+      if (file.size === 0) {
+        throw new ClientError('The HTML file is empty.');
+      }
       htmlContent = await file.text();
       outputFileName = file.name.replace(/\.html?$/i, '.pdf');
     } else {
       // URL mode
-      const body = await req.json();
-      url = body.url;
+      const body = await readJsonObject(req);
+      url = typeof body.url === 'string' ? body.url : undefined;
       if (!url) {
         return NextResponse.json({ error: 'No URL provided.' }, { status: 400 });
       }

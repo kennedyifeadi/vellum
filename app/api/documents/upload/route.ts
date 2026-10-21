@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError } from '@/lib/convert/errors';
-import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { readMultipartForm, uploadBudget, uploadedFiles } from '@/lib/http/read-upload';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
   ]);
   const currentUsed = (convAgg[0]?.total ?? 0) + (docAgg[0]?.total ?? 0);
 
-  let formData: FormData;
+  let files: File[];
   try {
-    formData = await readMultipartForm(
+    const formData = await readMultipartForm(
       req,
       uploadBudget(
         Math.max(0, limitBytes - currentUsed),
@@ -60,13 +60,13 @@ export async function POST(req: NextRequest) {
         507,
       ),
     );
+    files = uploadedFiles(formData, 'files');
   } catch (error) {
     if (error instanceof ClientError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     throw error;
   }
-  const files = formData.getAll('files') as File[];
 
   if (!files.length) return NextResponse.json({ error: 'No files provided' }, { status: 400 });
 

@@ -6,7 +6,7 @@ import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
-import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 const COMPRESSION_LEVELS = ['low', 'medium', 'high'] as const;
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });
     }
 
-    const rawLevel = (formData.get('level') as string | null)?.trim() || '';
+    const rawLevel = textField(formData, 'level')?.trim() || '';
     if (rawLevel && !COMPRESSION_LEVELS.includes(rawLevel as CompressionLevel)) {
       throw new ClientError(
         `Invalid compression level. Use one of: ${COMPRESSION_LEVELS.join(', ')}.`,

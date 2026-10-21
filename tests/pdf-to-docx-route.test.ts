@@ -324,11 +324,11 @@ describe('pdf-to-docx route', () => {
     expect(pageBreakCount(await documentXml(res))).toBe(0);
   });
 
-  it('still returns a generic 500 for a file that is not a PDF', async () => {
+  it('answers a file that is not a PDF with a 400 that says so', async () => {
     const res = await postFile(Buffer.from('not a pdf at all'));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Failed to convert PDF to DOCX' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'The PDF file is not a valid PDF or is corrupted.' });
   });
 
   it('records the page count for a signed-in user', async () => {
@@ -545,21 +545,17 @@ describe('pdf-to-docx route', () => {
     });
 
     it.each([
-      ['a corrupt PDF', async (pdf: Buffer) => pdf.subarray(0, Math.floor(pdf.length / 2)), 'InvalidPDFException'],
+      ['a corrupt PDF', async (pdf: Buffer) => pdf.subarray(0, Math.floor(pdf.length / 2)), 'The PDF file is not a valid PDF or is corrupted.'],
       [
         'an encrypted PDF',
         (pdf: Buffer) => lockPdf({ pdfBuffer: pdf, password: 'correct-Horse-7!' }),
-        'PasswordException',
+        'The PDF file is password-protected. Please remove the password before continuing.',
       ],
-    ])('still returns a generic 500 for %s and logs the parser error', async (_label, damage, parserErrorName) => {
+    ])('answers %s the parser refuses with a 400 that says why', async (_label, damage, message) => {
       const res = await postFile(await damage(await createPdf([{ text: ['Ordinary document'] }])));
 
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: 'Failed to convert PDF to DOCX' });
-      expect(console.error).toHaveBeenCalledWith(
-        '[convert] Failed to convert PDF to DOCX',
-        expect.objectContaining({ name: parserErrorName }),
-      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: message });
     });
 
     it('answers 503 with Retry-After while every extraction slot is taken, then recovers', async () => {

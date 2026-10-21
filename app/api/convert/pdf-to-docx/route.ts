@@ -6,7 +6,8 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { extractPdfPages, PdfExtractionError } from '@/lib/convert/pdf-extraction';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
-import { isBusy } from '@/lib/convert/pdf-worker';
+import { isBusy, parserFailure } from '@/lib/convert/pdf-worker';
+import { emptyPdfMessage } from '@/lib/pdf/loadPdf';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import {
   assertFileSizeWithinPlan,
@@ -43,7 +44,7 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
       throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
     }
     if (failure.reason === 'parser') {
-      throw error.cause;
+      throw parserFailure(error);
     }
   }
   throw error;
@@ -51,6 +52,9 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
 
 async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
   const data = new Uint8Array(await file.arrayBuffer());
+  if (data.length === 0) {
+    throw new ClientError(emptyPdfMessage());
+  }
   try {
     const pages = await extractPdfPages(data, extractionOptionsForPlan(plan));
     return toConvertiblePages(pages);

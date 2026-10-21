@@ -6,7 +6,7 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
-import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 
@@ -24,9 +24,9 @@ export async function POST(req: NextRequest) {
 
     const formData = await readMultipartForm(req, budget);
     const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
-    const startPage = parseInt(formData.get('startPage') as string, 10) || 1;
-    const endPage = parseInt(formData.get('endPage') as string, 10) || 1;
-    const splitEvery = formData.get('splitEvery') === 'true';
+    const startPage = parseInt(textField(formData, 'startPage') ?? '', 10) || 1;
+    const endPage = parseInt(textField(formData, 'endPage') ?? '', 10) || 1;
+    const splitEvery = textField(formData, 'splitEvery') === 'true';
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });

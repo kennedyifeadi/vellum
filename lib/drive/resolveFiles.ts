@@ -1,5 +1,5 @@
 import { ClientError, UpstreamError } from '@/lib/convert/errors';
-import type { UploadBudget } from '@/lib/http/read-upload';
+import { uploadedFiles, type UploadBudget } from '@/lib/http/read-upload';
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_FILE_ID = /^[A-Za-z0-9_-]+$/;
@@ -41,18 +41,6 @@ function parseSelection(entry: FormDataEntryValue): DriveSelection {
     throw new ClientError(INVALID_DRIVE_SELECTION_MESSAGE);
   }
   return { id, accessToken };
-}
-
-function localFiles(formData: FormData, fieldName: string): File[] {
-  return formData.getAll(fieldName).map((entry) => {
-    if (typeof entry === 'string') {
-      throw new ClientError(`The "${fieldName}" field must be a file.`);
-    }
-    if (entry.name === '') {
-      throw new ClientError('Every uploaded file must have a name.');
-    }
-    return entry;
-  });
 }
 
 /** Awaits a network step of the import, reporting its failure as Drive's, not the server's. */
@@ -157,7 +145,7 @@ async function importDriveFile(
  * the files before it left. The name and type come from Drive, not from the form.
  */
 export async function resolveFiles(formData: FormData, fieldName: string, budget: UploadBudget): Promise<File[]> {
-  const files = localFiles(formData, fieldName);
+  const files = uploadedFiles(formData, fieldName);
   const selections = formData.getAll('googleDriveFiles').map(parseSelection);
   if (selections.length === 0) return files;
 

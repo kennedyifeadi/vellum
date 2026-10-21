@@ -1,3 +1,5 @@
+import { ClientError } from '@/lib/convert/errors';
+import { corruptPdfMessage, encryptedPdfMessage } from '@/lib/pdf/loadPdf';
 import {
   runWorkerJob,
   WorkerJobError,
@@ -43,6 +45,20 @@ const JOB_FAILURE_MESSAGES: Record<WorkerJobFailureReason, string> = {
   memory: 'PDF extraction exceeded its memory limit',
   busy: 'Too many PDF extractions are already running',
 };
+
+// pdf.js names what is wrong with the PDF itself; any other parser failure is a fault of
+// the extraction and stays a server error.
+const INPUT_FAULT_MESSAGES = new Map([
+  ['PasswordException', encryptedPdfMessage()],
+  ['InvalidPDFException', corruptPdfMessage()],
+]);
+
+/** What to throw for a `parser` failure: a ClientError when the PDF caused it. */
+export function parserFailure(error: PdfExtractionError): unknown {
+  const cause = error.cause as Error | undefined;
+  const message = cause && INPUT_FAULT_MESSAGES.get(cause.name);
+  return message ? new ClientError(message, 400, { cause }) : cause;
+}
 
 export function isBusy(error: unknown): boolean {
   return error instanceof PdfExtractionError && error.failure.reason === 'busy';

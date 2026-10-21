@@ -6,7 +6,7 @@ import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
-import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const formData = await readMultipartForm(req, budget);
     const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
-    const password = formData.get('password') as string;
+    const password = textField(formData, 'password');
 
     if (!file || !password) {
       return NextResponse.json({ error: 'PDF file and password are required.' }, { status: 400 });
