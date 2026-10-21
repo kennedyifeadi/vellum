@@ -25,18 +25,13 @@ const MAX_DURATION_SECONDS: PlanTierValues<number> = {
   Enterprise: 60 * SECONDS_PER_MINUTE,
 };
 
-// Five times each plan's length cap. With two encodes running, 1080p30 encoded at 0.31x
-// realtime on a 4-core i5-10310U (#111), so the longest video a plan allows needs about
-// 3.2 times its length; this leaves half as much again. 4K or high-frame-rate video near
-// the cap will not finish and is refused with VIDEO_TOO_SLOW_MESSAGE.
-const ENCODE_DEADLINE_MS: PlanTierValues<number> = {
-  guest: 25 * MS_PER_MINUTE,
-  Basic: 75 * MS_PER_MINUTE,
-  Pro: 150 * MS_PER_MINUTE,
-  Enterprise: 300 * MS_PER_MINUTE,
-};
+// Railway ends a request that has sent nothing for 5 minutes (#115), and this route sends
+// nothing until its output is ready. So an accepted video must be probed, encoded and read
+// back within this, counted from when the upload has been received, whatever the plan; the
+// minute left over is margin for sending the response. Background jobs would lift it.
+export const VIDEO_TIME_BUDGET_MS = 4 * MS_PER_MINUTE;
 
-// The probe reads a 500 MB upload in under 2s.
+// The probe reads a 500 MB upload in under 2s. It runs inside VIDEO_TIME_BUDGET_MS.
 export const PROBE_DEADLINE_MS = 30_000;
 
 export const MAX_CONCURRENT_VIDEO_ENCODES = 2;
@@ -57,13 +52,13 @@ export const VIDEO_TOO_SLOW_MESSAGE =
 
 export interface VideoEncodeLimits {
   maxDurationSeconds: number;
-  encodeDeadlineMs: number;
+  timeBudgetMs: number;
 }
 
 export function encodeLimitsForPlan(plan: string | null | undefined): VideoEncodeLimits {
   return {
     maxDurationSeconds: resolvePlanLimit(plan, MAX_DURATION_SECONDS),
-    encodeDeadlineMs: resolvePlanLimit(plan, ENCODE_DEADLINE_MS),
+    timeBudgetMs: VIDEO_TIME_BUDGET_MS,
   };
 }
 

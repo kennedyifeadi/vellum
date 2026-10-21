@@ -10,7 +10,7 @@ import { makeVideo, trackSpawnedProcesses } from './helpers/videoSamples';
 
 jest.setTimeout(120_000);
 
-const GENEROUS_LIMITS = { maxDurationSeconds: 3600, encodeDeadlineMs: 120_000 };
+const GENEROUS_LIMITS = { maxDurationSeconds: 3600, timeBudgetMs: 120_000 };
 
 let sampleVideo: Buffer;
 // Long enough at its size that an encode is still running when the test stops it.
@@ -92,19 +92,39 @@ describe('compressVideo (lib/video/compress.ts)', () => {
     expect(error).not.toBeInstanceOf(ClientError);
   });
 
-  it('kills ffmpeg and removes its temp files when the deadline passes', async () => {
+  it('kills ffmpeg and removes its temp files when the time budget runs out', async () => {
     const error = await compressVideo({
       inputBuffer: slowVideo,
       fileName: 'long.mp4',
       crf: 28,
       maxDurationSeconds: 3600,
-      encodeDeadlineMs: 500,
+      timeBudgetMs: 5_000,
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(ClientError);
     expect(error.status).toBe(400);
     expect(error.message).toMatch(/could not be compressed in time/i);
     expect(processes.encodes()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a long budget', 60_000, [30_000, 57_000]],
+    ['a budget shorter than the probe deadline', 20_000, [20_000, 17_000]],
+  ])('gives the encode what the probe left of %s', async (_label, timeBudgetMs, expectedDeadlines) => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const realRun = ffmpegRunner.runFfmpeg;
+    const deadlines: number[] = [];
+    jest.spyOn(ffmpegRunner, 'runFfmpeg').mockImplementation(async (run) => {
+      deadlines.push(run.deadlineMs);
+      const log = await realRun(run);
+      now += 3_000;
+      return log;
+    });
+
+    await compressVideo({ inputBuffer: sampleVideo, fileName: 'clip.mp4', crf: 28, ...GENEROUS_LIMITS, timeBudgetMs });
+
+    expect(deadlines).toEqual(expectedDeadlines);
   });
 
   it('kills ffmpeg and removes its temp files when the request is aborted', async () => {

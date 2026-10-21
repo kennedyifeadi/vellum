@@ -20,7 +20,8 @@ interface CompressVideoOptions {
   crf: number;
   resolution?: string;
   maxDurationSeconds: number;
-  encodeDeadlineMs: number;
+  /** How long probing, encoding and reading back the output may take altogether. */
+  timeBudgetMs: number;
   signal?: AbortSignal;
 }
 
@@ -183,9 +184,9 @@ function toClientFacingError(error: unknown, stage: 'probe' | 'encode'): unknown
   return error;
 }
 
-async function probeUpload(inputPath: string, signal?: AbortSignal): Promise<VideoProbe> {
+async function probeUpload(inputPath: string, deadlineMs: number, signal?: AbortSignal): Promise<VideoProbe> {
   try {
-    return await probeVideo(inputPath, { deadlineMs: PROBE_DEADLINE_MS, signal });
+    return await probeVideo(inputPath, { deadlineMs: Math.min(PROBE_DEADLINE_MS, deadlineMs), signal });
   } catch (error) {
     throw toClientFacingError(error, 'probe');
   }
@@ -213,8 +214,8 @@ async function removeTempFiles(...paths: string[]): Promise<void> {
  * Re-encodes an uploaded video as H.264/AAC MP4 for broad playback, or returns the
  * upload unchanged when the re-encode is not smaller. Inputs without moving video, and
  * videos longer than `maxDurationSeconds`, are refused after a probe and before anything
- * is encoded. ffmpeg is killed when its deadline passes or `signal` aborts, and the temp
- * files are gone before this settles.
+ * is encoded. ffmpeg is killed when `timeBudgetMs` runs out or `signal` aborts, and the
+ * temp files are gone before this settles.
  */
 export async function compressVideo({
   inputBuffer,
@@ -222,9 +223,12 @@ export async function compressVideo({
   crf,
   resolution,
   maxDurationSeconds,
-  encodeDeadlineMs,
+  timeBudgetMs,
   signal,
 }: CompressVideoOptions): Promise<CompressedVideo> {
+  const budgetEndsAt = Date.now() + timeBudgetMs;
+  const budgetLeftMs = () => budgetEndsAt - Date.now();
+
   if (!inputBuffer || inputBuffer.length === 0) {
     throw new ClientError('The video file is empty.');
   }
@@ -236,14 +240,14 @@ export async function compressVideo({
   try {
     await fs.writeFile(inputPath, inputBuffer);
 
-    const probe = await probeUpload(inputPath, signal);
+    const probe = await probeUpload(inputPath, budgetLeftMs(), signal);
     const video = movingVideo(probe);
     assertDurationWithinLimit(probe.durationSeconds, maxDurationSeconds);
 
     try {
       await runFfmpeg({
         args: encodeArguments(inputPath, outputPath, video, crf, resolution),
-        deadlineMs: encodeDeadlineMs,
+        deadlineMs: budgetLeftMs(),
         signal,
       });
     } catch (error) {
