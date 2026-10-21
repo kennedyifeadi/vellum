@@ -28,14 +28,44 @@ function toSeconds(hours: string, minutes: string, seconds: string): number {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
 }
 
-function readDuration(log: string): number {
+function readDuration(log: string, packetEndSeconds: number): number {
   const header = log.match(DURATION);
   const headerSeconds = header ? toSeconds(header[1], header[2], header[3]) : 0;
   // A header can be missing (a browser recording) or understate the length; the time of
-  // the last packet read is how much ffmpeg would actually encode.
+  // the last packet read is how much ffmpeg would actually encode. FFmpeg 6 reports it in
+  // its final progress line; FFmpeg 7 prints time=N/A there when the packets carry no
+  // presentation time, so the end of the last packet copied is measured as well.
   const lastPacket = [...log.matchAll(LAST_TIMESTAMP)].pop();
-  const packetSeconds = lastPacket ? toSeconds(lastPacket[1], lastPacket[2], lastPacket[3]) : 0;
-  return Math.max(headerSeconds, packetSeconds);
+  const reportedSeconds = lastPacket ? toSeconds(lastPacket[1], lastPacket[2], lastPacket[3]) : 0;
+  return Math.max(headerSeconds, reportedSeconds, packetEndSeconds);
+}
+
+// framecrc writes `#tb 0: <num>/<den>`, then one line per packet,
+// `stream, dts, pts, duration, size, checksum[, flags]`, with times in that time base.
+const TIME_BASE = /^#tb \d+: (\d+)\/(\d+)$/;
+
+class PacketList {
+  count = 0;
+  private endTicks = Number.NEGATIVE_INFINITY;
+  private secondsPerTick = 0;
+
+  readLine(line: string): void {
+    if (line === '') return;
+    if (line.startsWith('#')) {
+      const timeBase = line.match(TIME_BASE);
+      if (timeBase) this.secondsPerTick = Number(timeBase[1]) / Number(timeBase[2]);
+      return;
+    }
+    this.count += 1;
+    const [, dts, , duration] = line.split(',').map(Number);
+    if (Number.isFinite(dts) && Number.isFinite(duration)) {
+      this.endTicks = Math.max(this.endTicks, dts + duration);
+    }
+  }
+
+  get endSeconds(): number {
+    return Number.isFinite(this.endTicks) ? Math.max(0, this.endTicks * this.secondsPerTick) : 0;
+  }
 }
 
 function readStreams(log: string): Pick<VideoProbe, 'video' | 'audioStreamCount'> {
@@ -86,10 +116,10 @@ export async function probeVideo(
   inputPath: string,
   { deadlineMs, signal }: { deadlineMs: number; signal?: AbortSignal },
 ): Promise<VideoProbe> {
-  let packetCount = 0;
+  const packets = new PacketList();
   let partialLine = '';
-  const countPackets = (text: string) => {
-    packetCount += text.split('\n').filter((line) => line !== '' && !line.startsWith('#')).length;
+  const readPackets = (text: string) => {
+    for (const line of text.split('\n')) packets.readLine(line.trimEnd());
   };
 
   let log: string;
@@ -110,7 +140,7 @@ export async function probeVideo(
       onStdout: (chunk) => {
         const text = partialLine + chunk;
         const lastNewline = text.lastIndexOf('\n');
-        countPackets(text.slice(0, lastNewline + 1));
+        readPackets(text.slice(0, lastNewline + 1));
         partialLine = text.slice(lastNewline + 1);
       },
     });
@@ -120,17 +150,17 @@ export async function probeVideo(
     }
     log = error.stderr;
   }
-  countPackets(partialLine);
+  readPackets(partialLine);
 
   const { video, audioStreamCount } = readStreams(log);
   if (video) {
-    video.frameCount = packetCount;
+    video.frameCount = packets.count;
   }
 
   return {
     container: log.match(/^Input #0, (.+?), from /m)?.[1] ?? '',
     majorBrand: log.match(/^\s*major_brand\s*: (\S+)/m)?.[1] ?? null,
-    durationSeconds: readDuration(log),
+    durationSeconds: readDuration(log, packets.endSeconds),
     video,
     audioStreamCount,
   };
