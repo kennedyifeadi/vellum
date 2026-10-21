@@ -89,8 +89,9 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, plan } = await resolveCaller(req);
 
-    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
-    const images = await resolveFiles(formData, 'images');
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const images = await resolveFiles(formData, 'images', budget);
     const level = compressionLevel(formData.get('level'));
 
     if (!images || images.length === 0) {

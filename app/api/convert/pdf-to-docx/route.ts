@@ -66,8 +66,9 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, plan } = await resolveCaller(req);
 
-    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
-    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });

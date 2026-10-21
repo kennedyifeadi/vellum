@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
-    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
     const startPage = parseInt(formData.get('startPage') as string, 10) || 1;
     const endPage = parseInt(formData.get('endPage') as string, 10) || 1;
     const splitEvery = formData.get('splitEvery') === 'true';

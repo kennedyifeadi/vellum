@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudget(maxSize, `Your current plan allows DOCX files up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
-    const file = (await resolveFiles(formData, 'docx'))[0] as File;
+    const file = (await resolveFiles(formData, 'docx', budget))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No DOCX file provided.' }, { status: 400 });

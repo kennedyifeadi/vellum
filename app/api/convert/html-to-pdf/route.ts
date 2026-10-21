@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       // File upload mode
       const budget = uploadBudget(maxSize, `Your current plan allows HTML files up to ${maxSize / (1024 * 1024)}MB.`);
       const formData = await readMultipartForm(req, budget);
-      const file = (await resolveFiles(formData, 'html'))[0] as File | null;
+      const file = (await resolveFiles(formData, 'html', budget))[0] as File | null;
       if (!file) {
         return NextResponse.json({ error: 'No HTML file provided.' }, { status: 400 });
       }

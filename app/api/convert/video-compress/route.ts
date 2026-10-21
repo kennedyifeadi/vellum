@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, plan } = await resolveCaller(req);
 
-    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
-    const video = (await resolveFiles(formData, 'video'))[0] as File;
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const video = (await resolveFiles(formData, 'video', budget))[0] as File;
     const crf = crfForQuality(formData.get('quality'));
     const resolution = formData.get('resolution') as string || 'Original';
 

@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudget(maxSize, `Your current plan allows merges totaling up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
-    const files = await resolveFiles(formData, 'pdfs');
+    const files = await resolveFiles(formData, 'pdfs', budget);
 
     if (!files || files.length < 2) {
       return NextResponse.json({ error: 'Please provide at least two PDF files to merge.' }, { status: 400 });

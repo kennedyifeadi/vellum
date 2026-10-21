@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
-    file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });

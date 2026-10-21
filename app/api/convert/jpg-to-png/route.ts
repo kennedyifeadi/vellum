@@ -68,8 +68,9 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, plan } = await resolveCaller(req);
 
-    const formData = await readMultipartForm(req, uploadBudgetForPlan(plan));
-    const images = await resolveFiles(formData, 'images');
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const images = await resolveFiles(formData, 'images', budget);
 
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
