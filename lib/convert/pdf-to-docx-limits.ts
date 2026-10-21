@@ -1,5 +1,6 @@
 import { ClientError } from '@/lib/convert/errors';
 import type { PdfExtractionOptions } from '@/lib/convert/pdf-extraction';
+import type { UploadBudget } from '@/lib/http/read-upload';
 import { PDF_WORKER_LIMITS, pdfTooComplexMessage, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
 
@@ -68,12 +69,23 @@ function formatSizeInMb(bytes: number): string {
   return (Math.ceil((bytes / BYTES_PER_MB) * 10) / 10).toFixed(1);
 }
 
+// An upload cut off while it was read has no size to report, only that it is over.
+function fileTooLargeError(maxFileSize: number, fileSize?: number): ClientError {
+  const subject = fileSize === undefined ? 'This PDF is too large' : `This PDF is ${formatSizeInMb(fileSize)} MB`;
+  return new ClientError(
+    `${subject}; your plan allows converting PDFs up to ${maxFileSize / BYTES_PER_MB} MB to Word. This limit is specific to PDF to Word and is lower than the general upload limit.`,
+  );
+}
+
+export function uploadBudgetForPlan(plan: string | null | undefined): UploadBudget {
+  const maxBytes = resolvePlanLimit(plan, MAX_FILE_SIZE);
+  return { maxBytes, tooLarge: (fileSize) => fileTooLargeError(maxBytes, fileSize) };
+}
+
 export function assertFileSizeWithinPlan(plan: string | null | undefined, fileSize: number): void {
-  const maxFileSize = resolvePlanLimit(plan, MAX_FILE_SIZE);
-  if (fileSize > maxFileSize) {
-    throw new ClientError(
-      `This PDF is ${formatSizeInMb(fileSize)} MB; your plan allows converting PDFs up to ${maxFileSize / BYTES_PER_MB} MB to Word. This limit is specific to PDF to Word and is lower than the general upload limit.`,
-    );
+  const budget = uploadBudgetForPlan(plan);
+  if (fileSize > budget.maxBytes) {
+    throw budget.tooLarge(fileSize);
   }
 }
 

@@ -136,7 +136,7 @@ describe('history file names for routes that always produce a PDF', () => {
       const res = await compress(uploadName);
 
       await expectDownloadablePdfRow(res, 'Compress PDF', recordedName);
-      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_${uploadName}"`);
+      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_${uploadName}"; filename*=UTF-8''compressed_${uploadName}`);
     });
   });
 
@@ -180,7 +180,7 @@ describe('history file names for routes that always produce a PDF', () => {
     it('leaves the response filename as it was for a name it does not recognise as HTML', async () => {
       const res = await convertHtml('page.xhtml');
 
-      expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="page.xhtml"');
+      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="page.xhtml"; filename*=UTF-8''page.xhtml`);
     });
   });
 

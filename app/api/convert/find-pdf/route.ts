@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
+import { corruptPdfMessage, emptyPdfMessage, encryptedPdfMessage } from '@/lib/pdf/loadPdf';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { extractPdfTextItems, type PdfTextItem } from '@/lib/convert/find-pdf-extraction';
 import {
@@ -13,10 +12,13 @@ import {
   extractionOptionsForPlan,
   FIND_PDF_BUSY_MESSAGE,
   PDF_TOO_COMPLEX_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/find-pdf-limits';
-import { isBusy, PdfExtractionError } from '@/lib/convert/pdf-worker';
+import { isBusy, parserFailure, PdfExtractionError } from '@/lib/convert/pdf-worker';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { findInItems } from '@/lib/pdf/findPdfStream';
+import { readMultipartForm, textField } from '@/lib/http/read-upload';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 interface Match {
   page: number;
@@ -34,7 +36,7 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
       throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
     }
     if (failure.reason === 'parser') {
-      throw error.cause;
+      throw parserFailure(error);
     }
   }
   throw error;
@@ -48,34 +50,50 @@ async function extractTextItems(data: Uint8Array, plan: string): Promise<PdfText
   }
 }
 
+// pdf.js has already read the PDF, but pdf-lib refuses some that pdf.js accepts: one
+// with only an owner password (pdf.js opens it, pdf-lib cannot decrypt it), or one
+// pdf.js could repair.
+async function loadForHighlighting(data: ArrayBuffer): Promise<PDFDocument> {
+  let pdfDoc: PDFDocument;
+  try {
+    pdfDoc = await PDFDocument.load(data, { ignoreEncryption: true });
+  } catch (error) {
+    throw new ClientError(corruptPdfMessage(), 400, { cause: error });
+  }
+  if (pdfDoc.isEncrypted) {
+    throw new ClientError(encryptedPdfMessage());
+  }
+  return pdfDoc;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
+    assertWithinRateLimit(req);
 
-    const formData = await req.formData();
-    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
-    const searchTerm = (formData.get('searchTerm') as string)?.toLowerCase();
+    const { userId, plan } = await resolveCaller(req);
+
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
+    const searchTerm = textField(formData, 'searchTerm')?.toLowerCase();
 
     if (!file || !searchTerm) {
       return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
     }
 
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
-    }
     const isPro = plan === 'Pro';
 
     assertFileSizeWithinPlan(plan, file.size);
 
     const arrayBuffer = await file.arrayBuffer();
+    if (arrayBuffer.byteLength === 0) {
+      throw new ClientError(emptyPdfMessage());
+    }
     // The extraction worker takes ownership of the bytes it is given, so it gets a copy
     // and pdf-lib keeps the original.
     const pageTextItems = await extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan);
 
-    const pdfLibDoc = await PDFDocument.load(arrayBuffer);
+    const pdfLibDoc = await loadForHighlighting(arrayBuffer);
     const matches: Match[] = [];
     let totalMatchCount = 0; // counted for ALL users, not just Pro
 
@@ -122,6 +140,15 @@ export async function POST(req: NextRequest) {
     const modifiedPdfBytes = await pdfLibDoc.save();
     const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = NextResponse.json({
+      success: true,
+      pdfBase64,
+      matches: isPro ? matches : [],
+      matchCount: totalMatchCount
+    });
+
     if (userId) {
       try {
         await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
@@ -134,12 +161,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      pdfBase64,
-      matches: isPro ? matches : [],
-      matchCount: totalMatchCount
-    });
+    return response;
 
   } catch (error) {
     if (isBusy(error)) {

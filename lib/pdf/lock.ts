@@ -1,4 +1,6 @@
 import { PDFDocument } from 'pdf-lib-plus-encrypt';
+import { ClientError } from '@/lib/convert/errors';
+import { corruptPdfMessage, emptyPdfMessage } from '@/lib/pdf/loadPdf';
 
 const AES256_HEADER_VERSION = '1.7ext3';
 const MIN_PASSWORD_LENGTH = 4;
@@ -42,17 +44,34 @@ export async function lockPdf({
 }: LockPdfOptions): Promise<Buffer> {
   const validationError = validateLockPassword(password);
   if (validationError) {
-    throw new Error(validationError);
+    throw new ClientError(validationError);
+  }
+  if (pdfBuffer.length === 0) {
+    throw new ClientError(emptyPdfMessage());
   }
 
-  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  // pdf-lib-plus-encrypt's own PDFDocument, which loadPdf (plain pdf-lib) cannot return.
+  let pdfDoc: PDFDocument;
+  try {
+    pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  } catch (error) {
+    throw new ClientError(corruptPdfMessage(), 400, { cause: error });
+  }
 
   // pdf-lib-plus-encrypt can write encryption but has no counterpart for decrypting
   // on load, so an already-encrypted document's object streams stay opaque. Walking
   // its page tree (as encrypt()/save() do) would otherwise fail with a confusing
   // TypeError, so fail fast with an actionable message instead.
   if (pdfDoc.isEncrypted) {
-    throw new Error('This PDF is already password-protected. Please remove the existing password before adding a new one.');
+    throw new ClientError('This PDF is already password-protected. Please remove the existing password before adding a new one.');
+  }
+
+  // pdf-lib loads a file with no document catalog (a bare `%PDF` header) without
+  // complaint; it only fails once the page tree is walked.
+  try {
+    pdfDoc.getPageCount();
+  } catch (error) {
+    throw new ClientError(corruptPdfMessage(), 400, { cause: error });
   }
 
   // encrypt() in this fork ignores any caller-supplied pdfVersion and derives the

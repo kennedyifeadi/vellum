@@ -9,6 +9,9 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { ClientError } from '@/lib/convert/errors';
+import { readMultipartForm, uploadBudget, uploadedFiles } from '@/lib/http/read-upload';
+import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +23,10 @@ function storageExtension(fileName: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) {
+    return NextResponse.json({ error: RATE_LIMITED_MESSAGE }, { status: 429 });
+  }
+
   const userId = await getAuthUserId(req);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -48,8 +55,23 @@ export async function POST(req: NextRequest) {
   ]);
   const currentUsed = (convAgg[0]?.total ?? 0) + (docAgg[0]?.total ?? 0);
 
-  const formData = await req.formData();
-  const files = formData.getAll('files') as File[];
+  let files: File[];
+  try {
+    const formData = await readMultipartForm(
+      req,
+      uploadBudget(
+        Math.max(0, limitBytes - currentUsed),
+        'Storage limit reached. Cannot upload these files. Upgrade to Pro for more space.',
+        507,
+      ),
+    );
+    files = uploadedFiles(formData, 'files');
+  } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
 
   if (!files.length) return NextResponse.json({ error: 'No files provided' }, { status: 400 });
 

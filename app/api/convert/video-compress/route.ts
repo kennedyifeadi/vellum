@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
+import { resolveCaller } from '@/lib/auth/caller';
 import { recordConversionHistory } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { compressVideo, type CompressedVideo } from '@/lib/video/compress';
@@ -12,10 +10,14 @@ import {
   assertFileSizeWithinPlan,
   COMPRESS_VIDEO_BUSY_MESSAGE,
   encodeLimitsForPlan,
+  uploadBudgetForPlan,
 } from '@/lib/convert/video-compress-limits';
+import { readMultipartForm, textField } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
-function crfForQuality(quality: FormDataEntryValue | null): number {
+function crfForQuality(quality: string | null): number {
   if (quality === 'High') return 23;
   if (quality === 'Low') return 32;
   return 28;
@@ -25,7 +27,10 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
   const stem = video.name.replace(/\.[^/.]+$/, '');
   return {
     'Content-Type': output.format.contentType,
-    'Content-Disposition': `attachment; filename="compressed_${stem}.${output.format.extension}"`,
+    'Content-Disposition': attachmentDisposition(
+      `compressed_${stem}.${output.format.extension}`,
+      `compressed_video.${output.format.extension}`,
+    ),
     'X-Original-Size': String(originalSize),
     'X-Compressed-Size': String(output.bytes.length),
     'X-Saved-Percent': String(Math.round((1 - output.bytes.length / originalSize) * 100)),
@@ -34,21 +39,18 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const video = (await resolveFiles(formData, 'video'))[0] as File;
-    const crf = crfForQuality(formData.get('quality'));
-    const resolution = formData.get('resolution') as string || 'Original';
+    assertWithinRateLimit(req);
+
+    const { userId, plan } = await resolveCaller(req);
+
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const video = (await resolveFiles(formData, 'video', budget))[0] as File;
+    const crf = crfForQuality(textField(formData, 'quality'));
+    const resolution = textField(formData, 'resolution') || 'Original';
 
     if (!video) {
       return NextResponse.json({ error: 'No video provided' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileSizeWithinPlan(plan, video.size);

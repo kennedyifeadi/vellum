@@ -238,7 +238,7 @@ describe('image-compress route error handling', () => {
       expect(res.status).toBe(200);
       expect(magicFormat(body)).toBe(magicFormat(input));
       expect(res.headers.get('Content-Type')).toBe(contentType);
-      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_holiday.${extension}"`);
+      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_holiday.${extension}"; filename*=UTF-8''compressed_holiday.${extension}`);
     });
 
     it('names each zip entry for the format it really is', async () => {

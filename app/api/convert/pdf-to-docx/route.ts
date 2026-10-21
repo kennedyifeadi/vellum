@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { extractPdfPages, PdfExtractionError } from '@/lib/convert/pdf-extraction';
 import { ConvertiblePage, missingTextPlaceholder, toConvertiblePages } from '@/lib/convert/pdf-text';
-import { isBusy } from '@/lib/convert/pdf-worker';
+import { isBusy, parserFailure } from '@/lib/convert/pdf-worker';
+import { emptyPdfMessage } from '@/lib/pdf/loadPdf';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import {
   assertFileSizeWithinPlan,
@@ -17,7 +16,11 @@ import {
   CONVERTER_BUSY_MESSAGE,
   extractionOptionsForPlan,
   PDF_TOO_COMPLEX_MESSAGE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/pdf-to-docx-limits';
+import { readMultipartForm } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -42,7 +45,7 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
       throw new ClientError(PDF_TOO_COMPLEX_MESSAGE);
     }
     if (failure.reason === 'parser') {
-      throw error.cause;
+      throw parserFailure(error);
     }
   }
   throw error;
@@ -50,6 +53,9 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
 
 async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
   const data = new Uint8Array(await file.arrayBuffer());
+  if (data.length === 0) {
+    throw new ClientError(emptyPdfMessage());
+  }
   try {
     const pages = await extractPdfPages(data, extractionOptionsForPlan(plan));
     return toConvertiblePages(pages);
@@ -64,20 +70,16 @@ function countLines(pages: ConvertiblePage[]): number {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
+    assertWithinRateLimit(req);
 
-    const formData = await req.formData();
-    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
+    const { userId, plan } = await resolveCaller(req);
+
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });
-    }
-
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileSizeWithinPlan(plan, file.size);
@@ -95,6 +97,15 @@ export async function POST(req: NextRequest) {
     const docxBuffer = await Packer.toBuffer(doc);
     const outputFileName = `${file.name.replace(/\.[^/.]+$/, "")}.docx`;
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(docxBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
+      },
+    });
+
     if (userId) {
       try {
         await saveConversionRecord(userId, 'PDF to DOCX', outputFileName, docxBuffer, {
@@ -106,12 +117,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(docxBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="${outputFileName}"`,
-      },
-    });
+    return response;
 
   } catch (error) {
     if (isBusy(error)) {

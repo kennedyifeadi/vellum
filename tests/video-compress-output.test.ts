@@ -96,7 +96,7 @@ describe('video-compress never returns a larger file', () => {
 
     expect(body.equals(small)).toBe(true);
     expect(res.headers.get('Content-Type')).toBe('video/quicktime');
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="compressed_holiday.mov"');
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_holiday.mov"; filename*=UTF-8''compressed_holiday.mov`);
     expect(res.headers.get('X-Original-Size')).toBe(String(small.length));
     expect(res.headers.get('X-Compressed-Size')).toBe(String(small.length));
     expect(res.headers.get('X-Saved-Percent')).toBe('0');
@@ -109,7 +109,7 @@ describe('video-compress never returns a larger file', () => {
 
     expect(body.equals(small)).toBe(true);
     expect(res.headers.get('Content-Type')).toBe('video/x-matroska');
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="compressed_clip.mkv"');
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_clip.mkv"; filename*=UTF-8''compressed_clip.mkv`);
   });
 
   it('shrinks a compressible upload and reports what it saved', async () => {
@@ -119,7 +119,7 @@ describe('video-compress never returns a larger file', () => {
 
     expect(body.length).toBeLessThan(large.length);
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="compressed_master.mp4"');
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_master.mp4"; filename*=UTF-8''compressed_master.mp4`);
     expect(res.headers.get('X-Original-Size')).toBe(String(large.length));
     expect(res.headers.get('X-Compressed-Size')).toBe(String(body.length));
     expect(res.headers.get('X-Saved-Percent')).toBe(String(Math.round((1 - body.length / large.length) * 100)));

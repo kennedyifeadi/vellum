@@ -44,7 +44,15 @@ jest.mock('@/lib/video/compress', () => ({
   compressVideo: (...args: any[]) => compressVideo(...args),
 }));
 
+// Lets a test make the response headers impossible to build, as an unencodable file name
+// once did.
+jest.mock('@/lib/http/content-disposition', () => {
+  const actual = jest.requireActual('@/lib/http/content-disposition');
+  return { attachmentDisposition: jest.fn(actual.attachmentDisposition) };
+});
+
 import { POST as handleVideoCompress } from '../app/api/convert/video-compress/route';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 function fakeFile(buffer: Buffer, name = 'clip.mp4', type = 'video/mp4') {
   return {
@@ -339,7 +347,7 @@ describe('video-compress response', () => {
     const res = await handleVideoCompress(videoRequest());
 
     expect(res.headers.get('Content-Type')).toBe('video/quicktime');
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="compressed_holiday.mov"');
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="compressed_holiday.mov"; filename*=UTF-8''compressed_holiday.mov`);
     expect(res.headers.get('X-Original-Size')).toBe(String(original.length));
     expect(res.headers.get('X-Compressed-Size')).toBe(String(original.length));
     expect(res.headers.get('X-Saved-Percent')).toBe('0');
@@ -347,8 +355,11 @@ describe('video-compress response', () => {
 
   it('records nothing when the response cannot be built', async () => {
     mockUserId = '507f1f77bcf86cd799439011';
-    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'), '動画.mp4')];
+    mockResolvedFiles = [fakeFile(Buffer.from('raw-input'), 'clip.mp4')];
     compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
+    jest.mocked(attachmentDisposition).mockImplementationOnce(() => {
+      throw new TypeError('Cannot convert argument to a ByteString');
+    });
 
     const res = await handleVideoCompress(videoRequest());
 

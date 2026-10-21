@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { recordConversionHistory, saveConversionRecord } from '@/lib/conversions';
 import JSZip from 'jszip';
 import { acceptJpeg, convertJpegToPng } from '@/lib/image/to-png';
@@ -14,9 +12,13 @@ import {
   assertTotalSizeWithinPlan,
   JPEG_TO_PNG_BUSY_MESSAGE,
   MAX_STORED_OUTPUT_SIZE,
+  uploadBudgetForPlan,
 } from '@/lib/convert/jpg-to-png-limits';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
+import { readMultipartForm } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 interface ConvertedOutput {
   toolUsed: string;
@@ -66,19 +68,16 @@ async function recordConversion(userId: string, output: ConvertedOutput, pages: 
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const images = await resolveFiles(formData, 'images');
+    assertWithinRateLimit(req);
+
+    const { userId, plan } = await resolveCaller(req);
+
+    const budget = uploadBudgetForPlan(plan);
+    const formData = await readMultipartForm(req, budget);
+    const images = await resolveFiles(formData, 'images', budget);
 
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
     }
 
     assertFileCountWithinPlan(plan, images.length);
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
     const response = new NextResponse(output.bytes as unknown as BodyInit, {
       headers: {
         'Content-Type': output.contentType,
-        'Content-Disposition': `attachment; filename="${output.fileName}"`,
+        'Content-Disposition': attachmentDisposition(output.fileName, 'converted.png'),
       },
     });
 

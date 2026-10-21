@@ -1,31 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { splitPdf } from '@/lib/pdf/split';
 import JSZip from 'jszip';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
+import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = (await resolveFiles(formData, 'pdf'))[0] as File;
-    const startPage = parseInt(formData.get('startPage') as string, 10) || 1;
-    const endPage = parseInt(formData.get('endPage') as string, 10) || 1;
-    const splitEvery = formData.get('splitEvery') === 'true';
+    assertWithinRateLimit(req);
 
-    if (!file) {
-      return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });
-    }
-
-    const userId = await getAuthUserId(req);
-    await dbConnect();
-    const user = userId ? await User.findById(userId) : null;
-    const plan = user?.plan || 'Free';
+    const { userId, plan } = await resolveCaller(req);
 
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
@@ -33,11 +23,20 @@ export async function POST(req: NextRequest) {
       Pro: 100 * 1024 * 1024,
       Enterprise: 500 * 1024 * 1024,
     });
+    const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
+
+    const formData = await readMultipartForm(req, budget);
+    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
+    const startPage = parseInt(textField(formData, 'startPage') ?? '', 10) || 1;
+    const endPage = parseInt(textField(formData, 'endPage') ?? '', 10) || 1;
+    const splitEvery = textField(formData, 'splitEvery') === 'true';
+
+    if (!file) {
+      return NextResponse.json({ error: 'No PDF file provided.' }, { status: 400 });
+    }
 
     if (file.size > maxSize) {
-      return NextResponse.json({
-        error: `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`
-      }, { status: 400 });
+      throw budget.tooLarge(file.size);
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -57,6 +56,15 @@ export async function POST(req: NextRequest) {
       if (!firstEntry) throw new Error('splitPdf returned an empty result set');
       const [fileName, buffer] = firstEntry;
 
+      // Built before anything is recorded, so a response that cannot be built leaves no
+      // history row behind.
+      const response = new NextResponse(buffer as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': attachmentDisposition(fileName, 'split_document.pdf'),
+        },
+      });
+
       if (userId) {
         try {
           await saveConversionRecord(userId, 'Split PDF', fileName, Buffer.from(buffer));
@@ -65,12 +73,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return new NextResponse(buffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${fileName}"`,
-        },
-      });
+      return response;
     }
 
     if (splitPdfBuffers.size > 1) {
@@ -82,6 +85,15 @@ export async function POST(req: NextRequest) {
 
       const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
+      // Built before anything is recorded, so a response that cannot be built leaves no
+      // history row behind.
+      const response = new NextResponse(zipBuffer as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="split_documents.zip"`,
+        },
+      });
+
       if (userId) {
         try {
           const originalFileName = file?.name ? `split_${file.name.replace('.pdf', '')}.zip` : 'split_documents.zip';
@@ -91,12 +103,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return new NextResponse(zipBuffer as unknown as BodyInit, {
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Disposition': `attachment; filename="split_documents.zip"`,
-        },
-      });
+      return response;
     }
 
     throw new Error('splitPdf returned no documents');

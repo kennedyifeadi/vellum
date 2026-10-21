@@ -280,7 +280,7 @@ describe('jpg-to-png route error handling', () => {
       const res = await handleJpgToPng(jpgRequest());
       const body = Buffer.from(await res.arrayBuffer());
 
-      expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="converted_photo.png"');
+      expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="converted_photo.png"; filename*=UTF-8''converted_photo.png`);
       expect(conversionCreate).toHaveBeenCalledTimes(1);
       const record = conversionCreate.mock.calls[0][0];
       expect(record).toMatchObject({

@@ -3,6 +3,32 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+
+// A stored document's type is whatever its uploader claimed, so it is only passed on for
+// types a browser will not run as a page or script; anything else is served as bytes.
+const SERVABLE_DOCUMENT_TYPES = new Set([
+  'application/pdf',
+  'application/zip',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
+  'image/avif',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-matroska',
+]);
+
+function servedContentType(claimedType: unknown): string {
+  const type = String(claimedType ?? '').split(';')[0].trim().toLowerCase();
+  return SERVABLE_DOCUMENT_TYPES.has(type) ? type : 'application/octet-stream';
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -23,8 +49,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
-        'Content-Type': doc.mimeType,
-        'Content-Disposition': `attachment; filename="${doc.fileName}"`,
+        'Content-Type': servedContentType(doc.mimeType),
+        'Content-Disposition': attachmentDisposition(doc.fileName, 'download'),
+        'X-Content-Type-Options': 'nosniff',
       },
     });
 

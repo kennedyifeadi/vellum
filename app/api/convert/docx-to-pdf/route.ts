@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { convertDocxToPdf } from '@/lib/doc/to-pdf';
-import { getAuthUserId } from '@/lib/auth/jwt';
+import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
-import User from '@/models/user';
-import dbConnect from '@/lib/db/mongoose';
+import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // A malicious .docx can be a few KB on disk yet declare gigabytes of decompressed XML.
 // Reject anything whose entries expand far beyond their upload size, or past an absolute
@@ -32,13 +33,9 @@ function declaredUncompressedSize(zip: JSZip): number {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getAuthUserId(req);
-    let plan = 'Free';
-    if (userId) {
-      await dbConnect();
-      const user = await User.findById(userId);
-      plan = user?.plan || 'Free';
-    }
+    assertWithinRateLimit(req);
+
+    const { userId, plan } = await resolveCaller(req);
 
     const maxSize = resolvePlanLimit(plan, {
       guest: 25 * 1024 * 1024,
@@ -47,17 +44,17 @@ export async function POST(req: NextRequest) {
       Enterprise: 500 * 1024 * 1024,
     });
 
-    const formData = await req.formData();
-    const file = (await resolveFiles(formData, 'docx'))[0] as File;
+    const budget = uploadBudget(maxSize, `Your current plan allows DOCX files up to ${maxSize / (1024 * 1024)}MB.`);
+
+    const formData = await readMultipartForm(req, budget);
+    const file = (await resolveFiles(formData, 'docx', budget))[0] as File;
 
     if (!file) {
       return NextResponse.json({ error: 'No DOCX file provided.' }, { status: 400 });
     }
 
     if (file.size > maxSize) {
-      throw new ClientError(
-        `Your current plan allows DOCX files up to ${maxSize / (1024 * 1024)}MB.`,
-      );
+      throw budget.tooLarge(file.size);
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -80,6 +77,15 @@ export async function POST(req: NextRequest) {
 
     const pdfBuffer = await convertDocxToPdf({ docxBuffer });
 
+    // Built before anything is recorded, so a response that cannot be built leaves no
+    // history row behind.
+    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
+      },
+    });
+
     if (userId) {
       try {
         const originalFileName = file.name.replace(/\.[^/.]+$/, '') + '.pdf';
@@ -89,12 +95,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${file.name.replace(/\.[^/.]+$/, '')}.pdf"`,
-      },
-    });
+    return response;
   } catch (error) {
     return handleConvertError(error, 'Failed to convert DOCX to PDF.');
   }
