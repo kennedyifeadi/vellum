@@ -6,8 +6,13 @@ export interface VideoProbe {
   /** The QuickTime-family brand, which tells MP4, MOV and 3GP apart. */
   majorBrand: string | null;
   durationSeconds: number;
-  /** The first video stream that is not cover art, as stored (before rotation). */
-  video: { width: number; height: number; rotation: number; frameCount: number } | null;
+  /**
+   * The first video stream that is not cover art, as stored (before rotation). `frameRate`
+   * is the rate an MP4 encode of it runs at (0 when ffmpeg names none); it can exceed
+   * `frameCount` over the length, because ffmpeg repeats frames to fill a variable-rate
+   * stream out to a constant one.
+   */
+  video: { width: number; height: number; rotation: number; frameCount: number; frameRate: number } | null;
   audioStreamCount: number;
 }
 
@@ -18,6 +23,8 @@ const ANALYZE_DURATION_MICROSECONDS = 5_000_000;
 
 const STREAM_LINE = /^\s*Stream #0:\d+\S*: (Video|Audio|Subtitle|Data|Attachment): (.*)$/;
 const DIMENSIONS = /, (\d{1,5})x(\d{1,5})[ ,]/;
+const AVERAGE_FRAME_RATE = /, ([\d.]+)(k?) fps\b/;
+const BASE_FRAME_RATE = /, ([\d.]+)(k?) tbr\b/;
 const ROTATION = /displaymatrix: rotation of (-?[\d.]+) degrees/;
 const DURATION = /^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/m;
 const LAST_TIMESTAMP = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/g;
@@ -26,6 +33,20 @@ const NOTHING_TO_COPY = /does not contain any stream/;
 
 function toSeconds(hours: string, minutes: string, seconds: string): number {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+function rate(details: string, pattern: RegExp): number {
+  const match = details.match(pattern);
+  return match ? Number(match[1]) * (match[2] ? 1000 : 1) : 0;
+}
+
+// ffmpeg encodes at the stream's base rate (tbr) unless that is implausibly high next to
+// its average rate, the rule of libavformat's av_guess_frame_rate.
+function readFrameRate(details: string): number {
+  const average = rate(details, AVERAGE_FRAME_RATE);
+  const base = rate(details, BASE_FRAME_RATE);
+  if (average > 0 && average < 70 && base > 210) return average;
+  return base || average;
 }
 
 function readDuration(log: string, packetEndSeconds: number): number {
@@ -86,7 +107,13 @@ function readStreams(log: string): Pick<VideoProbe, 'video' | 'audioStreamCount'
       if (kind === 'Audio') {
         audioStreamCount += 1;
       } else if (kind === 'Video' && !video && !details.includes('(attached pic)') && dimensions) {
-        video = { width: Number(dimensions[1]), height: Number(dimensions[2]), rotation: 0, frameCount: 0 };
+        video = {
+          width: Number(dimensions[1]),
+          height: Number(dimensions[2]),
+          rotation: 0,
+          frameCount: 0,
+          frameRate: readFrameRate(details),
+        };
         readingFirstVideo = true;
       }
       continue;
