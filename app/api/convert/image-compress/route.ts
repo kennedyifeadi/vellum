@@ -23,6 +23,7 @@ import {
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { bareFileStem, claimUniqueName } from '@/lib/paths';
 import { readMultipartForm } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 interface CompressedOutput {
   toolUsed: string;
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
     const response = new NextResponse(output.bytes as unknown as BodyInit, {
       headers: {
         'Content-Type': output.contentType,
-        'Content-Disposition': `attachment; filename="${output.fileName}"`,
+        'Content-Disposition': attachmentDisposition(output.fileName, 'compressed_image'),
         ...output.headers,
       },
     });

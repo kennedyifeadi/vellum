@@ -3,6 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': doc.mimeType,
-        'Content-Disposition': `attachment; filename="${doc.fileName}"`,
+        'Content-Disposition': attachmentDisposition(doc.fileName, 'download'),
       },
     });
 

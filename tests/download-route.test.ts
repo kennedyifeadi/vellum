@@ -76,7 +76,7 @@ describe('download route', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe(contentType);
-    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="${fileName}"`);
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="${fileName}"; filename*=UTF-8''${fileName}`);
     expect(Buffer.from(await res.arrayBuffer()).equals(bytes)).toBe(true);
   });
 

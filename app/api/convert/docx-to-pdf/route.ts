@@ -7,6 +7,7 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 // A malicious .docx can be a few KB on disk yet declare gigabytes of decompressed XML.
 // Reject anything whose entries expand far beyond their upload size, or past an absolute
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${file.name.replace(/\.[^/.]+$/, '')}.pdf"`,
+        'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
       },
     });
   } catch (error) {

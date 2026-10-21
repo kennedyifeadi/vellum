@@ -52,10 +52,18 @@ jest.mock('@/lib/image/to-png', () => ({
   convertJpegToPng: jest.fn((...args: unknown[]) => jest.requireActual('@/lib/image/to-png').convertJpegToPng(...args)),
 }));
 
+// Lets a test make the response headers impossible to build, as an unencodable file name
+// once did.
+jest.mock('@/lib/http/content-disposition', () => {
+  const actual = jest.requireActual('@/lib/http/content-disposition');
+  return { attachmentDisposition: jest.fn(actual.attachmentDisposition) };
+});
+
 import { POST as handleImageCompress } from '../app/api/convert/image-compress/route';
 import { POST as handleJpgToPng } from '../app/api/convert/jpg-to-png/route';
 import { compressImage } from '@/lib/image/compress';
 import { convertJpegToPng } from '@/lib/image/to-png';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 const compressImageMock = compressImage as jest.Mock;
 const convertJpegToPngMock = convertJpegToPng as jest.Mock;
@@ -242,8 +250,11 @@ describe('image-compress and the database', () => {
 
   it('records nothing when the response cannot be built', async () => {
     mockUserId = USER_ID;
+    jest.mocked(attachmentDisposition).mockImplementationOnce(() => {
+      throw new TypeError('Cannot convert argument to a ByteString');
+    });
 
-    const res = await compress([uploadedFile(await createPhotoJpeg(320, 240, 100), '照片.jpg')]);
+    const res = await compress([uploadedFile(await createPhotoJpeg(320, 240, 100), 'photo.jpg')]);
 
     expect(res.status).toBe(500);
     expect(conversionCreate).not.toHaveBeenCalled();

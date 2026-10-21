@@ -18,6 +18,7 @@ import {
   uploadBudgetForPlan,
 } from '@/lib/convert/pdf-to-docx-limits';
 import { readMultipartForm } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 function toParagraphs(page: ConvertiblePage, pageIndex: number): Paragraph[] {
   const runs = page.hasText
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse(docxBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="${outputFileName}"`,
+        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
       },
     });
 

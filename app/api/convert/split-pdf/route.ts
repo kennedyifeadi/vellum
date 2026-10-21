@@ -7,6 +7,7 @@ import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 
 export async function POST(req: NextRequest) {
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
       return new NextResponse(buffer as unknown as BodyInit, {
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${fileName}"`,
+          'Content-Disposition': attachmentDisposition(fileName, 'split_document.pdf'),
         },
       });
     }

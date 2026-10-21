@@ -4,6 +4,7 @@ import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import { storedContentType } from '@/lib/conversions';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': storedContentType(conversion.diskFileName) ?? 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${conversion.fileName}"`,
+        'Content-Disposition': attachmentDisposition(conversion.fileName, 'download'),
       },
     });
 

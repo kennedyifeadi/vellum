@@ -7,6 +7,7 @@ import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 const COMPRESSION_LEVELS = ['low', 'medium', 'high'] as const;
 type CompressionLevel = (typeof COMPRESSION_LEVELS)[number];
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
   return new NextResponse(compressedPdfBuffer as unknown as BodyInit, {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="compressed_${file.name || 'document.pdf'}"`,
+      'Content-Disposition': attachmentDisposition(`compressed_${file.name || 'document.pdf'}`, 'compressed.pdf'),
       'X-Original-Size': String(originalSize),
       'X-Compressed-Size': String(compressedSize),
       'X-Saved-Percent': String(savedPercent),

@@ -232,7 +232,7 @@ describe('pdf-to-docx route', () => {
     expect(res.headers.get('Content-Type')).toBe(
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     );
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="report.docx"');
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="report.docx"; filename*=UTF-8''report.docx`);
     expect(paragraphTexts(await documentXml(res))).toEqual([
       'Quarterly report',
       'Revenue grew 12% year over year.',

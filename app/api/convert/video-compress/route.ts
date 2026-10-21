@@ -13,6 +13,7 @@ import {
   uploadBudgetForPlan,
 } from '@/lib/convert/video-compress-limits';
 import { readMultipartForm } from '@/lib/http/read-upload';
+import { attachmentDisposition } from '@/lib/http/content-disposition';
 
 // Constant Rate Factor per quality; lower CRF = better quality, larger size.
 function crfForQuality(quality: FormDataEntryValue | null): number {
@@ -25,7 +26,10 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
   const stem = video.name.replace(/\.[^/.]+$/, '');
   return {
     'Content-Type': output.format.contentType,
-    'Content-Disposition': `attachment; filename="compressed_${stem}.${output.format.extension}"`,
+    'Content-Disposition': attachmentDisposition(
+      `compressed_${stem}.${output.format.extension}`,
+      `compressed_video.${output.format.extension}`,
+    ),
     'X-Original-Size': String(originalSize),
     'X-Compressed-Size': String(output.bytes.length),
     'X-Saved-Percent': String(Math.round((1 - output.bytes.length / originalSize) * 100)),
