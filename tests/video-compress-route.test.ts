@@ -192,16 +192,20 @@ describe('video-compress route error handling', () => {
 });
 
 describe('video-compress encode limits', () => {
-  it('gives each plan its own length cap and deadline', async () => {
-    mockUserId = '507f1f77bcf86cd799439011';
-    mockPlan = 'Pro';
+  it.each([
+    ['a guest', null, 'Free', 5],
+    ['Basic', '507f1f77bcf86cd799439011', 'Basic', 15],
+    ['Pro', '507f1f77bcf86cd799439011', 'Pro', 30],
+    ['Enterprise', '507f1f77bcf86cd799439011', 'Enterprise', 60],
+  ])('gives %s its own length cap and the same four-minute time budget', async (_label, userId, plan, minutes) => {
+    mockUserId = userId;
+    mockPlan = plan;
     mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
     compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4')));
 
     await handleVideoCompress(videoRequest());
 
-    expect(compressVideo.mock.calls[0][0]).toMatchObject({ maxDurationSeconds: 30 * 60 });
-    expect(compressVideo.mock.calls[0][0].encodeDeadlineMs).toBeGreaterThan(0);
+    expect(compressVideo.mock.calls[0][0]).toMatchObject({ maxDurationSeconds: minutes * 60, timeBudgetMs: 4 * 60_000 });
   });
 });
 

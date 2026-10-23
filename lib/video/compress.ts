@@ -5,9 +5,15 @@ import { tmpdir } from 'os';
 import { ClientError } from '@/lib/convert/errors';
 import {
   assertDurationWithinLimit,
+  ENCODE_COST,
+  encodeFitsTimeBudget,
   FFMPEG_THREADS,
+  longestEncodableSeconds,
   PROBE_DEADLINE_MS,
+  tooMuchWorkMessage,
   VIDEO_TOO_SLOW_MESSAGE,
+  X264_PRESET,
+  type EncodeCost,
 } from '@/lib/convert/video-compress-limits';
 import { assertInsideDir } from '@/lib/paths';
 import { FfmpegExitError, FfmpegStoppedError, runFfmpeg } from '@/lib/video/ffmpeg';
@@ -19,7 +25,9 @@ interface CompressVideoOptions {
   crf: number;
   resolution?: string;
   maxDurationSeconds: number;
-  encodeDeadlineMs: number;
+  /** How long probing, encoding and reading back the output may take altogether. */
+  timeBudgetMs: number;
+  encodeCost?: EncodeCost;
   signal?: AbortSignal;
 }
 
@@ -158,6 +166,7 @@ function encodeArguments(inputPath: string, outputPath: string, video: NonNullab
     '-filter_threads', '1',
     '-vf', `scale=${target.width}:${target.height},format=yuv420p`,
     '-c:v', 'libx264',
+    '-preset', X264_PRESET,
     '-profile:v', 'high',
     '-crf', String(crf),
     '-threads', threads,
@@ -166,6 +175,40 @@ function encodeArguments(inputPath: string, outputPath: string, video: NonNullab
     '-f', 'mp4',
     '-y', outputPath,
   ];
+}
+
+const LOWER_RESOLUTIONS = Object.keys(SHORT_EDGE_CEILINGS);
+
+/**
+ * Refuses, before anything is encoded, a video whose estimated encode would not fit in
+ * `budgetMs`. The work is the frames ffmpeg writes (it repeats frames to fill a
+ * variable-rate video out to its frame rate) times the pixels decoded and encoded.
+ */
+function assertEncodeFitsTimeBudget(
+  probe: VideoProbe,
+  video: NonNullable<VideoProbe['video']>,
+  resolution: string | undefined,
+  budgetMs: number,
+  cost: EncodeCost,
+): void {
+  const upright = uprightDimensions(video);
+  const inputPixels = video.width * video.height;
+  const outputPixelsAt = (choice: string | undefined) => {
+    const target = outputDimensions(upright.width, upright.height, choice);
+    return target.width * target.height;
+  };
+  const frames = Math.max(video.frameCount, Math.ceil(probe.durationSeconds * video.frameRate));
+  if (encodeFitsTimeBudget({ frames, inputPixels, outputPixels: outputPixelsAt(resolution) }, budgetMs, cost)) {
+    return;
+  }
+
+  const frameRate = probe.durationSeconds > 0 ? frames / probe.durationSeconds : frames;
+  const longestAt = (choice: string | undefined) =>
+    longestEncodableSeconds({ frameRate, inputPixels, outputPixels: outputPixelsAt(choice) }, budgetMs, cost);
+  const smaller = LOWER_RESOLUTIONS.filter((choice) => outputPixelsAt(choice) < outputPixelsAt(resolution));
+  const lowerResolution =
+    smaller.find((choice) => longestAt(choice) >= probe.durationSeconds) ?? smaller.at(-1) ?? null;
+  throw new ClientError(tooMuchWorkMessage(longestAt(resolution), lowerResolution));
 }
 
 function toClientFacingError(error: unknown, stage: 'probe' | 'encode'): unknown {
@@ -181,9 +224,9 @@ function toClientFacingError(error: unknown, stage: 'probe' | 'encode'): unknown
   return error;
 }
 
-async function probeUpload(inputPath: string, signal?: AbortSignal): Promise<VideoProbe> {
+async function probeUpload(inputPath: string, deadlineMs: number, signal?: AbortSignal): Promise<VideoProbe> {
   try {
-    return await probeVideo(inputPath, { deadlineMs: PROBE_DEADLINE_MS, signal });
+    return await probeVideo(inputPath, { deadlineMs: Math.min(PROBE_DEADLINE_MS, deadlineMs), signal });
   } catch (error) {
     throw toClientFacingError(error, 'probe');
   }
@@ -209,10 +252,11 @@ async function removeTempFiles(...paths: string[]): Promise<void> {
 
 /**
  * Re-encodes an uploaded video as H.264/AAC MP4 for broad playback, or returns the
- * upload unchanged when the re-encode is not smaller. Inputs without moving video, and
- * videos longer than `maxDurationSeconds`, are refused after a probe and before anything
- * is encoded. ffmpeg is killed when its deadline passes or `signal` aborts, and the temp
- * files are gone before this settles.
+ * upload unchanged when the re-encode is not smaller. Inputs without moving video, videos
+ * longer than `maxDurationSeconds` and videos whose encode `encodeCost` estimates would
+ * not fit in what is left of `timeBudgetMs` are refused after a probe and before anything
+ * is encoded. ffmpeg is killed when `timeBudgetMs` runs out or `signal` aborts, and the
+ * temp files are gone before this settles.
  */
 export async function compressVideo({
   inputBuffer,
@@ -220,9 +264,13 @@ export async function compressVideo({
   crf,
   resolution,
   maxDurationSeconds,
-  encodeDeadlineMs,
+  timeBudgetMs,
+  encodeCost = ENCODE_COST,
   signal,
 }: CompressVideoOptions): Promise<CompressedVideo> {
+  const budgetEndsAt = Date.now() + timeBudgetMs;
+  const budgetLeftMs = () => budgetEndsAt - Date.now();
+
   if (!inputBuffer || inputBuffer.length === 0) {
     throw new ClientError('The video file is empty.');
   }
@@ -234,14 +282,15 @@ export async function compressVideo({
   try {
     await fs.writeFile(inputPath, inputBuffer);
 
-    const probe = await probeUpload(inputPath, signal);
+    const probe = await probeUpload(inputPath, budgetLeftMs(), signal);
     const video = movingVideo(probe);
     assertDurationWithinLimit(probe.durationSeconds, maxDurationSeconds);
+    assertEncodeFitsTimeBudget(probe, video, resolution, budgetLeftMs(), encodeCost);
 
     try {
       await runFfmpeg({
         args: encodeArguments(inputPath, outputPath, video, crf, resolution),
-        deadlineMs: encodeDeadlineMs,
+        deadlineMs: budgetLeftMs(),
         signal,
       });
     } catch (error) {

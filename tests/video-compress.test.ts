@@ -3,13 +3,16 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { compressVideo, outputDimensions } from '../lib/video/compress';
 import { ClientError } from '../lib/convert/errors';
+import { X264_PRESET } from '../lib/convert/video-compress-limits';
 import * as ffmpegRunner from '../lib/video/ffmpeg';
 import { FfmpegExitError } from '../lib/video/ffmpeg';
-import { makeVideo, trackSpawnedProcesses } from './helpers/videoSamples';
+import { inspect, makeMedia, makeVideo, remux, trackSpawnedProcesses } from './helpers/videoSamples';
 
 jest.setTimeout(120_000);
 
-const GENEROUS_LIMITS = { maxDurationSeconds: 3600, encodeDeadlineMs: 120_000 };
+// Lets every video through the estimate, so these tests reach the encode on any machine.
+const FREE_ENCODES = { encodeSecondsPerMegapixelFrame: 0, decodeSecondsPerMegapixelFrame: 0, safetyFactor: 1 };
+const GENEROUS_LIMITS = { maxDurationSeconds: 3600, timeBudgetMs: 120_000, encodeCost: FREE_ENCODES };
 
 let sampleVideo: Buffer;
 // Long enough at its size that an encode is still running when the test stops it.
@@ -91,19 +94,40 @@ describe('compressVideo (lib/video/compress.ts)', () => {
     expect(error).not.toBeInstanceOf(ClientError);
   });
 
-  it('kills ffmpeg and removes its temp files when the deadline passes', async () => {
+  it('kills ffmpeg and removes its temp files when the time budget runs out', async () => {
     const error = await compressVideo({
       inputBuffer: slowVideo,
       fileName: 'long.mp4',
       crf: 28,
       maxDurationSeconds: 3600,
-      encodeDeadlineMs: 500,
+      timeBudgetMs: 5_000,
+      encodeCost: FREE_ENCODES,
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(ClientError);
     expect(error.status).toBe(400);
     expect(error.message).toMatch(/could not be compressed in time/i);
     expect(processes.encodes()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a long budget', 60_000, [30_000, 57_000]],
+    ['a budget shorter than the probe deadline', 20_000, [20_000, 17_000]],
+  ])('gives the encode what the probe left of %s', async (_label, timeBudgetMs, expectedDeadlines) => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const realRun = ffmpegRunner.runFfmpeg;
+    const deadlines: number[] = [];
+    jest.spyOn(ffmpegRunner, 'runFfmpeg').mockImplementation(async (run) => {
+      deadlines.push(run.deadlineMs);
+      const log = await realRun(run);
+      now += 3_000;
+      return log;
+    });
+
+    await compressVideo({ inputBuffer: sampleVideo, fileName: 'clip.mp4', crf: 28, ...GENEROUS_LIMITS, timeBudgetMs });
+
+    expect(deadlines).toEqual(expectedDeadlines);
   });
 
   it('kills ffmpeg and removes its temp files when the request is aborted', async () => {
@@ -123,6 +147,111 @@ describe('compressVideo (lib/video/compress.ts)', () => {
     expect(error).toBeInstanceOf(ClientError);
     expect(error.message).toMatch(/cancelled/i);
     expect(encode.exitCode !== null || encode.signalCode !== null).toBe(true);
+  });
+
+  describe('refuses before encoding a video whose encode would not fit in the time budget', () => {
+    // The budget is generous for these small clips; the injected costs decide what fits.
+    const budget = { maxDurationSeconds: 3600, timeBudgetMs: 150_000 };
+    const cost = (encode: number, decode = 0) => ({
+      encodeSecondsPerMegapixelFrame: encode,
+      decodeSecondsPerMegapixelFrame: decode,
+      safetyFactor: 1,
+    });
+    // 60 frames of 1280x720: 221 s encoded at that size, 129 s at 480p (854x480).
+    const HD_COST = cost(3, 1);
+    let hd: Buffer;
+
+    beforeAll(() => {
+      hd = makeVideo({ size: '1280x720', rate: 30, seconds: 2 });
+    });
+
+    it('refuses a 720p video at its own size, naming how long one can be and the 480p option', async () => {
+      const error = await compressVideo({ inputBuffer: hd, fileName: 'hd.mp4', crf: 28, ...budget, encodeCost: HD_COST }).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ClientError);
+      expect(error.status).toBe(400);
+      expect(error.message).toBe(
+        'This video would take too long to compress. Videos at this resolution and frame rate can be up to about 1 second long; choose 480p or a shorter clip.',
+      );
+      expect(processes.spawned).toHaveLength(1);
+      expect(processes.encodes()).toEqual([]);
+    });
+
+    it('accepts the same video at 480p', async () => {
+      const result = await compressVideo({ inputBuffer: hd, fileName: 'hd.mp4', crf: 28, resolution: '480p', ...budget, encodeCost: HD_COST });
+
+      expect(inspect(result.bytes).video).toMatchObject({ width: 854, height: 480 });
+      expect(processes.encodes()).toHaveLength(1);
+    });
+
+    it('suggests no lower resolution when none would make the output smaller', async () => {
+      const error = await compressVideo({
+        inputBuffer: hd,
+        fileName: 'hd.mp4',
+        crf: 28,
+        resolution: '480p',
+        ...budget,
+        encodeCost: cost(10),
+      }).catch((e) => e);
+
+      expect(error.message).toMatch(/; choose a shorter clip\.$/);
+      expect(processes.encodes()).toEqual([]);
+    });
+
+    it('counts every frame of a high-frame-rate video', async () => {
+      // 0.0768 MP a frame at 10 s per MP: 46 s for 60 frames, 92 s for 120.
+      const options = { fileName: 'clip.mp4', crf: 28, maxDurationSeconds: 3600, timeBudgetMs: 60_000, encodeCost: cost(10) };
+      const thirty = makeVideo({ size: '320x240', rate: 30, seconds: 2 });
+      const sixty = makeVideo({ size: '320x240', rate: 60, seconds: 2 });
+
+      await compressVideo({ inputBuffer: thirty, ...options });
+      const error = await compressVideo({ inputBuffer: sixty, ...options }).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ClientError);
+      expect(error.message).toMatch(/too long to compress/);
+      expect(processes.encodes()).toHaveLength(1);
+    });
+
+    it('counts the frames ffmpeg repeats to fill out a variable-rate video', async () => {
+      // 72 frames in 4 s at a base rate of 60, which ffmpeg encodes as 240.
+      const variable = makeMedia([
+        '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=60:duration=4',
+        '-vf', "select='lt(mod(n,60),10)+not(mod(n,6))'", '-fps_mode', 'vfr', '-c:v', 'libx264',
+      ]);
+
+      // 0.0768 MP a frame at 5 s per MP: 28 s for 72 frames, 92 s for 240.
+      const error = await compressVideo({
+        inputBuffer: variable,
+        fileName: 'vfr.mp4',
+        crf: 28,
+        maxDurationSeconds: 3600,
+        timeBudgetMs: 60_000,
+        encodeCost: cost(5),
+      }).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ClientError);
+      expect(error.message).toMatch(/too long to compress/);
+      expect(processes.encodes()).toEqual([]);
+    });
+
+    it('sizes a rotated portrait video by its upright shape at the chosen resolution', async () => {
+      const portrait = remux(hd, ['-display_rotation', '90'], ['-c', 'copy']);
+      const options = { inputBuffer: portrait, fileName: 'phone.mp4', crf: 28, ...budget, encodeCost: HD_COST };
+
+      const refused = await compressVideo(options).catch((e) => e);
+      const result = await compressVideo({ ...options, resolution: '480p' });
+
+      expect(refused.message).toMatch(/choose 480p or a shorter clip/);
+      expect(inspect(result.bytes).video).toMatchObject({ width: 480, height: 854 });
+      expect(processes.encodes()).toHaveLength(1);
+    });
+  });
+
+  it('encodes with the chosen x264 preset', async () => {
+    await compressVideo({ inputBuffer: sampleVideo, fileName: 'clip.mp4', crf: 28, ...GENEROUS_LIMITS });
+
+    const [encode] = processes.encodes();
+    expect(encode.args[encode.args.indexOf('-preset') + 1]).toBe(X264_PRESET);
   });
 
   describe('client-supplied file names never reach the filesystem', () => {

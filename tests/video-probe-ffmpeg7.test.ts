@@ -47,6 +47,21 @@ describe('probeVideo with FFmpeg 7 output', () => {
 
     expect(result.durationSeconds).toBeCloseTo(19.92, 2);
     expect(result.video?.frameCount).toBe(200);
+    expect(result.video?.frameRate).toBe(20);
+  });
+
+  it.each([
+    ['an implausible base rate', '29.5 fps, 1k tbr', 29.5],
+    ['a base rate in thousands', '30 fps, 1.2k tbr', 30],
+    ['a high but plausible base rate', '30 fps, 120 tbr', 120],
+    ['no average rate', '50 tbr', 50],
+    ['no rate at all', '1200k tbn', 0],
+  ])('reads the encoding rate of a stream with %s', async (_label, rates, expected) => {
+    mockRunFfmpeg.mockResolvedValue(FFMPEG_7_LOG.replaceAll('25 fps, 20 tbr, 1200k tbn', `${rates}, 1200k tbn`));
+
+    const result = await probeVideo('/tmp/input.tmp', { deadlineMs: 1000 });
+
+    expect(result.video?.frameRate).toBe(expected);
   });
 
   it('reports no length when no packet was copied', async () => {
