@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory } from '@/lib/conversions';
 import JSZip from 'jszip';
@@ -87,52 +88,60 @@ async function recordCompression(userId: string, output: CompressedOutput, pages
   }
 }
 
+async function compressUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
+  const budget = uploadBudgetForPlan(plan);
+  const formData = await readMultipartForm(req, budget);
+  const images = await resolveFiles(formData, 'images', budget);
+  const level = compressionLevel(textField(formData, 'level'));
+
+  if (!images || images.length === 0) {
+    return NextResponse.json({ error: 'No images provided' }, { status: 400 });
+  }
+
+  assertFileCountWithinPlan(plan, images.length);
+  assertTotalSizeWithinPlan(
+    plan,
+    images.map((image) => image.size),
+  );
+
+  const accepted: AcceptedImage[] = [];
+  for (const [index, file] of images.entries()) {
+    accepted.push(await acceptImageToCompress(Buffer.from(await file.arrayBuffer()), index + 1));
+  }
+
+  const output = await job.inPools(['image'], () =>
+    runImageJob(() =>
+      accepted.length === 1 ? compressSingle(accepted[0], images[0], level) : compressBatch(accepted, images, level),
+    ),
+  );
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = new NextResponse(output.bytes as unknown as BodyInit, {
+    headers: {
+      'Content-Type': output.contentType,
+      'Content-Disposition': attachmentDisposition(output.fileName, 'compressed_image'),
+      ...output.headers,
+    },
+  });
+
+  if (userId) {
+    await recordCompression(userId, output, images.length);
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const budget = uploadBudgetForPlan(plan);
-    const formData = await readMultipartForm(req, budget);
-    const images = await resolveFiles(formData, 'images', budget);
-    const level = compressionLevel(textField(formData, 'level'));
-
-    if (!images || images.length === 0) {
-      return NextResponse.json({ error: 'No images provided' }, { status: 400 });
-    }
-
-    assertFileCountWithinPlan(plan, images.length);
-    assertTotalSizeWithinPlan(
-      plan,
-      images.map((image) => image.size),
-    );
-
-    const accepted: AcceptedImage[] = [];
-    for (const [index, file] of images.entries()) {
-      accepted.push(await acceptImageToCompress(Buffer.from(await file.arrayBuffer()), index + 1));
-    }
-
-    const output = await runImageJob(() =>
-      accepted.length === 1 ? compressSingle(accepted[0], images[0], level) : compressBatch(accepted, images, level),
-    );
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // history row behind.
-    const response = new NextResponse(output.bytes as unknown as BodyInit, {
-      headers: {
-        'Content-Type': output.contentType,
-        'Content-Disposition': attachmentDisposition(output.fileName, 'compressed_image'),
-        ...output.headers,
-      },
-    });
-
-    if (userId) {
-      await recordCompression(userId, output, images.length);
-    }
-
-    return response;
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, (job) => compressUpload(req, caller, job));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, COMPRESS_IMAGE_BUSY_MESSAGE);
+    }
     if (error instanceof ImageToolBusyError) {
       return busyResponse(COMPRESS_IMAGE_BUSY_MESSAGE);
     }

@@ -1,7 +1,9 @@
 // Sends one ordinary guest request to each tool family of a running server and checks the
-// output's format. With --heavy it then sends two image jobs at the pixel cap at once, to
-// measure the server's memory under its heaviest in-memory work. Run from the repository
-// root (it uses the app's own dependencies to generate inputs):
+// output's format. With --heavy it then sends an Image to PDF and a Compress Image job at
+// the pixel cap, one after the other, to measure the server's memory under its heaviest
+// in-memory work. They cannot run at once: every request here is a guest, and guests may
+// run one job at a time between them and hold one slot of each pool (#106). Run from the
+// repository root (it uses the app's own dependencies to generate inputs):
 //   node scripts/container-smoke.mjs http://localhost:3000 [--heavy]
 import { execFileSync } from 'child_process';
 import fs from 'fs';
@@ -127,11 +129,11 @@ async function runCheck([name, send, expected]) {
 
 async function heavyChecks() {
   const png = await pngAtPixelCap();
-  const pair = (name, path, check) => [1, 2].map((n) => [`${name} at the pixel cap (${n} of 2, concurrent)`, async () =>
-    fetch(`${baseUrl}${path}`, { method: 'POST', body: form('images', [['large.png', png, 'image/png']]) }), check]);
+  const atPixelCap = (name, path, check) => [`${name} at the pixel cap`, async () =>
+    fetch(`${baseUrl}${path}`, { method: 'POST', body: form('images', [['large.png', png, 'image/png']]) }), check];
   return [
-    pair('image-to-pdf', '/api/convert/image-to-pdf', 'pdf'),
-    pair('image-compress', '/api/convert/image-compress', (bytes) => bytes.length > 0),
+    atPixelCap('image-to-pdf', '/api/convert/image-to-pdf', 'pdf'),
+    atPixelCap('image-compress', '/api/convert/image-compress', (bytes) => bytes.length > 0),
   ];
 }
 
@@ -139,13 +141,12 @@ let failed = 0;
 for (const check of checks) {
   if (!(await runCheck(check))) failed++;
 }
-const heavyGroups = heavy ? await heavyChecks() : [];
-for (const group of heavyGroups) {
-  const results = await Promise.all(group.map(runCheck));
-  failed += results.filter((ok) => !ok).length;
+const heavyJobs = heavy ? await heavyChecks() : [];
+for (const check of heavyJobs) {
+  if (!(await runCheck(check))) failed++;
 }
 
-const total = checks.length + heavyGroups.flat().length;
+const total = checks.length + heavyJobs.length;
 if (failed) {
   console.log(`${failed} of ${total} smoke checks failed`);
   process.exit(1);

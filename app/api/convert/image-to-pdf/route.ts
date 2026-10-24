@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -36,54 +37,60 @@ async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<
   }
 }
 
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
+  const budget = uploadBudgetForPlan(plan);
+  const formData = await readMultipartForm(req, budget);
+  const files = await resolveFiles(formData, 'images', budget);
+
+  if (!files || files.length === 0) {
+    return NextResponse.json({ error: 'No image files provided.' }, { status: 400 });
+  }
+
+  assertFileCountWithinPlan(plan, files.length);
+  assertTotalSizeWithinPlan(
+    plan,
+    files.map((file) => file.size),
+  );
+
+  const imageBuffers: Buffer[] = [];
+  for (const file of files) {
+    const arrayBuffer = await file.arrayBuffer();
+    imageBuffers.push(Buffer.from(arrayBuffer));
+  }
+
+  const pdfBuffer = await job.inPools(['image', 'pdf-worker'], () => convertWithinPlan(imageBuffers, plan));
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="converted_images.pdf"',
+    },
+  });
+
+  if (userId) {
+    try {
+      const recordedName = `${bareFileStem(files[0].name, 'converted_images')}.pdf`;
+      await saveConversionRecord(userId, 'Image to PDF', recordedName, Buffer.from(pdfBuffer));
+    } catch (recordError) {
+      console.error('Failed to record Image to PDF conversion:', recordError);
+    }
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const budget = uploadBudgetForPlan(plan);
-    const formData = await readMultipartForm(req, budget);
-    const files = await resolveFiles(formData, 'images', budget);
-
-    if (!files || files.length === 0) {
-      return NextResponse.json({ error: 'No image files provided.' }, { status: 400 });
-    }
-
-    assertFileCountWithinPlan(plan, files.length);
-    assertTotalSizeWithinPlan(
-      plan,
-      files.map((file) => file.size),
-    );
-
-    const imageBuffers: Buffer[] = [];
-    for (const file of files) {
-      const arrayBuffer = await file.arrayBuffer();
-      imageBuffers.push(Buffer.from(arrayBuffer));
-    }
-
-    const pdfBuffer = await convertWithinPlan(imageBuffers, plan);
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // history row behind.
-    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="converted_images.pdf"',
-      },
-    });
-
-    if (userId) {
-      try {
-        const recordedName = `${bareFileStem(files[0].name, 'converted_images')}.pdf`;
-        await saveConversionRecord(userId, 'Image to PDF', recordedName, Buffer.from(pdfBuffer));
-      } catch (recordError) {
-        console.error('Failed to record Image to PDF conversion:', recordError);
-      }
-    }
-
-    return response;
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, IMAGE_TO_PDF_BUSY_MESSAGE);
+    }
     if (isBusy(error)) {
       return busyResponse(IMAGE_TO_PDF_BUSY_MESSAGE);
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { saveConversionRecord } from '@/lib/conversions';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
@@ -51,13 +52,13 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
   throw error;
 }
 
-async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
+async function extractPages(file: File, plan: string, job: CallerJob): Promise<ConvertiblePage[]> {
   const data = new Uint8Array(await file.arrayBuffer());
   if (data.length === 0) {
     throw new ClientError(emptyPdfMessage());
   }
   try {
-    const pages = await extractPdfPages(data, extractionOptionsForPlan(plan));
+    const pages = await job.inPools(['pdf-worker'], () => extractPdfPages(data, extractionOptionsForPlan(plan)));
     return toConvertiblePages(pages);
   } catch (error) {
     rethrowExtractionFailure(error, plan);
@@ -68,58 +69,63 @@ function countLines(pages: ConvertiblePage[]): number {
   return pages.reduce((lineCount, page) => lineCount + (page.hasText ? page.lines.length : 1), 0);
 }
 
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
+  const budget = uploadBudgetForPlan(plan);
+  const formData = await readMultipartForm(req, budget);
+  const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
+
+  if (!file) {
+    return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });
+  }
+
+  assertFileSizeWithinPlan(plan, file.size);
+
+  const pages = await extractPages(file, plan, job);
+  assertLineCountWithinPlan(plan, countLines(pages));
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: pages.flatMap(toParagraphs),
+    }],
+  });
+
+  const docxBuffer = await Packer.toBuffer(doc);
+  const outputFileName = `${file.name.replace(/\.[^/.]+$/, "")}.docx`;
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = new NextResponse(docxBuffer as unknown as BodyInit, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
+    },
+  });
+
+  if (userId) {
+    try {
+      await saveConversionRecord(userId, 'PDF to DOCX', outputFileName, docxBuffer, {
+        pages: pages.length,
+        processedSize: docxBuffer.length,
+      });
+    } catch (recordError) {
+      console.error('Failed to record PDF to DOCX conversion:', recordError);
+    }
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const budget = uploadBudgetForPlan(plan);
-    const formData = await readMultipartForm(req, budget);
-    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No PDF provided' }, { status: 400 });
-    }
-
-    assertFileSizeWithinPlan(plan, file.size);
-
-    const pages = await extractPages(file, plan);
-    assertLineCountWithinPlan(plan, countLines(pages));
-
-    const doc = new Document({
-      sections: [{
-        properties: {},
-        children: pages.flatMap(toParagraphs),
-      }],
-    });
-
-    const docxBuffer = await Packer.toBuffer(doc);
-    const outputFileName = `${file.name.replace(/\.[^/.]+$/, "")}.docx`;
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // history row behind.
-    const response = new NextResponse(docxBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': attachmentDisposition(outputFileName, 'converted.docx'),
-      },
-    });
-
-    if (userId) {
-      try {
-        await saveConversionRecord(userId, 'PDF to DOCX', outputFileName, docxBuffer, {
-          pages: pages.length,
-          processedSize: docxBuffer.length,
-        });
-      } catch (recordError) {
-        console.error('Failed to record PDF to DOCX conversion:', recordError);
-      }
-    }
-
-    return response;
-
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, CONVERTER_BUSY_MESSAGE);
+    }
     if (isBusy(error)) {
       return busyResponse(CONVERTER_BUSY_MESSAGE);
     }

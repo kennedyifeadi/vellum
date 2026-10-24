@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
@@ -66,104 +67,111 @@ async function loadForHighlighting(data: ArrayBuffer): Promise<PDFDocument> {
   return pdfDoc;
 }
 
+async function searchUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
+  const budget = uploadBudgetForPlan(plan);
+  const formData = await readMultipartForm(req, budget);
+  const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
+  const searchTerm = textField(formData, 'searchTerm')?.toLowerCase();
+
+  if (!file || !searchTerm) {
+    return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
+  }
+
+  const isPro = plan === 'Pro';
+
+  assertFileSizeWithinPlan(plan, file.size);
+
+  const arrayBuffer = await file.arrayBuffer();
+  if (arrayBuffer.byteLength === 0) {
+    throw new ClientError(emptyPdfMessage());
+  }
+  // The extraction worker takes ownership of the bytes it is given, so it gets a copy
+  // and pdf-lib keeps the original.
+  const pageTextItems = await job.inPools(['pdf-worker'], () =>
+    extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan),
+  );
+
+  const pdfLibDoc = await loadForHighlighting(arrayBuffer);
+  const matches: Match[] = [];
+  let totalMatchCount = 0; // counted for ALL users, not just Pro
+
+  // Loop through pages
+  for (let i = 1; i <= pageTextItems.length; i++) {
+    const textItems = pageTextItems[i - 1];
+    const pdfLibPage = pdfLibDoc.getPage(i - 1);
+
+    const { matches: pageMatches, matchCount } = findInItems(textItems, searchTerm);
+    totalMatchCount += matchCount; // always count, regardless of plan
+
+    if (isPro) {
+      for (const match of pageMatches) {
+        matches.push({ page: i, text: match.text, snippet: match.snippet });
+      }
+    }
+
+    // Highlight every item a match overlaps, so a match spanning a line wrap gets a
+    // highlight on each line it touches. Rectangle geometry (whole-run width, vertical
+    // offset, rotated text) is out of scope here — tracked in #59.
+    const itemsToHighlight = new Set<number>();
+    for (const match of pageMatches) {
+      for (const itemIndex of match.itemIndices) itemsToHighlight.add(itemIndex);
+    }
+
+    for (const itemIndex of itemsToHighlight) {
+      const item = textItems[itemIndex];
+      // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
+      const [scaleX, , , scaleY, translateX, translateY] = item.transform || [1, 0, 0, 1, 0, 0];
+      const itemWidth = item.width || (item.str.length * scaleX * 0.6); // Fallback
+      const itemHeight = item.height || scaleY;
+
+      pdfLibPage.drawRectangle({
+        x: translateX,
+        y: translateY,
+        width: itemWidth,
+        height: itemHeight || 10,
+        color: rgb(1, 1, 0), // Yellow
+        opacity: 0.35,
+      });
+    }
+  }
+
+  const modifiedPdfBytes = await pdfLibDoc.save();
+  const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = NextResponse.json({
+    success: true,
+    pdfBase64,
+    matches: isPro ? matches : [],
+    matchCount: totalMatchCount
+  });
+
+  if (userId) {
+    try {
+      await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
+        pages: pageTextItems.length,
+        matchesFound: totalMatchCount,
+        searchTerm,
+      });
+    } catch (recordError) {
+      console.error('Failed to record Find in PDF conversion:', recordError);
+    }
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const budget = uploadBudgetForPlan(plan);
-    const formData = await readMultipartForm(req, budget);
-    const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
-    const searchTerm = textField(formData, 'searchTerm')?.toLowerCase();
-
-    if (!file || !searchTerm) {
-      return NextResponse.json({ error: 'Missing PDF file or search term' }, { status: 400 });
-    }
-
-    const isPro = plan === 'Pro';
-
-    assertFileSizeWithinPlan(plan, file.size);
-
-    const arrayBuffer = await file.arrayBuffer();
-    if (arrayBuffer.byteLength === 0) {
-      throw new ClientError(emptyPdfMessage());
-    }
-    // The extraction worker takes ownership of the bytes it is given, so it gets a copy
-    // and pdf-lib keeps the original.
-    const pageTextItems = await extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan);
-
-    const pdfLibDoc = await loadForHighlighting(arrayBuffer);
-    const matches: Match[] = [];
-    let totalMatchCount = 0; // counted for ALL users, not just Pro
-
-    // Loop through pages
-    for (let i = 1; i <= pageTextItems.length; i++) {
-      const textItems = pageTextItems[i - 1];
-      const pdfLibPage = pdfLibDoc.getPage(i - 1);
-
-      const { matches: pageMatches, matchCount } = findInItems(textItems, searchTerm);
-      totalMatchCount += matchCount; // always count, regardless of plan
-
-      if (isPro) {
-        for (const match of pageMatches) {
-          matches.push({ page: i, text: match.text, snippet: match.snippet });
-        }
-      }
-
-      // Highlight every item a match overlaps, so a match spanning a line wrap gets a
-      // highlight on each line it touches. Rectangle geometry (whole-run width, vertical
-      // offset, rotated text) is out of scope here — tracked in #59.
-      const itemsToHighlight = new Set<number>();
-      for (const match of pageMatches) {
-        for (const itemIndex of match.itemIndices) itemsToHighlight.add(itemIndex);
-      }
-
-      for (const itemIndex of itemsToHighlight) {
-        const item = textItems[itemIndex];
-        // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
-        const [scaleX, , , scaleY, translateX, translateY] = item.transform || [1, 0, 0, 1, 0, 0];
-        const itemWidth = item.width || (item.str.length * scaleX * 0.6); // Fallback
-        const itemHeight = item.height || scaleY;
-
-        pdfLibPage.drawRectangle({
-          x: translateX,
-          y: translateY,
-          width: itemWidth,
-          height: itemHeight || 10,
-          color: rgb(1, 1, 0), // Yellow
-          opacity: 0.35,
-        });
-      }
-    }
-
-    const modifiedPdfBytes = await pdfLibDoc.save();
-    const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // history row behind.
-    const response = NextResponse.json({
-      success: true,
-      pdfBase64,
-      matches: isPro ? matches : [],
-      matchCount: totalMatchCount
-    });
-
-    if (userId) {
-      try {
-        await recordConversionHistory(userId, 'Find in PDF', file.name, file.size, {
-          pages: pageTextItems.length,
-          matchesFound: totalMatchCount,
-          searchTerm,
-        });
-      } catch (recordError) {
-        console.error('Failed to record Find in PDF conversion:', recordError);
-      }
-    }
-
-    return response;
-
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, (job) => searchUpload(req, caller, job));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, FIND_PDF_BUSY_MESSAGE);
+    }
     if (isBusy(error)) {
       return busyResponse(FIND_PDF_BUSY_MESSAGE);
     }

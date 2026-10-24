@@ -73,7 +73,8 @@ jobs:
           peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
           echo "memory.peak after the smoke requests: $peak bytes"
 
-      # Two Image to PDF jobs and then two Compress Image jobs at the pixel cap, concurrently.
+      # An Image to PDF job and then a Compress Image job at the pixel cap. They run one at a
+      # time: the smoke requests are guests, who may run one job at a time (#106).
       - name: Heavy image jobs
         run: docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000 --heavy
 

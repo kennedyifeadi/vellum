@@ -63,7 +63,32 @@ Only name a header that the proxy overwrites on every request; any other header 
 by the client to choose its own rate-limit key. With `CLIENT_IP_HEADER` unset, no header is
 trusted. Next.js does not give the app the connection's own address, so then every caller
 shares one rate-limit bucket: the limit becomes 30 requests a minute for the whole site.
-That is safe but will refuse legitimate traffic, so set it in production.
+That is safe but will refuse legitimate traffic, so set it in production. It also makes every
+guest one caller for the per-caller job limit below, so guests can then run only one heavy
+job at a time between them.
+
+### Heavy jobs per caller
+
+PDF to Word, Find in PDF, Image to PDF, Compress Image, JPEG to PNG and Compress Video run
+their work in small process-wide pools of two slots each (PDF workers, sharp image jobs,
+video encodes), so they cannot exhaust the server's cores or memory. So that one caller
+cannot keep those tools busy for everyone (#106):
+
+- **One job per caller.** A caller may run one of these jobs at a time, across all six
+  tools. A second request while one runs is refused at once, before its upload is read, with
+  429, `Retry-After` and "You already have a conversion in progress. Please wait for it to
+  finish." Image to PDF, which uses an image slot and then a PDF worker slot, is one job.
+- **Who is a caller.** A signed-in user is one caller by user id. A guest is one caller by
+  the address `CLIENT_IP_HEADER` gives; without it, all guests are counted as one caller
+  under the same shared key the rate limit uses.
+- **The guests' share.** Guests together may hold one of the two slots of each pool, so a
+  signed-in user can always get the other one. A guest takes the share only once their upload
+  has been read and checked, for as long as the work runs, so a slow upload holds nothing
+  that other guests need. A guest who then finds the guests' slot taken gets the tool's usual
+  503 "busy" answer. Image to PDF holds the guests' share of both its pools while it works.
+
+These limits live in the process's memory, like the slot counts themselves
+(`lib/convert/caller-jobs.ts`).
 
 ### Chromium sandbox (`CHROMIUM_DISABLE_SANDBOX`)
 
@@ -140,9 +165,9 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    only while starting a deployment, from the hostname `healthcheck.railway.app`
    ([Healthchecks](https://docs.railway.com/reference/healthchecks)).
 3. **One replica.** Keep the service at a single instance. The rate limiter (`proxy.ts`),
-   the worker slot counter (`lib/convert/worker-job.ts`) and the image and video job
-   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`) live in the process's
-   memory. With more than one instance each instance would apply its own limits, so the
+   the worker slot counter (`lib/convert/worker-job.ts`), the image and video job
+   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`) and the per-caller job
+   claims (`lib/convert/caller-jobs.ts`) live in the process's memory. With more than one instance each instance would apply its own limits, so the
    real limits would multiply.
 4. **Google OAuth.** In Google Cloud Console, add
    `<NEXTAUTH_URL>/api/auth/callback/google` as an authorised redirect URI of the OAuth
@@ -160,6 +185,10 @@ limit, peak read from the container's cgroup `memory.peak`; ranges are over thre
 | Started, idle | 185-188 MB |
 | After one request to each tool family | 345-348 MB peak |
 | Two Image to PDF jobs, then two Compress Image jobs, each on a 49-megapixel PNG, two at a time | 764-1,064 MB peak |
+
+That last row was measured before guests were limited to one job at a time and one slot of
+each pool (see Heavy jobs per caller). CI has no signed-in user, so it now runs one job of
+each at a time and reports a lower peak; two at once is still possible for signed-in users.
 
 The CI images are flat-colour PNGs, which are cheap to compress. Earlier measurements on
 Windows (in the PRs that set the image limits) put two Image to PDF or Compress Image jobs at

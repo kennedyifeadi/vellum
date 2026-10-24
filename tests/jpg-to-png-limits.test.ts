@@ -75,6 +75,17 @@ function convert(files: unknown[]) {
   );
 }
 
+// Jobs that run at once must come from different signed-in users: a caller runs one job
+// at a time, and guests together hold one slot. The user id is read as the request starts.
+function asUser<Result>(userId: string, send: () => Result): Result {
+  mockUserId = userId;
+  try {
+    return send();
+  } finally {
+    mockUserId = null;
+  }
+}
+
 function smallJpeg(): Promise<Buffer> {
   return flatImage(16, 16).jpeg().toBuffer();
 }
@@ -213,13 +224,16 @@ describe('jpg-to-png when busy', () => {
       return jest.requireActual('@/lib/image/to-png').convertJpegToPng(...args);
     });
 
-    const running = [convert([uploadedFile(jpeg, 'a.jpg')]), convert([uploadedFile(jpeg, 'b.jpg')])];
+    const running = [
+      asUser('user-a', () => convert([uploadedFile(jpeg, 'a.jpg')])),
+      asUser('user-b', () => convert([uploadedFile(jpeg, 'b.jpg')])),
+    ];
     await new Promise((resolve) => setImmediate(resolve));
     while (convertJpegToPngMock.mock.calls.length < 2) {
       await new Promise((resolve) => setImmediate(resolve));
     }
 
-    const refused = await convert([uploadedFile(jpeg, 'c.jpg')]);
+    const refused = await asUser('user-c', () => convert([uploadedFile(jpeg, 'c.jpg')]));
     expect(refused.status).toBe(503);
     expect(refused.headers.get('Retry-After')).toBe('5');
     expect((await refused.json()).error).toBe('JPEG to PNG is busy right now. Please try again in a few seconds.');
