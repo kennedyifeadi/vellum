@@ -20,9 +20,14 @@ interface RateLimitRecord {
 const globalForRateLimits = globalThis as typeof globalThis & { vellumRateLimits?: Map<string, RateLimitRecord> };
 const rateLimits = (globalForRateLimits.vellumRateLimits ??= new Map<string, RateLimitRecord>());
 
+/** The key a caller's address is counted under, here and by the per-caller job limit. */
+export function clientAddressKey(headers: Headers): string {
+  return getClientIp(headers) ?? SHARED_RATE_LIMIT_KEY;
+}
+
 /** Counts this request against its caller's budget and says whether it is over it. */
 export function isRateLimited(headers: Headers): boolean {
-  const key = getClientIp(headers) ?? SHARED_RATE_LIMIT_KEY;
+  const key = clientAddressKey(headers);
   const now = Date.now();
   const record = rateLimits.get(key);
   if (!record || now - record.timestamp > RATE_LIMIT_WINDOW_MS) {
