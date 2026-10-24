@@ -185,6 +185,10 @@ limit, peak read from the container's cgroup `memory.peak`; ranges are over thre
 | After one request to each tool family | 345-348 MB peak |
 | Two Image to PDF jobs, then two Compress Image jobs, each on a 49-megapixel PNG, two at a time | 764-1,064 MB peak |
 
+That last row was measured before guests were limited to one job at a time and one slot of
+each pool (see Heavy jobs per caller). CI has no signed-in user, so it now runs one job of
+each at a time and reports a lower peak; two at once is still possible for signed-in users.
+
 The CI images are flat-colour PNGs, which are cheap to compress. Earlier measurements on
 Windows (in the PRs that set the image limits) put two Image to PDF or Compress Image jobs at
 the pixel cap on photographic images at about 1.9 GB above the idle server. On top of that,
