@@ -37,7 +37,7 @@ describe('probeVideo', () => {
 
     expect(result.container).toMatch(/^mov,mp4/);
     expect(result.majorBrand).toBe('isom');
-    expect(result.video).toEqual({ width: 320, height: 240, rotation: 0, frameCount: 30 });
+    expect(result.video).toEqual({ width: 320, height: 240, rotation: 0, frameCount: 30, frameRate: 10 });
     expect(result.durationSeconds).toBeCloseTo(3, 1);
     expect(result.audioStreamCount).toBe(0);
   });
@@ -49,6 +49,26 @@ describe('probeVideo', () => {
 
     expect(result.durationSeconds).toBeGreaterThan(19);
     expect(result.video?.frameCount).toBe(200);
+  });
+
+  it('reads a high frame rate', async () => {
+    const result = await probe(makeVideo({ size: '64x64', rate: 60, seconds: 2 }));
+
+    expect(result.video?.frameRate).toBe(60);
+    expect(result.video?.frameCount).toBe(120);
+  });
+
+  it('reports the rate a variable-rate video is encoded at, above its frames over its length', async () => {
+    // 60 fps with most frames dropped: 4 seconds, 72 frames, base rate 60.
+    const variable = makeMedia([
+      '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=60:duration=4',
+      '-vf', "select='lt(mod(n,60),10)+not(mod(n,6))'", '-fps_mode', 'vfr', '-c:v', 'libx264',
+    ]);
+
+    const result = await probe(variable);
+
+    expect(result.video?.frameCount).toBe(72);
+    expect(result.video?.frameRate).toBe(60);
   });
 
   it('reads the rotation of a phone clip', async () => {
