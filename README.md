@@ -82,9 +82,10 @@ cannot keep those tools busy for everyone (#106):
   the address `CLIENT_IP_HEADER` gives; without it, all guests are counted as one caller
   under the same shared key the rate limit uses.
 - **The guests' share.** Guests together may hold one of the two slots of each pool, so a
-  signed-in user can always get the other one. A guest who finds the guests' slot taken gets
-  the tool's usual 503 "busy" answer. Image to PDF holds the guests' share of both its pools
-  until it finishes.
+  signed-in user can always get the other one. A guest takes the share only once their upload
+  has been read and checked, for as long as the work runs, so a slow upload holds nothing
+  that other guests need. A guest who then finds the guests' slot taken gets the tool's usual
+  503 "busy" answer. Image to PDF holds the guests' share of both its pools while it works.
 
 These limits live in the process's memory, like the slot counts themselves
 (`lib/convert/caller-jobs.ts`).
