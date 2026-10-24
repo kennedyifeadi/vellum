@@ -228,6 +228,17 @@ function deferred() {
   return { released, release };
 }
 
+// Jobs that run at once must come from different signed-in users: a caller runs one job
+// at a time, and guests together hold one slot. The user id is read as the request starts.
+function asUser<Result>(userId: string, send: () => Result): Result {
+  mockUserId = userId;
+  try {
+    return send();
+  } finally {
+    mockUserId = null;
+  }
+}
+
 async function untilCalled(mock: jest.Mock, times: number): Promise<void> {
   while (mock.mock.calls.length < times) {
     await new Promise((resolve) => setImmediate(resolve));
@@ -301,10 +312,13 @@ describe('video-compress when busy', () => {
     });
     mockResolvedFiles = [fakeFile(Buffer.from('raw-input'))];
 
-    const running = [handleVideoCompress(videoRequest()), handleVideoCompress(videoRequest())];
+    const running = [
+      asUser('user-a', () => handleVideoCompress(videoRequest())),
+      asUser('user-b', () => handleVideoCompress(videoRequest())),
+    ];
     await untilCalled(compressVideo, 2);
 
-    const refused = await handleVideoCompress(videoRequest());
+    const refused = await asUser('user-c', () => handleVideoCompress(videoRequest()));
     expect(refused.status).toBe(503);
     expect(refused.headers.get('Retry-After')).toBe('5');
     expect((await refused.json()).error).toBe('Compress Video is busy right now. Please try again in a few seconds.');
@@ -322,7 +336,10 @@ describe('video-compress when busy', () => {
     await handleVideoCompress(videoRequest());
 
     compressVideo.mockResolvedValueOnce(encoded(Buffer.from('mp4'))).mockResolvedValueOnce(encoded(Buffer.from('mp4')));
-    const statuses = await Promise.all([handleVideoCompress(videoRequest()), handleVideoCompress(videoRequest())]);
+    const statuses = await Promise.all([
+      asUser('user-a', () => handleVideoCompress(videoRequest())),
+      asUser('user-b', () => handleVideoCompress(videoRequest())),
+    ]);
 
     expect(statuses.map((res) => res.status)).toEqual([200, 200]);
   });
