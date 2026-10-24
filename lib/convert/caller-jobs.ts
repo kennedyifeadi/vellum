@@ -30,15 +30,26 @@ export class CallerJobRefusedError extends Error {
   }
 }
 
-interface CallerJob {
+interface RunningJob {
   callerKey: string;
   guest: boolean;
+  /** The pools whose guests' share the job holds: none until its work needs a slot. */
   pools: readonly JobPool[];
 }
 
+/** A caller's claimed job, handed to the work it runs. */
+export interface CallerJob {
+  /**
+   * Runs the part of the job that takes pool slots, holding the guests' share of `pools`
+   * when the caller is a guest. Called once the upload has been read and checked, so a
+   * guest still uploading holds no share; refuses with `CallerJobRefusedError`.
+   */
+  inPools<Result>(pools: readonly JobPool[], work: () => Promise<Result>): Promise<Result>;
+}
+
 // Kept on globalThis so jest.setup.ts can clear it between tests, as it does the rate limits.
-const globalForCallerJobs = globalThis as typeof globalThis & { vellumCallerJobs?: Map<symbol, CallerJob> };
-const runningJobs = (globalForCallerJobs.vellumCallerJobs ??= new Map<symbol, CallerJob>());
+const globalForCallerJobs = globalThis as typeof globalThis & { vellumCallerJobs?: Map<symbol, RunningJob> };
+const runningJobs = (globalForCallerJobs.vellumCallerJobs ??= new Map<symbol, RunningJob>());
 
 // A guest without a trusted address is counted under the rate limiter's shared key, so
 // without CLIENT_IP_HEADER every guest shares one running job.
@@ -46,41 +57,52 @@ function callerKeyOf(headers: Headers, { userId }: Caller): string {
   return userId ? `user:${userId}` : `guest:${clientAddressKey(headers)}`;
 }
 
-function guestJobsIn(pool: JobPool, jobs: CallerJob[]): number {
-  return jobs.filter((job) => job.guest && job.pools.includes(pool)).length;
-}
+function claimJob(headers: Headers, caller: Caller): { claim: symbol; job: RunningJob } {
+  const job: RunningJob = { callerKey: callerKeyOf(headers, caller), guest: !caller.userId, pools: [] };
 
-function claimJob(headers: Headers, caller: Caller, pools: readonly JobPool[]): symbol {
-  const job: CallerJob = { callerKey: callerKeyOf(headers, caller), guest: !caller.userId, pools };
-  const jobs = [...runningJobs.values()];
-
-  if (jobs.some((running) => running.callerKey === job.callerKey)) {
+  if ([...runningJobs.values()].some((running) => running.callerKey === job.callerKey)) {
     throw new CallerJobRefusedError('job-in-progress');
-  }
-  if (job.guest && pools.some((pool) => guestJobsIn(pool, jobs) >= GUEST_SLOTS_PER_POOL)) {
-    throw new CallerJobRefusedError('guest-share-full');
   }
 
   const claim = Symbol(job.callerKey);
   runningJobs.set(claim, job);
-  return claim;
+  return { claim, job };
+}
+
+function guestJobsIn(pool: JobPool): number {
+  return [...runningJobs.values()].filter((job) => job.guest && job.pools.includes(pool)).length;
+}
+
+async function runInPools<Result>(job: RunningJob, pools: readonly JobPool[], work: () => Promise<Result>): Promise<Result> {
+  if (!job.guest) {
+    return work();
+  }
+  if (pools.some((pool) => guestJobsIn(pool) >= GUEST_SLOTS_PER_POOL)) {
+    throw new CallerJobRefusedError('guest-share-full');
+  }
+
+  job.pools = pools;
+  try {
+    return await work();
+  } finally {
+    job.pools = [];
+  }
 }
 
 /**
- * Runs one request's job as its caller's only running job, holding the guests' share of
- * every pool in `pools` when the caller is a guest. Called before the upload is read, so
- * a refused request costs nothing; refuses with `CallerJobRefusedError`. The claim is
+ * Runs one request's job as its caller's only running job. Called before the upload is
+ * read, so a caller refused for already running one costs nothing; refuses with
+ * `CallerJobRefusedError`. The claim, and any guests' share taken through the job, is
  * released however `work` settles.
  */
 export async function runCallerJob<Result>(
   req: Request,
   caller: Caller,
-  pools: readonly JobPool[],
-  work: () => Promise<Result>,
+  work: (job: CallerJob) => Promise<Result>,
 ): Promise<Result> {
-  const claim = claimJob(req.headers, caller, pools);
+  const { claim, job } = claimJob(req.headers, caller);
   try {
-    return await work();
+    return await work({ inPools: (pools, inner) => runInPools(job, pools, inner) });
   } finally {
     runningJobs.delete(claim);
   }

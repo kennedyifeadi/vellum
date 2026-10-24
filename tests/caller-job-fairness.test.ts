@@ -139,12 +139,53 @@ function withCaller(req: NextRequest, { user: userId, ip }: Caller): NextRequest
   return req;
 }
 
-function send({ name, handler, field, fileName, extraFields = [] }: Route, caller: Caller, signal?: AbortSignal): Promise<Response> {
+function formFor({ field, fileName, extraFields = [] }: Route): FormData {
   const form = new FormData();
   form.append(field, new File([onePagePdf as BlobPart], fileName));
   for (const [key, value] of extraFields) form.append(key, value);
-  const req = new NextRequest(`http://localhost:3000/api/convert/${name}`, { method: 'POST', body: form, signal });
-  return handler(withCaller(req, caller));
+  return form;
+}
+
+function send(target: Route, caller: Caller, signal?: AbortSignal): Promise<Response> {
+  const req = new NextRequest(`http://localhost:3000/api/convert/${target.name}`, { method: 'POST', body: formFor(target), signal });
+  return target.handler(withCaller(req, caller));
+}
+
+/**
+ * A valid upload whose body stops after its first bytes until `finishUpload` is called,
+ * as a slow or trickling client's would.
+ */
+async function sendWithHeldBody(target: Route, caller: Caller) {
+  const encoded = new Response(formFor(target));
+  const contentType = encoded.headers.get('content-type')!;
+  const bytes = new Uint8Array(await encoded.arrayBuffer());
+  let finishUpload!: () => void;
+  const uploadFinished = new Promise<void>((resolve) => (finishUpload = resolve));
+  let pulls = 0;
+
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(bytes.subarray(0, 64));
+          return;
+        }
+        await uploadFinished;
+        controller.enqueue(bytes.subarray(64));
+        controller.close();
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  const init = { method: 'POST', headers: { 'content-type': contentType }, body, duplex: 'half' };
+  const req = new NextRequest(`http://localhost:3000/api/convert/${target.name}`, init as ConstructorParameters<typeof NextRequest>[1]);
+  const response = target.handler(withCaller(req, caller));
+
+  while (pulls < 2) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return { response, finishUpload };
 }
 
 /** A large upload produced only as the route reads it, to show whether it was read. */
@@ -234,16 +275,58 @@ describe('callers running at once', () => {
 
 describe('the guests share of a pool', () => {
   it.each(ROUTES.map((target) => [target.name, target] as const))(
-    'in %s is one slot: a second guest is busy before its upload is read, a signed-in user is not',
+    'in %s is one slot: a second guest is busy once its upload is read, a signed-in user is not',
     async (_name, target) => {
       const guestJob = await start(target, guest('203.0.113.1'));
 
-      const secondGuest = sendStreamed(target, guest('203.0.113.2'));
-      await expectBusy(await secondGuest.response, target.busyMessage);
-      expect(secondGuest.bytesRead()).toBe(0);
+      await expectBusy(await send(target, guest('203.0.113.2')), target.busyMessage);
 
       const userJob = await start(target, user('user-1'));
       expect((await finish(userJob)).status).toBe(200);
+      expect((await finish(guestJob)).status).toBe(200);
+      await expectRunsToCompletion(target, guest('203.0.113.2'));
+    },
+  );
+
+  it.each(ROUTES.map((target) => [target.name, target] as const))(
+    'in %s is not held by a guest whose upload is still arriving',
+    async (_name, target) => {
+      const uploading = await sendWithHeldBody(target, guest('203.0.113.1'));
+
+      await expectRunsToCompletion(target, guest('203.0.113.2'));
+      const userJob = await start(target, user('user-1'));
+      expect((await finish(userJob)).status).toBe(200);
+
+      uploading.finishUpload();
+      const job = await nextHeldJob(target.heldTool);
+      expect((await finish({ response: uploading.response, job })).status).toBe(200);
+    },
+  );
+
+  it.each(ROUTES.map((target) => [target.name, target] as const))(
+    'in %s still refuses the uploading guest a second job before reading it',
+    async (_name, target) => {
+      const uploading = await sendWithHeldBody(target, guest('203.0.113.1'));
+
+      const second = sendStreamed(target, guest('203.0.113.1'));
+      await expectJobInProgress(await second.response);
+      expect(second.bytesRead()).toBe(0);
+
+      uploading.finishUpload();
+      const job = await nextHeldJob(target.heldTool);
+      expect((await finish({ response: uploading.response, job })).status).toBe(200);
+    },
+  );
+
+  it.each(ROUTES.map((target) => [target.name, target] as const))(
+    'in %s frees a guest refused it, who may start another job at once',
+    async (_name, target) => {
+      const guestJob = await start(target, guest('203.0.113.1'));
+
+      await expectBusy(await send(target, guest('203.0.113.2')), target.busyMessage);
+      const otherPool = route(target.pool === 'video' ? 'pdf-to-docx' : 'video-compress');
+      await expectRunsToCompletion(otherPool, guest('203.0.113.2'));
+
       expect((await finish(guestJob)).status).toBe(200);
       await expectRunsToCompletion(target, guest('203.0.113.2'));
     },

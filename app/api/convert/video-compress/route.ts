@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
-import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { recordConversionHistory } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { compressVideo, type CompressedVideo } from '@/lib/video/compress';
@@ -38,7 +38,7 @@ function outputHeaders(video: File, originalSize: number, output: CompressedVide
   };
 }
 
-async function compressUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+async function compressUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const budget = uploadBudgetForPlan(plan);
   const formData = await readMultipartForm(req, budget);
   const video = (await resolveFiles(formData, 'video', budget))[0] as File;
@@ -52,15 +52,17 @@ async function compressUpload(req: NextRequest, { userId, plan }: Caller): Promi
   assertFileSizeWithinPlan(plan, video.size);
 
   const inputBuffer = Buffer.from(await video.arrayBuffer());
-  const output = await runVideoJob(() =>
-    compressVideo({
-      inputBuffer,
-      fileName: video.name,
-      crf,
-      resolution,
-      ...encodeLimitsForPlan(plan),
-      signal: req.signal,
-    }),
+  const output = await job.inPools(['video'], () =>
+    runVideoJob(() =>
+      compressVideo({
+        inputBuffer,
+        fileName: video.name,
+        crf,
+        resolution,
+        ...encodeLimitsForPlan(plan),
+        signal: req.signal,
+      }),
+    ),
   );
 
   // Built before anything is recorded, so a response that cannot be built leaves no
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
     assertWithinRateLimit(req);
 
     const caller = await resolveCaller(req);
-    return await runCallerJob(req, caller, ['video'], () => compressUpload(req, caller));
+    return await runCallerJob(req, caller, (job) => compressUpload(req, caller, job));
   } catch (error) {
     if (error instanceof CallerJobRefusedError) {
       return callerJobRefusedResponse(error, COMPRESS_VIDEO_BUSY_MESSAGE);

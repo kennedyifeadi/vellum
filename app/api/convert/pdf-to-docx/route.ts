@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
-import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { saveConversionRecord } from '@/lib/conversions';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
@@ -52,13 +52,13 @@ function rethrowExtractionFailure(error: unknown, plan: string): never {
   throw error;
 }
 
-async function extractPages(file: File, plan: string): Promise<ConvertiblePage[]> {
+async function extractPages(file: File, plan: string, job: CallerJob): Promise<ConvertiblePage[]> {
   const data = new Uint8Array(await file.arrayBuffer());
   if (data.length === 0) {
     throw new ClientError(emptyPdfMessage());
   }
   try {
-    const pages = await extractPdfPages(data, extractionOptionsForPlan(plan));
+    const pages = await job.inPools(['pdf-worker'], () => extractPdfPages(data, extractionOptionsForPlan(plan)));
     return toConvertiblePages(pages);
   } catch (error) {
     rethrowExtractionFailure(error, plan);
@@ -69,7 +69,7 @@ function countLines(pages: ConvertiblePage[]): number {
   return pages.reduce((lineCount, page) => lineCount + (page.hasText ? page.lines.length : 1), 0);
 }
 
-async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const budget = uploadBudgetForPlan(plan);
   const formData = await readMultipartForm(req, budget);
   const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
@@ -80,7 +80,7 @@ async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promis
 
   assertFileSizeWithinPlan(plan, file.size);
 
-  const pages = await extractPages(file, plan);
+  const pages = await extractPages(file, plan, job);
   assertLineCountWithinPlan(plan, countLines(pages));
 
   const doc = new Document({
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     assertWithinRateLimit(req);
 
     const caller = await resolveCaller(req);
-    return await runCallerJob(req, caller, ['pdf-worker'], () => convertUpload(req, caller));
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
     if (error instanceof CallerJobRefusedError) {
       return callerJobRefusedResponse(error, CONVERTER_BUSY_MESSAGE);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
-import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory } from '@/lib/conversions';
 import { PDFDocument, rgb } from 'pdf-lib';
@@ -67,7 +67,7 @@ async function loadForHighlighting(data: ArrayBuffer): Promise<PDFDocument> {
   return pdfDoc;
 }
 
-async function searchUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+async function searchUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const budget = uploadBudgetForPlan(plan);
   const formData = await readMultipartForm(req, budget);
   const file = (await resolveFiles(formData, 'pdf', budget))[0] as File;
@@ -87,7 +87,9 @@ async function searchUpload(req: NextRequest, { userId, plan }: Caller): Promise
   }
   // The extraction worker takes ownership of the bytes it is given, so it gets a copy
   // and pdf-lib keeps the original.
-  const pageTextItems = await extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan);
+  const pageTextItems = await job.inPools(['pdf-worker'], () =>
+    extractTextItems(new Uint8Array(arrayBuffer.slice(0)), plan),
+  );
 
   const pdfLibDoc = await loadForHighlighting(arrayBuffer);
   const matches: Match[] = [];
@@ -165,7 +167,7 @@ export async function POST(req: NextRequest) {
     assertWithinRateLimit(req);
 
     const caller = await resolveCaller(req);
-    return await runCallerJob(req, caller, ['pdf-worker'], () => searchUpload(req, caller));
+    return await runCallerJob(req, caller, (job) => searchUpload(req, caller, job));
   } catch (error) {
     if (error instanceof CallerJobRefusedError) {
       return callerJobRefusedResponse(error, FIND_PDF_BUSY_MESSAGE);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
-import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory, saveConversionRecord } from '@/lib/conversions';
 import JSZip from 'jszip';
@@ -67,7 +67,7 @@ async function recordConversion(userId: string, output: ConvertedOutput, pages: 
   }
 }
 
-async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const budget = uploadBudgetForPlan(plan);
   const formData = await readMultipartForm(req, budget);
   const images = await resolveFiles(formData, 'images', budget);
@@ -87,8 +87,8 @@ async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promis
     jpegs.push(await acceptJpeg(Buffer.from(await file.arrayBuffer()), index + 1));
   }
 
-  const output = await runImageJob(() =>
-    jpegs.length === 1 ? convertSingle(jpegs[0], images[0]) : convertBatch(jpegs, images),
+  const output = await job.inPools(['image'], () =>
+    runImageJob(() => (jpegs.length === 1 ? convertSingle(jpegs[0], images[0]) : convertBatch(jpegs, images))),
   );
 
   // Built before anything is recorded, so a response that cannot be built leaves no
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     assertWithinRateLimit(req);
 
     const caller = await resolveCaller(req);
-    return await runCallerJob(req, caller, ['image'], () => convertUpload(req, caller));
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
     if (error instanceof CallerJobRefusedError) {
       return callerJobRefusedResponse(error, JPEG_TO_PNG_BUSY_MESSAGE);

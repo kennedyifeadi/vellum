@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
-import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
@@ -37,7 +37,7 @@ async function convertWithinPlan(imageBuffers: Buffer[], plan: string): Promise<
   }
 }
 
-async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const budget = uploadBudgetForPlan(plan);
   const formData = await readMultipartForm(req, budget);
   const files = await resolveFiles(formData, 'images', budget);
@@ -58,7 +58,7 @@ async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promis
     imageBuffers.push(Buffer.from(arrayBuffer));
   }
 
-  const pdfBuffer = await convertWithinPlan(imageBuffers, plan);
+  const pdfBuffer = await job.inPools(['image', 'pdf-worker'], () => convertWithinPlan(imageBuffers, plan));
 
   // Built before anything is recorded, so a response that cannot be built leaves no
   // history row behind.
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     assertWithinRateLimit(req);
 
     const caller = await resolveCaller(req);
-    return await runCallerJob(req, caller, ['image', 'pdf-worker'], () => convertUpload(req, caller));
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
     if (error instanceof CallerJobRefusedError) {
       return callerJobRefusedResponse(error, IMAGE_TO_PDF_BUSY_MESSAGE);
