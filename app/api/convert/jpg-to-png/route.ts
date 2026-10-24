@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { recordConversionHistory, saveConversionRecord } from '@/lib/conversions';
 import JSZip from 'jszip';
@@ -66,50 +67,56 @@ async function recordConversion(userId: string, output: ConvertedOutput, pages: 
   }
 }
 
+async function convertUpload(req: NextRequest, { userId, plan }: Caller): Promise<NextResponse> {
+  const budget = uploadBudgetForPlan(plan);
+  const formData = await readMultipartForm(req, budget);
+  const images = await resolveFiles(formData, 'images', budget);
+
+  if (!images || images.length === 0) {
+    return NextResponse.json({ error: 'No images provided' }, { status: 400 });
+  }
+
+  assertFileCountWithinPlan(plan, images.length);
+  assertTotalSizeWithinPlan(
+    plan,
+    images.map((image) => image.size),
+  );
+
+  const jpegs: AcceptedImage[] = [];
+  for (const [index, file] of images.entries()) {
+    jpegs.push(await acceptJpeg(Buffer.from(await file.arrayBuffer()), index + 1));
+  }
+
+  const output = await runImageJob(() =>
+    jpegs.length === 1 ? convertSingle(jpegs[0], images[0]) : convertBatch(jpegs, images),
+  );
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // stored file and no history row behind.
+  const response = new NextResponse(output.bytes as unknown as BodyInit, {
+    headers: {
+      'Content-Type': output.contentType,
+      'Content-Disposition': attachmentDisposition(output.fileName, 'converted.png'),
+    },
+  });
+
+  if (userId) {
+    await recordConversion(userId, output, images.length);
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const budget = uploadBudgetForPlan(plan);
-    const formData = await readMultipartForm(req, budget);
-    const images = await resolveFiles(formData, 'images', budget);
-
-    if (!images || images.length === 0) {
-      return NextResponse.json({ error: 'No images provided' }, { status: 400 });
-    }
-
-    assertFileCountWithinPlan(plan, images.length);
-    assertTotalSizeWithinPlan(
-      plan,
-      images.map((image) => image.size),
-    );
-
-    const jpegs: AcceptedImage[] = [];
-    for (const [index, file] of images.entries()) {
-      jpegs.push(await acceptJpeg(Buffer.from(await file.arrayBuffer()), index + 1));
-    }
-
-    const output = await runImageJob(() =>
-      jpegs.length === 1 ? convertSingle(jpegs[0], images[0]) : convertBatch(jpegs, images),
-    );
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // stored file and no history row behind.
-    const response = new NextResponse(output.bytes as unknown as BodyInit, {
-      headers: {
-        'Content-Type': output.contentType,
-        'Content-Disposition': attachmentDisposition(output.fileName, 'converted.png'),
-      },
-    });
-
-    if (userId) {
-      await recordConversion(userId, output, images.length);
-    }
-
-    return response;
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, ['image'], () => convertUpload(req, caller));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, JPEG_TO_PNG_BUSY_MESSAGE);
+    }
     if (error instanceof ImageToolBusyError) {
       return busyResponse(JPEG_TO_PNG_BUSY_MESSAGE);
     }

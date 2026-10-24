@@ -88,6 +88,17 @@ function compress(files: unknown[]) {
   return postTo(handleImageCompress, '/api/convert/image-compress', files);
 }
 
+// Jobs that run at once must come from different signed-in users: a caller runs one job
+// at a time, and guests together hold one slot. The user id is read as the request starts.
+function asUser<Result>(userId: string, send: () => Result): Result {
+  mockUserId = userId;
+  try {
+    return send();
+  } finally {
+    mockUserId = null;
+  }
+}
+
 function smallJpeg(): Promise<Buffer> {
   return flatImage(16, 16).jpeg().toBuffer();
 }
@@ -270,10 +281,13 @@ describe('image-compress when busy', () => {
       return jest.requireActual('@/lib/image/compress').compressImage(...args);
     });
 
-    const running = [compress([uploadedFile(jpeg, 'a.jpg')]), compress([uploadedFile(jpeg, 'b.jpg')])];
+    const running = [
+      asUser('user-a', () => compress([uploadedFile(jpeg, 'a.jpg')])),
+      asUser('user-b', () => compress([uploadedFile(jpeg, 'b.jpg')])),
+    ];
     await untilCalled(compressImageMock, 2);
 
-    const refused = await compress([uploadedFile(jpeg, 'c.jpg')]);
+    const refused = await asUser('user-c', () => compress([uploadedFile(jpeg, 'c.jpg')]));
     expect(refused.status).toBe(503);
     expect(refused.headers.get('Retry-After')).toBe('5');
     expect((await refused.json()).error).toBe(BUSY_MESSAGE);
@@ -295,13 +309,15 @@ describe('image-compress when busy', () => {
       return jest.requireActual('@/lib/image/to-png').convertJpegToPng(...args);
     });
 
-    const running = [compress([uploadedFile(jpeg, 'a.jpg')])];
+    const running = [asUser('user-a', () => compress([uploadedFile(jpeg, 'a.jpg')]))];
     await untilCalled(compressImageMock, 1);
-    running.push(postTo(handleJpgToPng, '/api/convert/jpg-to-png', [uploadedFile(jpeg, 'b.jpg')]));
+    running.push(asUser('user-b', () => postTo(handleJpgToPng, '/api/convert/jpg-to-png', [uploadedFile(jpeg, 'b.jpg')])));
     await untilCalled(convertJpegToPngMock, 1);
 
-    expect((await compress([uploadedFile(jpeg, 'c.jpg')])).status).toBe(503);
-    const refusedPng = await postTo(handleJpgToPng, '/api/convert/jpg-to-png', [uploadedFile(jpeg, 'd.jpg')]);
+    expect((await asUser('user-c', () => compress([uploadedFile(jpeg, 'c.jpg')]))).status).toBe(503);
+    const refusedPng = await asUser('user-c', () =>
+      postTo(handleJpgToPng, '/api/convert/jpg-to-png', [uploadedFile(jpeg, 'd.jpg')]),
+    );
     expect(refusedPng.status).toBe(503);
     expect((await refusedPng.json()).error).toBe('JPEG to PNG is busy right now. Please try again in a few seconds.');
 
