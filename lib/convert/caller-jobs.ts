@@ -3,8 +3,8 @@ import type { Caller } from '@/lib/auth/caller';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { clientAddressKey } from '@/lib/http/rate-limit';
 
-/** The slot pools a heavy job can take slots from; see runWorkerJob, runImageJob and runVideoJob. */
-export type JobPool = 'pdf-worker' | 'image' | 'video';
+/** The slot pools a heavy job can take slots from; see runWorkerJob, runImageJob, runVideoJob and runRenderJob. */
+export type JobPool = 'pdf-worker' | 'image' | 'video' | 'browser';
 
 // Each pool has two slots. Guests together may hold one of them, so a signed-in user can
 // always find a slot that no guest can take.

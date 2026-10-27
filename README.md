@@ -69,15 +69,19 @@ job at a time between them.
 
 ### Heavy jobs per caller
 
-PDF to Word, Find in PDF, Image to PDF, Compress Image, JPEG to PNG and Compress Video run
-their work in small process-wide pools of two slots each (PDF workers, sharp image jobs,
-video encodes), so they cannot exhaust the server's cores or memory. So that one caller
-cannot keep those tools busy for everyone (#106):
+PDF to Word, Find in PDF, Image to PDF, Compress Image, JPEG to PNG, Compress Video, HTML
+to PDF and DOCX to PDF run their work in small process-wide pools of two slots each (PDF
+workers, sharp image jobs, video encodes, Chromium renders), so they cannot exhaust the
+server's cores or memory. HTML to PDF and DOCX to PDF share the render pool, and each render
+still gets its own Chromium: HTML to PDF renders pages users choose, so no two users' pages
+share a browser process. So that one caller cannot keep those tools busy for everyone (#106):
 
-- **One job per caller.** A caller may run one of these jobs at a time, across all six
+- **One job per caller.** A caller may run one of these jobs at a time, across all eight
   tools. A second request while one runs is refused at once, before its upload is read, with
   429, `Retry-After` and "You already have a conversion in progress. Please wait for it to
   finish." Image to PDF, which uses an image slot and then a PDF worker slot, is one job.
+  A request refused because a pool is full gets the tool's 503 "busy" answer with
+  `Retry-After`.
 - **Who is a caller.** A signed-in user is one caller by user id. A guest is one caller by
   the address `CLIENT_IP_HEADER` gives; without it, all guests are counted as one caller
   under the same shared key the rate limit uses.
@@ -165,8 +169,9 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    only while starting a deployment, from the hostname `healthcheck.railway.app`
    ([Healthchecks](https://docs.railway.com/reference/healthchecks)).
 3. **One replica.** Keep the service at a single instance. The rate limiter (`proxy.ts`),
-   the worker slot counter (`lib/convert/worker-job.ts`), the image and video job
-   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`) and the per-caller job
+   the worker slot counter (`lib/convert/worker-job.ts`), the image, video and render job
+   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`,
+   `lib/puppeteer/render-jobs.ts`) and the per-caller job
    claims (`lib/convert/caller-jobs.ts`) live in the process's memory. With more than one instance each instance would apply its own limits, so the
    real limits would multiply.
 4. **Google OAuth.** In Google Cloud Console, add
