@@ -102,12 +102,11 @@ export function isToolId(id: string): id is ToolId {
   return Object.hasOwn(TOOL_LIMITS, id);
 }
 
-export function videoLengthNote(maxMinutes: number): string {
-  return (
-    `How long a video can be depends on its resolution and frame rate, up to ${maxMinutes} minutes. ` +
-    'If a video is too long to compress, you will be told how long it can be.'
-  );
-}
+// The server refuses most videos well before `maxVideoMinutes`: its encode time budget
+// depends on the resolution and frame rate, so only the server can name the real length.
+export const VIDEO_LENGTH_NOTE =
+  'How long a video can be depends on its resolution and frame rate, up to the length shown for your plan. ' +
+  'If a video is too long to compress, you will be told how long it can be.';
 
 /** The per-plan sizes pricing shows: the general document tools' cap and the video cap. */
 export const HEADLINE_LIMITS = {

@@ -1,12 +1,17 @@
 import React from 'react';
+import { LIMITS_VARY_NOTE, PlanTier, planHeadlines } from '@/lib/upload-limits';
+
+function headlineRow(name: string, value: (tier: PlanTier) => string) {
+  return { name, free: value('guest'), basic: value('Basic'), pro: value('Pro'), enterprise: value('Enterprise') };
+}
 
 const compareData = [
   {
     category: "Conversion Limits",
     features: [
-      { name: "Max File Size (Image/Doc)", free: "25MB", basic: "50MB", pro: "100MB", enterprise: "Custom" },
-      { name: "Max File Size (Video)", free: "50MB", basic: "100MB", pro: "500MB", enterprise: "Custom" },
-      { name: "Batch Conversion Limit", free: "3 files", basic: "30 files", pro: "50 files", enterprise: "Custom" },
+      headlineRow("Max File Size (Image/Doc)", (tier) => `${planHeadlines(tier).documentMb}MB`),
+      headlineRow("Max File Size (Video)", (tier) => `${planHeadlines(tier).videoMb}MB`),
+      headlineRow("Batch Conversion Limit", (tier) => `${planHeadlines(tier).batchFiles} files`),
     ]
   },
   {
@@ -15,7 +20,7 @@ const compareData = [
       { name: "PDF Merge", free: "Yes", basic: "Yes", pro: "Yes", enterprise: "Yes" },
       { name: "PDF Split & Extract", free: "Yes", basic: "Yes", pro: "Yes", enterprise: "Yes" },
       { name: "PDF to DOCX", free: "Yes", basic: "Yes", pro: "Yes", enterprise: "Yes" },
-      { name: "PDF Search Limit", free: "10 pages", basic: "50 pages", pro: "100 pages", enterprise: "Unlimited" },
+      headlineRow("PDF Search Limit", (tier) => `${planHeadlines(tier).pdfSearchPages} pages`),
     ]
   },
   {
@@ -73,6 +78,7 @@ export default function PricingCompareTable() {
     <div className="mt-32">
       <div className="mb-12">
         <h2 className="mt-4 text-xl font-normal tracking-tight">Find the perfect set of features for your workflow.</h2>
+        <p className="mt-2 text-sm text-gray-500">{LIMITS_VARY_NOTE}</p>
       </div>
       
       <div className="overflow-x-auto pb-4">

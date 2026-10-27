@@ -1,5 +1,5 @@
-import { resolvePlanLimit } from '@/lib/plan-limits';
-import { BYTES_PER_MB, HEADLINE_LIMITS, TOOL_IDS, TOOL_LIMITS, ToolLimits, isToolId } from '@/lib/tool-limits';
+import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
+import { BYTES_PER_MB, HEADLINE_LIMITS, TOOL_IDS, TOOL_LIMITS, ToolId, ToolLimits, isToolId } from '@/lib/tool-limits';
 
 // What the upload screen checks before sending anything, so a file the server would
 // refuse is turned away before it is uploaded. The server still decides.
@@ -108,6 +108,54 @@ export function selectionError(
   plan: string | null | undefined,
 ): string | null {
   return admitFiles([], files, toolId, toolName, plan).error;
+}
+
+export type PlanTier = keyof PlanTierValues<number>;
+
+export const PLAN_TIERS: PlanTier[] = ['guest', 'Basic', 'Pro', 'Enterprise'];
+
+/** One cell of Help's limits table: what `toolId` takes on `tier`. */
+export function toolLimitSummary(toolId: ToolId, tier: PlanTier): string {
+  const limits: ToolLimits = TOOL_LIMITS[toolId];
+  const size = formatMb(limits.maxBytes[tier]);
+  const parts = limits.sizeApplies === 'request' ? [`${size} in total`, `${limits.maxFiles[tier]} files`] : [size];
+  if (limits.maxPages) parts.push(`${limits.maxPages[tier].toLocaleString('en-US')} pages`);
+  if (limits.maxLines) parts.push(`${limits.maxLines[tier].toLocaleString('en-US')} lines of text`);
+  if (limits.maxMegapixelsPerImage) parts.push(`${limits.maxMegapixelsPerImage} megapixels per image`);
+  if (limits.maxVideoMinutes) parts.push(`up to ${limits.maxVideoMinutes[tier]} minutes`);
+  return parts.join(', ');
+}
+
+/** Help's answer to "what is the maximum file size", from the same values. */
+export function maxFileSizeAnswer(): string {
+  const [free, basic, pro, enterprise] = PLAN_TIERS.map((tier) => planHeadlines(tier).documentMb);
+  const toWordFree = formatMb(TOOL_LIMITS['pdf-to-docx'].maxBytes.guest);
+  return (
+    `Most tools take files up to ${free} MB on Free, ${basic} MB on Basic, ${pro} MB on Pro and ` +
+    `${enterprise} MB on Enterprise. Some tools allow less, such as PDF to DOCX (${toWordFree} on Free), ` +
+    'and videos have their own caps. See "Upload limits by tool" on this page for every tool.'
+  );
+}
+
+export const LIMITS_VARY_NOTE = 'Limits vary by tool — see Help for details.';
+
+/** The simple per-plan figures pricing shows; individual tools may allow less. */
+export function planHeadlines(tier: PlanTier) {
+  return {
+    documentMb: HEADLINE_LIMITS.documents[tier] / BYTES_PER_MB,
+    videoMb: HEADLINE_LIMITS.video[tier] / BYTES_PER_MB,
+    batchFiles: HEADLINE_LIMITS.batchFiles[tier],
+    pdfSearchPages: HEADLINE_LIMITS.pdfSearchPages[tier],
+  };
+}
+
+export function headlineFeatures(tier: PlanTier): string[] {
+  const { documentMb, videoMb, batchFiles, pdfSearchPages } = planHeadlines(tier);
+  return [
+    `${documentMb}MB Max File Size (${videoMb}MB Video)`,
+    `${batchFiles} Files per Batch Conversion`,
+    `${pdfSearchPages} Pages for PDF Search`,
+  ];
 }
 
 /** The dashboard's drop zone takes documents and images, whose largest cap is the general one. */
