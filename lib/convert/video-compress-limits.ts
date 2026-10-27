@@ -2,29 +2,21 @@ import { ClientError } from '@/lib/convert/errors';
 import { pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import type { UploadBudget } from '@/lib/http/read-upload';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
-
-const BYTES_PER_MB = 1024 * 1024;
+import { BYTES_PER_MB, TOOL_LIMITS } from '@/lib/tool-limits';
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_MINUTE = 60_000;
 
-// Enterprise matches Pro. It was held there by proxy.ts's 520 MB body clone, which no
-// longer applies to uploads; raising it is a separate decision.
-const MAX_FILE_SIZE: PlanTierValues<number> = {
-  guest: 50 * BYTES_PER_MB,
-  Basic: 100 * BYTES_PER_MB,
-  Pro: 500 * BYTES_PER_MB,
-  Enterprise: 500 * BYTES_PER_MB,
-};
+const { maxBytes: MAX_FILE_SIZE, maxVideoMinutes } = TOOL_LIMITS['video-compress'];
 
 // An encode's time follows the video's length, not its size: a 16x16 clip an hour long
 // is a few kilobytes. Read by the probe, so it refuses a video before anything is encoded.
 // The time budget below now limits most videos to less than these; they still bound
 // videos small enough to encode faster than that, such as 480p30 for a guest.
 const MAX_DURATION_SECONDS: PlanTierValues<number> = {
-  guest: 5 * SECONDS_PER_MINUTE,
-  Basic: 15 * SECONDS_PER_MINUTE,
-  Pro: 30 * SECONDS_PER_MINUTE,
-  Enterprise: 60 * SECONDS_PER_MINUTE,
+  guest: maxVideoMinutes.guest * SECONDS_PER_MINUTE,
+  Basic: maxVideoMinutes.Basic * SECONDS_PER_MINUTE,
+  Pro: maxVideoMinutes.Pro * SECONDS_PER_MINUTE,
+  Enterprise: maxVideoMinutes.Enterprise * SECONDS_PER_MINUTE,
 };
 
 // Railway ends a request that has sent nothing for 5 minutes (#115), and this route sends

@@ -3,8 +3,7 @@ import type { PdfExtractionOptions } from '@/lib/convert/pdf-extraction';
 import type { UploadBudget } from '@/lib/http/read-upload';
 import { PDF_WORKER_LIMITS, pdfTooComplexMessage, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
-
-const BYTES_PER_MB = 1024 * 1024;
+import { BYTES_PER_MB, TOOL_LIMITS } from '@/lib/tool-limits';
 
 // Text extraction runs in a worker thread bounded by EXTRACTION_LIMITS; the DOCX build
 // that follows it runs on the request's own event loop, bounded by the page and line
@@ -14,31 +13,7 @@ const BYTES_PER_MB = 1024 * 1024;
 // size is the one cap that can refuse a PDF before it is read. It is the size of the
 // upload, not of what it decodes to: a compressed content stream inflates far past it,
 // which is why extraction time is bounded by a deadline rather than by this cap.
-const MAX_FILE_SIZE: PlanTierValues<number> = {
-  guest: 5 * BYTES_PER_MB,
-  Basic: 10 * BYTES_PER_MB,
-  Pro: 15 * BYTES_PER_MB,
-  Enterprise: 25 * BYTES_PER_MB,
-};
-
-// Sized by measurement on ordinary text: the largest page and line counts a tier allows
-// convert in about 1s (guest) to 4s (Enterprise). See #81 for the figures.
-const MAX_PAGES: PlanTierValues<number> = {
-  guest: 100,
-  Basic: 200,
-  Pro: 300,
-  Enterprise: 500,
-};
-
-// Every line becomes a paragraph, and paragraph count is what drives the DOCX build.
-// A page cap alone does not bound it: a dense page carries far more than the ~80 lines
-// these values allow per permitted page.
-const MAX_LINES: PlanTierValues<number> = {
-  guest: 8_000,
-  Basic: 16_000,
-  Pro: 24_000,
-  Enterprise: 40_000,
-};
+const { maxBytes: MAX_FILE_SIZE, maxPages: MAX_PAGES, maxLines: MAX_LINES } = TOOL_LIMITS['pdf-to-docx'];
 
 // What bounds the text extraction whatever the PDF contains, since neither its time nor
 // its memory follows the upload size. Measured on the densest PDF each plan's page and

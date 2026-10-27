@@ -1,30 +1,17 @@
 import { ClientError } from '@/lib/convert/errors';
 import type { UploadBudget } from '@/lib/http/read-upload';
-import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
+import { resolvePlanLimit } from '@/lib/plan-limits';
+import { BYTES_PER_MB, IMAGE_TOOL_LIMITS } from '@/lib/tool-limits';
 
-const BYTES_PER_MB = 1024 * 1024;
 const PIXELS_PER_MEGAPIXEL = 1_000_000;
 
-const MAX_FILES: PlanTierValues<number> = {
-  guest: 3,
-  Basic: 30,
-  Pro: 50,
-  Enterprise: 250,
-};
+const MAX_FILES = IMAGE_TOOL_LIMITS.maxFiles;
 
-// The same tiers as the PDF tools, applied to the sum of the images in one request. It
-// is the one cap that can refuse a request before any of it is read.
-const MAX_TOTAL_SIZE: PlanTierValues<number> = {
-  guest: 25 * BYTES_PER_MB,
-  Basic: 50 * BYTES_PER_MB,
-  Pro: 100 * BYTES_PER_MB,
-  Enterprise: 500 * BYTES_PER_MB,
-};
+// Applied to the sum of the images in one request. It is the one cap that can refuse a
+// request before any of it is read.
+const MAX_TOTAL_SIZE = IMAGE_TOOL_LIMITS.maxBytes;
 
-// Read from the image's header, so it is checked before any pixel is decoded. An
-// image's cost follows its pixels, not its bytes: a flat-colour 268-megapixel PNG is
-// under 800 KB and took 1.5 GB to re-encode.
-export const MAX_IMAGE_PIXELS = 50 * PIXELS_PER_MEGAPIXEL;
+export const MAX_IMAGE_PIXELS = IMAGE_TOOL_LIMITS.maxMegapixelsPerImage * PIXELS_PER_MEGAPIXEL;
 
 // How many requests may re-encode images with sharp at once, across Compress Image and
 // JPEG to PNG. Each works on one image at a time, so this bounds the images decoded at
