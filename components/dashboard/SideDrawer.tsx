@@ -6,6 +6,7 @@ import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import Image from 'next/image';
+import { admitFiles, selectionError, uploadLimitLabel } from '@/lib/upload-limits';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -170,14 +171,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   }, [isResizing]);
 
   const plan = user?.plan || 'Free';
-  let maxAllowed = 3;
-  if (plan === 'Pro') maxAllowed = 50;
-  else if (plan === 'Basic') maxAllowed = 30;
-  
-  const maxAllowedJpg = maxAllowed;
-  const maxAllowedMerge = maxAllowed;
-  const maxAllowedImage = maxAllowed;
-  const maxAllowedImageCompress = maxAllowed;
 
   useEffect(() => {
     if (toolId !== prevToolId) {
@@ -221,6 +214,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
+  const addFiles = (incoming: VellumFile[]) => {
+    const { files, error } = admitFiles(fileList, incoming, selectedTool, toolName, plan);
+    setFileList(files);
+    if (error) showToast(error, 'error');
+  };
+
   const getPickerMimeTypes = () => {
     switch (selectedTool) {
       case 'merge-pdf':
@@ -261,50 +260,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         .setCallback((data: GooglePickerData) => {
           console.log('[GooglePicker] Picker Callback Event:', data.action, data);
           if (data.action === window.google.picker.Action.PICKED) {
-            const plan = user?.plan || 'Free';
-            let MAX_SIZE = 25 * 1024 * 1024;
-            if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
-            else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
-            let errorShown = false;
-            
-            setFileList(prev => {
-              const updatedList = [...prev];
-              
-              for (const doc of data.docs) {
-                const newDriveFile: DriveFile = {
-                  isDriveFile: true,
-                  id: doc.id,
-                  name: doc.name,
-                  size: doc.sizeBytes || 1000,
-                  type: doc.mimeType,
-                  accessToken: accessToken
-                };
-
-                if (newDriveFile.size > MAX_SIZE) {
-                  if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
-                  errorShown = true;
-                  continue;
-                }
-                
-                if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
-                  if (!errorShown) showToast(`Limit reached.`, 'error');
-                  errorShown = true;
-                  break;
-                }
-                
-                if (updatedList.find(f => f.name === newDriveFile.name && f.size === newDriveFile.size)) continue;
-                
-                const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
-                if (currentTotalSize + newDriveFile.size > MAX_SIZE) {
-                  if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
-                  errorShown = true;
-                  break;
-                }
-                
-                updatedList.push(newDriveFile);
-              }
-              return updatedList;
-            });
+            addFiles(data.docs.map((doc): DriveFile => ({
+              isDriveFile: true,
+              id: doc.id,
+              name: doc.name,
+              size: doc.sizeBytes || 1000,
+              type: doc.mimeType,
+              accessToken: accessToken
+            })));
           }
         });
 
@@ -376,69 +339,13 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    const newFiles = Array.from(e.target.files);
-    let errorShown = false;
-
-    setFileList(prev => {
-      const updatedList = [...prev];
-
-      for (const selectedFile of newFiles) {
-        const plan = user?.plan || 'Free';
-        let MAX_SIZE = 25 * 1024 * 1024;
-        if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
-        else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
-
-        if (selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
-          errorShown = true;
-          continue;
-        }
-
-        if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
-          if (!errorShown) showToast(`Your plan supports merging up to ${maxAllowedMerge} PDFs for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'image-to-pdf' && updatedList.length >= maxAllowedImage) {
-          if (!errorShown) showToast(`Your plan supports converting up to ${maxAllowedImage} images for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'jpg-to-png' && updatedList.length >= maxAllowedJpg) {
-          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedJpg} images for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'image-compress' && updatedList.length >= maxAllowedImageCompress) {
-          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedImageCompress} images.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && selectedTool !== 'jpg-to-png' && selectedTool !== 'image-compress' && updatedList.length >= 1) {
-          if (!errorShown) showToast("This tool only supports processing 1 file at a time.", "error");
-          errorShown = true;
-          break;
-        }
-
-        if (updatedList.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) continue;
-        
-        const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
-        if (currentTotalSize + selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
-          errorShown = true;
-          break;
-        }
-
-        updatedList.push(selectedFile);
-      }
-
-      return updatedList;
-    });
-
+    addFiles(Array.from(e.target.files));
     e.target.value = '';
   };
 
   const currentToolInfo = availableTools.find(t => t.id === selectedTool);
+  const toolName = currentToolInfo?.name ?? 'This tool';
+  const limitLabel = uploadLimitLabel(selectedTool, plan);
 
   const renderToolInputs = () => {
     if (!selectedTool) return null;
@@ -782,7 +689,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         <h2 className="text-sm font-bold text-[#111827]">
                           {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                         </h2>
-                        <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
+                        <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -956,7 +863,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       <h2 className="text-sm font-bold text-[#111827]">
                         {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                       </h2>
-                      <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
+                      <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
                     </div>
                   </div>
                   <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
@@ -1183,6 +1090,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
+                  // Files added before a tool was chosen were checked only against the largest cap.
+                  const notSendable = selectionError(fileList, selectedTool, toolName, plan);
+                  if (notSendable) {
+                    showToast(notSendable, 'error');
+                    return;
+                  }
                   if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf' || selectedTool === 'image-compress' || selectedTool === 'video-compress' || selectedTool === 'pdf-to-docx') {
                     setIsProcessing(true);
                     try {
