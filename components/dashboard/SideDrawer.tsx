@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import Image from 'next/image';
 import { admitFiles, selectionError, uploadLimitLabel } from '@/lib/upload-limits';
+import { RetryCancelledError, fetchWithBusyRetry } from '@/lib/busy-retry';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -118,6 +119,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [fileList, setFileList] = useState<VellumFile[]>([]);
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isWaitingForSlot, setIsWaitingForSlot] = useState(false);
+  const retryControllerRef = useRef<AbortController | null>(null);
 
   // Resizable drawer state (desktop)
   const [drawerWidth, setDrawerWidth] = useState(400);
@@ -212,6 +215,21 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  useEffect(() => {
+    if (!isOpen) retryControllerRef.current?.abort();
+  }, [isOpen]);
+
+  const sendWithBusyRetry = async (send: () => Promise<Response>) => {
+    const controller = new AbortController();
+    retryControllerRef.current = controller;
+    try {
+      return await fetchWithBusyRetry(send, { signal: controller.signal, onWaiting: setIsWaitingForSlot });
+    } finally {
+      retryControllerRef.current = null;
+      setIsWaitingForSlot(false);
+    }
   };
 
   const addFiles = (incoming: VellumFile[]) => {
@@ -346,6 +364,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const currentToolInfo = availableTools.find(t => t.id === selectedTool);
   const toolName = currentToolInfo?.name ?? 'This tool';
   const limitLabel = uploadLimitLabel(selectedTool, plan);
+  const processLabel = isWaitingForSlot ? 'Waiting for a free slot…' : isProcessing ? 'Processing...' : 'Process File';
 
   const renderToolInputs = () => {
     if (!selectedTool) return null;
@@ -1134,10 +1153,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       }
                       
                       const apiUrl = `/api/convert/${selectedTool}`;
-                      const response = await fetch(apiUrl, {
+                      const response = await sendWithBusyRetry(() => fetch(apiUrl, {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
                         const err = await response.json().catch(() => ({}));
@@ -1207,6 +1226,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         setFileList([]);
                       }
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
                       const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';
                       showToast(msg, 'error');
@@ -1228,13 +1248,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       }
                       formData.append('password', lockOptions.password);
                       
-                      const response = await fetch('/api/convert/lock-pdf', {
+                      const response = await sendWithBusyRetry(() => fetch('/api/convert/lock-pdf', {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
-                        throw new Error(`Failed to process: ${selectedTool}`);
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Error locking PDF. Please try again.');
                       }
 
                       const blob = await response.blob();
@@ -1259,8 +1280,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setLockOptions({ password: '', confirmPassword: '' });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
-                      showToast('Error locking PDF. Please try again.', 'error');
+                      showToast(error instanceof Error ? error.message : 'Error locking PDF. Please try again.', 'error');
                     } finally {
                       setIsProcessing(false);
                     }
@@ -1281,13 +1303,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       formData.append('endPage', splitOptions.endPage.toString());
                       formData.append('splitEvery', splitOptions.splitEvery.toString());
                       
-                      const response = await fetch('/api/convert/split-pdf', {
+                      const response = await sendWithBusyRetry(() => fetch('/api/convert/split-pdf', {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
-                        throw new Error(`Failed to process: ${selectedTool}`);
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Error splitting PDF. Please try again.');
                       }
 
                       const blob = await response.blob();
@@ -1307,8 +1330,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setSplitOptions({ startPage: 1, endPage: 1, splitEvery: false });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
-                      showToast('Error splitting PDF. Please try again.', 'error');
+                      showToast(error instanceof Error ? error.message : 'Error splitting PDF. Please try again.', 'error');
                     } finally {
                       setIsProcessing(false);
                     }
@@ -1318,11 +1342,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       let response: Response;
 
                       if (htmlOptions.mode === 'url') {
-                        response = await fetch('/api/convert/html-to-pdf', {
+                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ url: htmlOptions.url }),
-                        });
+                        }));
                       } else {
                         const formData = new FormData();
                         if ('isDriveFile' in fileList[0]) {
@@ -1334,10 +1358,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         } else {
                           formData.append('html', fileList[0]);
                         }
-                        response = await fetch('/api/convert/html-to-pdf', {
+                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
                           method: 'POST',
                           body: formData,
-                        });
+                        }));
                       }
 
                       if (!response.ok) {
@@ -1365,6 +1389,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setHtmlOptions({ url: '', mode: 'file' });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('HTML to PDF error:', error);
                       const msg = error instanceof Error ? error.message : 'Error converting HTML to PDF.';
                       showToast(msg, 'error');
@@ -1391,8 +1416,16 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                   </svg>
                 )}
-                {isProcessing ? 'Processing...' : 'Process File'}
+                {processLabel}
               </button>
+              {isWaitingForSlot && (
+                <button
+                  onClick={() => retryControllerRef.current?.abort()}
+                  className="w-full h-9 rounded-xl text-xs font-semibold text-[#4b5563] border border-[#eaedf3] hover:bg-[#f9fafb] transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </motion.div>
           )}
