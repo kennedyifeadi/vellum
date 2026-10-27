@@ -200,8 +200,8 @@ Windows (in the PRs that set the image limits) put two Image to PDF or Compress 
 the pixel cap on photographic images at about 1.9 GB above the idle server. On top of that,
 at the same time, the server can be running two PDF extraction workers (up to 256 MB of heap
 each, plus decoded data outside the heap), a Chromium per HTML or DOCX to PDF request, two
-ffmpeg encodes, and holding whole uploads in memory (`req.formData()` buffers each body, up
-to the 520 MB request limit).
+ffmpeg encodes, and holding whole uploads in memory (each upload route reads its upload
+into memory, up to the plan's cap: 500 MB at most).
 
 Recommendation: **8 GB of memory and 4 vCPU**. Two video encodes alone take four cores
 (`-threads 2` each, at most two at once), and the sum of the peaks above comes to about
@@ -210,9 +210,12 @@ video uploads. Watch the memory graph during the first weeks and adjust.
 
 ### Limits
 
-- **Request body.** The app accepts bodies up to 520 MB
-  (`experimental.proxyClientMaxBodySize` in `next.config.ts`). Railway documents no body
-  size limit, but a request body must finish uploading within 5 minutes
+- **Request body.** Each upload route reads its own body, up to the caller's plan cap for
+  that tool plus 1 MB of multipart framing, and refuses it as soon as it passes that: before
+  reading any of it when its `Content-Length` already says so (`lib/http/read-upload.ts`).
+  The upload routes are left out of `proxy.ts`'s matcher, so Next does not buffer their
+  bodies first. The largest cap is 500 MB. Railway documents no body size limit, but a
+  request body must finish uploading within 5 minutes
   ([Specs & Limits](https://docs.railway.com/networking/public-networking/specs-and-limits)),
   which a 500 MB upload meets only above about 14 Mbit/s. The video size caps (50 / 100 /
   500 / 500 MB) are unchanged, so on a slower connection a large Pro or Enterprise upload
