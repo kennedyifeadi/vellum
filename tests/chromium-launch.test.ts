@@ -16,6 +16,11 @@ function launchArgs(): string[] {
 }
 
 describe('launchBrowser', () => {
+  // CI sets it for the whole suite, since its container runs the tests as root.
+  beforeEach(() => {
+    delete process.env.CHROMIUM_DISABLE_SANDBOX;
+  });
+
   afterEach(() => {
     delete process.env.CHROMIUM_DISABLE_SANDBOX;
     launch.mockClear();

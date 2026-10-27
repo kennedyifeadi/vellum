@@ -26,9 +26,11 @@ jobs:
           docker image ls vellum
           docker image inspect vellum --format 'Runtime image: {{.Size}} bytes'
 
-      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need.
+      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need. The build stage
+      # runs as root, where Chromium refuses to start sandboxed, and
+      # tests/browser-render-limits.test.ts launches real browsers.
       - name: Run the test suite in the build stage
-        run: docker run --rm vellum-build npm test
+        run: docker run --rm --env CHROMIUM_DISABLE_SANDBOX=true vellum-build npm test
 
       # Reports whether Chromium starts with its sandbox in a container on this runner. It
       # does not here (the runner refuses the user namespaces it needs), which says nothing

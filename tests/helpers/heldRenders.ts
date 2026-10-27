@@ -1,4 +1,5 @@
 import { execFileSync, type ChildProcess } from 'child_process';
+import fs from 'fs';
 import type { Browser, Page } from 'puppeteer';
 
 // Wraps the real Chromium launcher so a test can count the browsers it started and hold
@@ -105,15 +106,29 @@ export async function allBrowsersExited(): Promise<void> {
  */
 export function leftoverChromiumProcesses(): string[] {
   if (userDataDirs.size === 0) return [];
-  const commandLines =
-    process.platform === 'win32'
-      ? execFileSync(
-          'powershell.exe',
-          ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }'],
-          { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-        )
-      : execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return commandLines
-    .split(/\r?\n/)
-    .filter((line) => [...userDataDirs].some((dir) => line.includes(dir)));
+  return runningCommandLines().filter((line) => [...userDataDirs].some((dir) => line.includes(dir)));
+}
+
+// The container's slim Debian has no ps, so Linux reads /proc directly.
+function runningCommandLines(): string[] {
+  if (process.platform === 'win32') {
+    return execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }'],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+    ).split(/\r?\n/);
+  }
+  if (process.platform === 'linux') {
+    return fs
+      .readdirSync('/proc')
+      .filter((entry) => /^\d+$/.test(entry))
+      .map((pid) => {
+        try {
+          return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replaceAll('\0', ' ');
+        } catch {
+          return '';
+        }
+      });
+  }
+  return execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n');
 }
