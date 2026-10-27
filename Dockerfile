@@ -25,7 +25,9 @@ COPY package.json package-lock.json ./
 # Postinstall scripts fetch Chrome (puppeteer, at the version package-lock.json pins) and a
 # static ffmpeg (ffmpeg-static). Its release for this package version, b6.1.1, is FFmpeg
 # 7.0.2 on Linux but 6.1.1 on Windows; the checksum pins the Linux binary's exact bytes.
-RUN npm ci \
+# puppeteer would also fetch chrome-headless-shell, which only `headless: 'shell'` runs;
+# lib/puppeteer/launch.ts launches Chrome itself with `headless: true`.
+RUN PUPPETEER_CHROME_HEADLESS_SHELL_SKIP_DOWNLOAD=true npm ci \
  && echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  node_modules/ffmpeg-static/ffmpeg" \
     | sha256sum --check -
 
