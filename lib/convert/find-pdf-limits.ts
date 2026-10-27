@@ -3,24 +3,11 @@ import type { PdfTextItemsOptions } from '@/lib/convert/find-pdf-extraction';
 import type { UploadBudget } from '@/lib/http/read-upload';
 import { PDF_WORKER_LIMITS, pdfTooComplexMessage, pdfToolBusyMessage } from '@/lib/convert/pdf-worker-limits';
 import { PlanTierValues, resolvePlanLimit } from '@/lib/plan-limits';
+import { BYTES_PER_MB, TOOL_LIMITS } from '@/lib/tool-limits';
 
-const BYTES_PER_MB = 1024 * 1024;
-
-// The same upload caps as split-pdf and compress-pdf. Size is the one cap that can
-// refuse a PDF before it is read; the page count needs the parser.
-const MAX_FILE_SIZE: PlanTierValues<number> = {
-  guest: 25 * BYTES_PER_MB,
-  Basic: 50 * BYTES_PER_MB,
-  Pro: 100 * BYTES_PER_MB,
-  Enterprise: 500 * BYTES_PER_MB,
-};
-
-const MAX_PAGES: PlanTierValues<number> = {
-  guest: 10,
-  Basic: 50,
-  Pro: 100,
-  Enterprise: 500,
-};
+// Size is the one cap that can refuse a PDF before it is read; the page count needs the
+// parser.
+const { maxBytes: MAX_FILE_SIZE, maxPages: MAX_PAGES } = TOOL_LIMITS['find-pdf'];
 
 // What bounds the text extraction whatever the PDF contains, since neither its time nor
 // its memory follows the upload size or the page count. Measured on the slowest of

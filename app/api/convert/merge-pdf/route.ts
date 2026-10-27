@@ -5,6 +5,7 @@ import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { TOOL_LIMITS } from '@/lib/tool-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 import { assertWithinRateLimit } from '@/lib/http/rate-limit';
@@ -15,15 +16,7 @@ export async function POST(req: NextRequest) {
 
     const { userId, plan } = await resolveCaller(req);
 
-    const MAX_GUEST_SIZE = 25 * 1024 * 1024;
-    const MAX_BASIC_SIZE = 50 * 1024 * 1024;
-    const MAX_PRO_SIZE = 100 * 1024 * 1024;
-    const MAX_ENTERPRISE_SIZE = 250 * 1024 * 1024;
-
-    let maxSize = MAX_GUEST_SIZE;
-    if (plan === 'Enterprise') maxSize = MAX_ENTERPRISE_SIZE;
-    else if (plan === 'Pro') maxSize = MAX_PRO_SIZE;
-    else if (plan === 'Basic') maxSize = MAX_BASIC_SIZE;
+    const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['merge-pdf'].maxBytes);
     const budget = uploadBudget(maxSize, `Your current plan allows merges totaling up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
@@ -33,12 +26,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Please provide at least two PDF files to merge.' }, { status: 400 });
     }
 
-    const maxAllowed = resolvePlanLimit(plan, {
-      guest: 3,
-      Basic: 30,
-      Pro: 50,
-      Enterprise: 250,
-    });
+    const maxAllowed = resolvePlanLimit(plan, TOOL_LIMITS['merge-pdf'].maxFiles);
 
     if (files.length > maxAllowed) {
       return NextResponse.json({ 

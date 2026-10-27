@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import PricingCompareTable from "@/components/marketing/PricingCompareTable";
 import ToolsCarousel from "@/components/marketing/ToolsCarousel";
+import { LIMITS_VARY_NOTE, headlineFeatures } from "@/lib/upload-limits";
 
 export default function PricingPage() {
   const [isYearly, setIsYearly] = useState(true);
@@ -17,9 +18,7 @@ export default function PricingPage() {
       priceYearly: 0,
       limitLabel: "Guest access limits",
       features: [
-        "25MB Max File Size (50MB Video)",
-        "3 Files per Batch Conversion",
-        "10 Pages for PDF Search",
+        ...headlineFeatures("guest"),
         "No File Retention",
         "No Cloud Storage"
       ],
@@ -34,9 +33,7 @@ export default function PricingPage() {
       priceYearly: 8, // $96/yr
       limitLabel: "Increased usage limits",
       features: [
-        "50MB Max File Size (100MB Video)",
-        "30 Files per Batch Conversion",
-        "50 Pages for PDF Search",
+        ...headlineFeatures("Basic"),
         "3 Days File Retention",
         "5GB Cloud Storage"
       ],
@@ -51,9 +48,7 @@ export default function PricingPage() {
       priceYearly: 24, // $288/yr
       limitLabel: "Professional limits",
       features: [
-        "100MB Max File Size (500MB Video)",
-        "50 Files per Batch Conversion",
-        "100 Pages for PDF Search",
+        ...headlineFeatures("Pro"),
         "5 Days File Retention",
         "20GB Cloud Storage"
       ],
@@ -66,11 +61,9 @@ export default function PricingPage() {
       description: "Mission critical workflows and high volume",
       priceMonthly: "Custom",
       priceYearly: "Custom",
-      limitLabel: "Custom configurable limits",
+      limitLabel: "Highest usage limits",
       features: [
-        "Custom Max File Sizes",
-        "Custom Batch Conversions",
-        "Unlimited PDF Search",
+        ...headlineFeatures("Enterprise"),
         "Uptime Guarantee",
         "Custom Cloud Storage",
         "Dedicated Support"
@@ -166,6 +159,9 @@ export default function PricingPage() {
             </motion.div>
           ))}
         </div>
+        <p className="mt-4 text-sm text-gray-500">
+          <Link href="/dashboard/help" className="hover:underline">{LIMITS_VARY_NOTE}</Link>
+        </p>
 
         <PricingCompareTable />
         <div className="md:mt-32 mt-12">

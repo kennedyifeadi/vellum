@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
+import ToolLimitsTable from '@/components/dashboard/ToolLimitsTable';
+import { maxFileSizeAnswer } from '@/lib/upload-limits';
 
 const categories = [
   { id: 'getting-started', title: 'Getting Started', description: 'New here? Learn the basics of Vellum.', icon: 'M13 10V3L4 14h7v7l9-11h-7z', color: 'bg-blue-50 text-blue-600' },
@@ -18,7 +20,7 @@ const faqsData = [
   { q: "Is Vellum free to use?", a: "Yes, we offer a generous free tier that includes up to 5 conversions per day. For unlimited processing and larger file limits, check out our Pro plans.", category: 'getting-started' },
   
   // PDF Tools
-  { q: "What is the maximum file size for conversion?", a: "Free tier users can upload files up to 50MB. Pro users enjoy an increased limit of up to 100MB per file.", category: 'pdf-tools' },
+  { q: "What is the maximum file size for conversion?", a: maxFileSizeAnswer(), category: 'pdf-tools' },
   { q: "Can I merge more than two PDFs?", a: "Absolutely! Our Merge tool allows you to combine multiple PDF files into a single document in just seconds.", category: 'pdf-tools' },
   
   // Storage
@@ -185,6 +187,11 @@ export default function HelpPage() {
               );
             })}
           </div>
+        </section>
+
+        <section className="space-y-6">
+          <h2 className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wider">Upload limits by tool</h2>
+          <ToolLimitsTable />
         </section>
 
         {/* FAQs and Support Form */}

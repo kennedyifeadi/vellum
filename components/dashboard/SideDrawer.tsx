@@ -6,6 +6,8 @@ import { useDashboard } from '@/app/dashboard/layout';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import Image from 'next/image';
+import { admitFiles, selectionError, uploadLimitLabel } from '@/lib/upload-limits';
+import { RetryCancelledError, fetchWithBusyRetry } from '@/lib/busy-retry';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -117,6 +119,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [fileList, setFileList] = useState<VellumFile[]>([]);
   const [prevFile, setPrevFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isWaitingForSlot, setIsWaitingForSlot] = useState(false);
+  const retryControllerRef = useRef<AbortController | null>(null);
 
   // Resizable drawer state (desktop)
   const [drawerWidth, setDrawerWidth] = useState(400);
@@ -170,14 +174,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   }, [isResizing]);
 
   const plan = user?.plan || 'Free';
-  let maxAllowed = 3;
-  if (plan === 'Pro') maxAllowed = 50;
-  else if (plan === 'Basic') maxAllowed = 30;
-  
-  const maxAllowedJpg = maxAllowed;
-  const maxAllowedMerge = maxAllowed;
-  const maxAllowedImage = maxAllowed;
-  const maxAllowedImageCompress = maxAllowed;
 
   useEffect(() => {
     if (toolId !== prevToolId) {
@@ -221,6 +217,27 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
+  useEffect(() => {
+    if (!isOpen) retryControllerRef.current?.abort();
+  }, [isOpen]);
+
+  const sendWithBusyRetry = async (send: () => Promise<Response>) => {
+    const controller = new AbortController();
+    retryControllerRef.current = controller;
+    try {
+      return await fetchWithBusyRetry(send, { signal: controller.signal, onWaiting: setIsWaitingForSlot });
+    } finally {
+      retryControllerRef.current = null;
+      setIsWaitingForSlot(false);
+    }
+  };
+
+  const addFiles = (incoming: VellumFile[]) => {
+    const { files, error } = admitFiles(fileList, incoming, selectedTool, toolName, plan);
+    setFileList(files);
+    if (error) showToast(error, 'error');
+  };
+
   const getPickerMimeTypes = () => {
     switch (selectedTool) {
       case 'merge-pdf':
@@ -261,50 +278,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         .setCallback((data: GooglePickerData) => {
           console.log('[GooglePicker] Picker Callback Event:', data.action, data);
           if (data.action === window.google.picker.Action.PICKED) {
-            const plan = user?.plan || 'Free';
-            let MAX_SIZE = 25 * 1024 * 1024;
-            if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
-            else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
-            let errorShown = false;
-            
-            setFileList(prev => {
-              const updatedList = [...prev];
-              
-              for (const doc of data.docs) {
-                const newDriveFile: DriveFile = {
-                  isDriveFile: true,
-                  id: doc.id,
-                  name: doc.name,
-                  size: doc.sizeBytes || 1000,
-                  type: doc.mimeType,
-                  accessToken: accessToken
-                };
-
-                if (newDriveFile.size > MAX_SIZE) {
-                  if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
-                  errorShown = true;
-                  continue;
-                }
-                
-                if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
-                  if (!errorShown) showToast(`Limit reached.`, 'error');
-                  errorShown = true;
-                  break;
-                }
-                
-                if (updatedList.find(f => f.name === newDriveFile.name && f.size === newDriveFile.size)) continue;
-                
-                const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
-                if (currentTotalSize + newDriveFile.size > MAX_SIZE) {
-                  if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
-                  errorShown = true;
-                  break;
-                }
-                
-                updatedList.push(newDriveFile);
-              }
-              return updatedList;
-            });
+            addFiles(data.docs.map((doc): DriveFile => ({
+              isDriveFile: true,
+              id: doc.id,
+              name: doc.name,
+              size: doc.sizeBytes || 1000,
+              type: doc.mimeType,
+              accessToken: accessToken
+            })));
           }
         });
 
@@ -376,69 +357,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    const newFiles = Array.from(e.target.files);
-    let errorShown = false;
-
-    setFileList(prev => {
-      const updatedList = [...prev];
-
-      for (const selectedFile of newFiles) {
-        const plan = user?.plan || 'Free';
-        let MAX_SIZE = 25 * 1024 * 1024;
-        if (plan === 'Pro') MAX_SIZE = 500 * 1024 * 1024;
-        else if (plan === 'Basic') MAX_SIZE = 50 * 1024 * 1024;
-
-        if (selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast(`A file exceeds limit (${formatBytes(MAX_SIZE, 0)}). Skipped.`, "error");
-          errorShown = true;
-          continue;
-        }
-
-        if (selectedTool === 'merge-pdf' && updatedList.length >= maxAllowedMerge) {
-          if (!errorShown) showToast(`Your plan supports merging up to ${maxAllowedMerge} PDFs for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'image-to-pdf' && updatedList.length >= maxAllowedImage) {
-          if (!errorShown) showToast(`Your plan supports converting up to ${maxAllowedImage} images for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'jpg-to-png' && updatedList.length >= maxAllowedJpg) {
-          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedJpg} images for this tool.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool === 'image-compress' && updatedList.length >= maxAllowedImageCompress) {
-          if (!errorShown) showToast(`Your plan supports up to ${maxAllowedImageCompress} images.`, "error");
-          errorShown = true;
-          break;
-        }
-        if (selectedTool && selectedTool !== 'merge-pdf' && selectedTool !== 'image-to-pdf' && selectedTool !== 'jpg-to-png' && selectedTool !== 'image-compress' && updatedList.length >= 1) {
-          if (!errorShown) showToast("This tool only supports processing 1 file at a time.", "error");
-          errorShown = true;
-          break;
-        }
-
-        if (updatedList.find(f => f.name === selectedFile.name && f.size === selectedFile.size)) continue;
-        
-        const currentTotalSize = updatedList.reduce((acc, f) => acc + f.size, 0);
-        if (currentTotalSize + selectedFile.size > MAX_SIZE) {
-          if (!errorShown) showToast(`Total combined size exceeds ${formatBytes(MAX_SIZE, 0)} limit.`, "error");
-          errorShown = true;
-          break;
-        }
-
-        updatedList.push(selectedFile);
-      }
-
-      return updatedList;
-    });
-
+    addFiles(Array.from(e.target.files));
     e.target.value = '';
   };
 
   const currentToolInfo = availableTools.find(t => t.id === selectedTool);
+  const toolName = currentToolInfo?.name ?? 'This tool';
+  const limitLabel = uploadLimitLabel(selectedTool, plan);
+  const processLabel = isWaitingForSlot ? 'Waiting for a free slot…' : isProcessing ? 'Processing...' : 'Process File';
 
   const renderToolInputs = () => {
     if (!selectedTool) return null;
@@ -782,7 +708,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         <h2 className="text-sm font-bold text-[#111827]">
                           {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                         </h2>
-                        <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
+                        <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -956,7 +882,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       <h2 className="text-sm font-bold text-[#111827]">
                         {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
                       </h2>
-                      <p className="text-[10px] text-[#6b7280]">Basic Plan Size Limit: 50MB</p>
+                      <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
                     </div>
                   </div>
                   <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
@@ -1183,6 +1109,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <button 
                 disabled={isActionDisabled() || isProcessing}
                 onClick={async () => {
+                  // Files added before a tool was chosen were checked only against the largest cap.
+                  const notSendable = selectionError(fileList, selectedTool, toolName, plan);
+                  if (notSendable) {
+                    showToast(notSendable, 'error');
+                    return;
+                  }
                   if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf' || selectedTool === 'image-compress' || selectedTool === 'video-compress' || selectedTool === 'pdf-to-docx') {
                     setIsProcessing(true);
                     try {
@@ -1221,10 +1153,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       }
                       
                       const apiUrl = `/api/convert/${selectedTool}`;
-                      const response = await fetch(apiUrl, {
+                      const response = await sendWithBusyRetry(() => fetch(apiUrl, {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
                         const err = await response.json().catch(() => ({}));
@@ -1294,6 +1226,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         setFileList([]);
                       }
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
                       const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';
                       showToast(msg, 'error');
@@ -1315,13 +1248,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       }
                       formData.append('password', lockOptions.password);
                       
-                      const response = await fetch('/api/convert/lock-pdf', {
+                      const response = await sendWithBusyRetry(() => fetch('/api/convert/lock-pdf', {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
-                        throw new Error(`Failed to process: ${selectedTool}`);
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Error locking PDF. Please try again.');
                       }
 
                       const blob = await response.blob();
@@ -1346,8 +1280,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setLockOptions({ password: '', confirmPassword: '' });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
-                      showToast('Error locking PDF. Please try again.', 'error');
+                      showToast(error instanceof Error ? error.message : 'Error locking PDF. Please try again.', 'error');
                     } finally {
                       setIsProcessing(false);
                     }
@@ -1368,13 +1303,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       formData.append('endPage', splitOptions.endPage.toString());
                       formData.append('splitEvery', splitOptions.splitEvery.toString());
                       
-                      const response = await fetch('/api/convert/split-pdf', {
+                      const response = await sendWithBusyRetry(() => fetch('/api/convert/split-pdf', {
                         method: 'POST',
                         body: formData,
-                      });
+                      }));
 
                       if (!response.ok) {
-                        throw new Error(`Failed to process: ${selectedTool}`);
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Error splitting PDF. Please try again.');
                       }
 
                       const blob = await response.blob();
@@ -1394,8 +1330,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setSplitOptions({ startPage: 1, endPage: 1, splitEvery: false });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('Process error:', error);
-                      showToast('Error splitting PDF. Please try again.', 'error');
+                      showToast(error instanceof Error ? error.message : 'Error splitting PDF. Please try again.', 'error');
                     } finally {
                       setIsProcessing(false);
                     }
@@ -1405,11 +1342,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       let response: Response;
 
                       if (htmlOptions.mode === 'url') {
-                        response = await fetch('/api/convert/html-to-pdf', {
+                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ url: htmlOptions.url }),
-                        });
+                        }));
                       } else {
                         const formData = new FormData();
                         if ('isDriveFile' in fileList[0]) {
@@ -1421,10 +1358,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                         } else {
                           formData.append('html', fileList[0]);
                         }
-                        response = await fetch('/api/convert/html-to-pdf', {
+                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
                           method: 'POST',
                           body: formData,
-                        });
+                        }));
                       }
 
                       if (!response.ok) {
@@ -1452,6 +1389,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       setFileList([]);
                       setHtmlOptions({ url: '', mode: 'file' });
                     } catch (error) {
+                      if (error instanceof RetryCancelledError) return;
                       console.error('HTML to PDF error:', error);
                       const msg = error instanceof Error ? error.message : 'Error converting HTML to PDF.';
                       showToast(msg, 'error');
@@ -1478,8 +1416,16 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                   </svg>
                 )}
-                {isProcessing ? 'Processing...' : 'Process File'}
+                {processLabel}
               </button>
+              {isWaitingForSlot && (
+                <button
+                  onClick={() => retryControllerRef.current?.abort()}
+                  className="w-full h-9 rounded-xl text-xs font-semibold text-[#4b5563] border border-[#eaedf3] hover:bg-[#f9fafb] transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </motion.div>
           )}

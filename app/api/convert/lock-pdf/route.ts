@@ -5,6 +5,7 @@ import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { TOOL_LIMITS } from '@/lib/tool-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { assertWithinRateLimit } from '@/lib/http/rate-limit';
@@ -15,12 +16,7 @@ export async function POST(req: NextRequest) {
 
     const { userId, plan } = await resolveCaller(req);
 
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 25 * 1024 * 1024,
-      Basic: 50 * 1024 * 1024,
-      Pro: 100 * 1024 * 1024,
-      Enterprise: 500 * 1024 * 1024,
-    });
+    const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['lock-pdf'].maxBytes);
     const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);

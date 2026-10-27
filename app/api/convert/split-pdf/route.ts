@@ -5,6 +5,7 @@ import { resolveCaller } from '@/lib/auth/caller';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolvePlanLimit } from '@/lib/plan-limits';
+import { TOOL_LIMITS } from '@/lib/tool-limits';
 import { handleConvertError } from '@/lib/convert/errors';
 import { readMultipartForm, textField, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
@@ -17,12 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { userId, plan } = await resolveCaller(req);
 
-    const maxSize = resolvePlanLimit(plan, {
-      guest: 25 * 1024 * 1024,
-      Basic: 50 * 1024 * 1024,
-      Pro: 100 * 1024 * 1024,
-      Enterprise: 500 * 1024 * 1024,
-    });
+    const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['split-pdf'].maxBytes);
     const budget = uploadBudget(maxSize, `Your current plan allows PDFs up to ${maxSize / (1024 * 1024)}MB.`);
 
     const formData = await readMultipartForm(req, budget);
