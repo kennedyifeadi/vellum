@@ -4,6 +4,7 @@ import {
   STORAGE_LIMITS,
   formatQuota,
   largerStoragePlan,
+  retentionAnswer,
   storageFullMessage,
   storageLimits,
   storageNotice,
@@ -78,6 +79,12 @@ describe('storageFullMessage', () => {
     expect(storageFullMessage('Enterprise', 'a.pdf')).toBe(
       'Storage limit reached. Cannot upload "a.pdf". The Enterprise plan stores up to 1 GB. Delete some files to make room.',
     );
+  });
+});
+
+describe('retentionAnswer', () => {
+  it("states each plan's retention", () => {
+    expect(retentionAnswer()).toContain('after 3 days on Basic, 5 days on Pro and 7 days on Enterprise');
   });
 });
 

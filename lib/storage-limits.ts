@@ -44,6 +44,10 @@ export function formatQuota(bytes: number): string {
   return bytes >= GB ? `${bytes / GB} GB` : `${bytes / MB} MB`;
 }
 
+export function retentionLabel(plan: Plan): string {
+  return `${STORAGE_LIMITS[plan].retentionDays} Days`;
+}
+
 /** The plan with more storage than this one, or null on the largest. */
 export function largerStoragePlan(plan: string | null | undefined): Plan | null {
   return PLANS[PLANS.indexOf(accountPlan(plan)) + 1] ?? null;
@@ -85,4 +89,19 @@ export function storageNotice(usedBytes: number, limitBytes: number, plan: strin
     };
   }
   return null;
+}
+
+/** Pricing's storage lines for a plan. */
+export function storageFeatures(plan: Plan): string[] {
+  return [`${retentionLabel(plan)} File Retention`, `${formatQuota(STORAGE_LIMITS[plan].quotaBytes)} Cloud Storage`];
+}
+
+/** Help's answer to "how long are my files kept", from the same values. */
+export function retentionAnswer(): string {
+  const [basic, pro, enterprise] = PLANS.map((plan) => STORAGE_LIMITS[plan].retentionDays);
+  return (
+    'To protect your privacy and manage storage, stored documents and conversion history are deleted ' +
+    `automatically after ${basic} days on Basic, ${pro} days on Pro and ${enterprise} days on Enterprise. ` +
+    'Free (guest) conversions are not stored.'
+  );
 }

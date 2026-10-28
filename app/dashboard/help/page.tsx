@@ -4,6 +4,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useDashboard } from '@/app/dashboard/layout';
 import ToolLimitsTable from '@/components/dashboard/ToolLimitsTable';
 import { maxFileSizeAnswer } from '@/lib/upload-limits';
+import { retentionAnswer } from '@/lib/storage-limits';
 
 const categories = [
   { id: 'getting-started', title: 'Getting Started', description: 'New here? Learn the basics of Vellum.', icon: 'M13 10V3L4 14h7v7l9-11h-7z', color: 'bg-blue-50 text-blue-600' },
@@ -24,7 +25,7 @@ const faqsData = [
   { q: "Can I merge more than two PDFs?", a: "Absolutely! Our Merge tool allows you to combine multiple PDF files into a single document in just seconds.", category: 'pdf-tools' },
   
   // Storage
-  { q: "How long are my staged files kept?", a: "To ensure your privacy and manage storage, files are automatically deleted after 3 days for Free users and 5 days for Pro users.", category: 'storage' },
+  { q: "How long are my staged files kept?", a: retentionAnswer(), category: 'storage' },
   { q: "Where can I find my converted files?", a: "Your recently converted files are available in the 'Recent Files' section of your dashboard for a limited time.", category: 'storage' },
   
   // Billing

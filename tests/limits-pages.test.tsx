@@ -17,6 +17,7 @@ import ToolLimitsTable from '../components/dashboard/ToolLimitsTable';
 import HelpPage from '../app/dashboard/help/page';
 import PricingPage from '../app/(marketing)/pricing/page';
 import PricingCompareTable from '../components/marketing/PricingCompareTable';
+import SecurityPage from '../app/(marketing)/security/page';
 
 function cells(markup: string): string[] {
   return [...markup.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map((match) => match[1]);
@@ -77,6 +78,23 @@ describe('pricing', () => {
     expect(markup).toContain('href="/dashboard/help"');
   });
 
+  it.each([
+    ['Basic', '3 Days File Retention', '50 MB Cloud Storage'],
+    ['Pro', '5 Days File Retention', '100 MB Cloud Storage'],
+    ['Enterprise', '7 Days File Retention', '1 GB Cloud Storage'],
+  ])('the %s card shows its real storage and retention', (_plan, retention, storage) => {
+    const markup = renderToStaticMarkup(<PricingPage />);
+
+    expect(markup).toContain(retention);
+    expect(markup).toContain(storage);
+  });
+
+  it('promises no storage the server does not give', () => {
+    const markup = renderToStaticMarkup(<PricingPage />);
+
+    expect(markup).not.toMatch(/5 ?GB|20 ?GB|Custom Cloud Storage/);
+  });
+
   it('the compare table rows come from the same values', () => {
     const markup = renderToStaticMarkup(<PricingCompareTable />);
 
@@ -88,4 +106,18 @@ describe('pricing', () => {
     expect(markup).toContain(LIMITS_VARY_NOTE);
   });
 
+  it('the compare table shows the real storage and retention', () => {
+    const markup = renderToStaticMarkup(<PricingCompareTable />);
+
+    for (const cell of ['50 MB', '100 MB', '1 GB', '3 Days', '5 Days', '7 Days']) {
+      expect(markup).toContain(`>${cell}<`);
+    }
+    expect(markup).not.toMatch(/>Custom<|5 ?GB|20 ?GB/);
+  });
+});
+
+describe('SecurityPage', () => {
+  it('states the retention of every paid plan', () => {
+    expect(renderToStaticMarkup(<SecurityPage />)).toContain('Basic, Pro and Enterprise plans, files are automatically wiped from our servers after 3 to 7 days');
+  });
 });
