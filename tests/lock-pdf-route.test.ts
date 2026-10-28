@@ -121,4 +121,19 @@ describe('lock-pdf route history', () => {
     expect(lockPdf).not.toHaveBeenCalled();
     expect(saveConversionRecord).not.toHaveBeenCalled();
   });
+
+  it('refuses a 7-character password, telling the user the minimum', async () => {
+    const res = await handleLockPdf(lockRequest('abcdefg'));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Password must be at least 8 characters.' });
+    expect(lockPdf).not.toHaveBeenCalled();
+  });
+
+  it('accepts an 8-character password', async () => {
+    const res = await handleLockPdf(lockRequest('abcdefgh'));
+
+    expect(res.status).toBe(200);
+    expect(lockPdf).toHaveBeenCalledWith(expect.objectContaining({ password: 'abcdefgh' }));
+  });
 });

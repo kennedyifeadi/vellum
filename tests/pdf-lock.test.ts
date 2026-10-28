@@ -61,7 +61,7 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
   it('produces a PDF that cannot be opened without ignoring encryption', async () => {
     const pdfBuffer = await createPdf(2);
 
-    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'letmein' });
+    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'letmein!' });
 
     await expect(PDFDocument.load(lockedBuffer)).rejects.toThrow(/is encrypted/i);
   });
@@ -73,23 +73,39 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
   // fails fast with an actionable message instead of attempting to re-encrypt.
   it('throws a clear error instead of crashing when locking an already-locked PDF', async () => {
     const pdfBuffer = await createPdf(3);
-    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'letmein' });
+    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'letmein!' });
 
     await expect(lockPdf({ pdfBuffer: lockedBuffer, password: 'newpassword' })).rejects.toThrow(
       /already password-protected/i
     );
   });
 
-  it('rejects an empty password instead of producing an unprotected PDF', async () => {
+  it.each([
+    ['an empty password', ''],
+    ['6 characters', 'abcdef'],
+    ['7 characters', 'abcdefg'],
+    ['7 emoji', '\u{1F600}'.repeat(7)],
+  ])('refuses %s', async (_label, password) => {
     const pdfBuffer = await createPdf(1);
 
-    await expect(lockPdf({ pdfBuffer, password: '' })).rejects.toThrow(/at least 4 characters/i);
+    await expect(lockPdf({ pdfBuffer, password })).rejects.toThrow('Password must be at least 8 characters.');
+  });
+
+  it.each([
+    ['8 ASCII characters', 'abcdefgh'],
+    ['8 emoji', '\u{1F600}'.repeat(8)],
+  ])('accepts %s', async (_label, password) => {
+    const pdfBuffer = await createPdf(1);
+
+    const locked = await lockPdf({ pdfBuffer, password });
+
+    expect(userPasswordMatches(locked, password)).toBe(true);
   });
 
   it('rejects a password containing control characters', async () => {
     const pdfBuffer = await createPdf(1);
 
-    await expect(lockPdf({ pdfBuffer, password: 'ab\x00cd' })).rejects.toThrow(/control characters/i);
+    await expect(lockPdf({ pdfBuffer, password: 'abcd\x00efgh' })).rejects.toThrow(/control characters/i);
   });
 
   // AES-256/R5 only hashes the first 127 UTF-8 bytes, so the limit is in bytes, not characters.
@@ -119,7 +135,7 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
     async (version) => {
       const pdfBuffer = await createPdfWithHeader(version);
 
-      const locked = await lockPdf({ pdfBuffer, password: 'letmein' });
+      const locked = await lockPdf({ pdfBuffer, password: 'letmein!' });
       const dict = encryptDict(locked);
 
       expect(dict).toMatch(/\/V 5(\D|$)/);
