@@ -6,6 +6,7 @@ import {
   largerStoragePlan,
   storageFullMessage,
   storageLimits,
+  storageNotice,
 } from '@/lib/storage-limits';
 import { TOOL_IDS, TOOL_LIMITS, ToolLimits } from '@/lib/tool-limits';
 
@@ -76,6 +77,29 @@ describe('storageFullMessage', () => {
     expect(largerStoragePlan('Enterprise')).toBeNull();
     expect(storageFullMessage('Enterprise', 'a.pdf')).toBe(
       'Storage limit reached. Cannot upload "a.pdf". The Enterprise plan stores up to 1 GB. Delete some files to make room.',
+    );
+  });
+});
+
+describe('storageNotice', () => {
+  it('says nothing below half full', () => {
+    expect(storageNotice(25 * MB - 1, 50 * MB, 'Basic')).toBeNull();
+  });
+
+  it('warns from half full, naming the quota', () => {
+    expect(storageNotice(25 * MB, 50 * MB, 'Basic')).toEqual({
+      type: 'warning',
+      title: 'Storage Warning',
+      message: 'Your storage is 50% full. The Basic plan stores up to 50 MB.',
+    });
+  });
+
+  it('reports full at the quota, suggesting an upgrade only when one exists', () => {
+    expect(storageNotice(100 * MB, 100 * MB, 'Pro')?.message).toBe(
+      'You have used all 100 MB of storage on the Pro plan. Delete some files or upgrade to Enterprise to upload more.',
+    );
+    expect(storageNotice(GB, GB, 'Enterprise')?.message).toBe(
+      'You have used all 1 GB of storage on the Enterprise plan. Delete some files to upload more.',
     );
   });
 });

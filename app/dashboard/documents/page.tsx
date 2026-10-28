@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useDashboard } from '@/app/dashboard/layout';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import { storageLimits } from '@/lib/storage-limits';
 
 // ── Types ──
 interface StagedDoc {
@@ -216,10 +217,8 @@ export default function DocumentsPage() {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const totalDocsBytes = documents.reduce((s: number, d: any) => s + (d.fileSize ?? 0), 0);
-  const totalUsedBytes = (storage?.usedBytes ?? 0) + totalDocsBytes;
-  const limitBytes = storage?.limitBytes ?? 50 * 1024 * 1024;
-  const storagePercent = Math.min(100, (totalUsedBytes / limitBytes) * 100);
+  const storagePercent = storage ? Math.min(100, (storage.usedBytes / storage.limitBytes) * 100) : 0;
+  const retentionDays = storage ? storageLimits(storage.plan).retentionDays : null;
   const storageColor = storagePercent > 85 ? 'bg-[#ef4444]' : storagePercent > 60 ? 'bg-[#f97316]' : 'bg-[#6366f1]';
 
   const urgencyClass = { normal: 'bg-[#f3f4f6] text-[#6b7280]', warn: 'bg-[#fef3c7] text-[#d97706]', critical: 'bg-[#fee2e2] text-[#dc2626]' };
@@ -242,15 +241,17 @@ export default function DocumentsPage() {
           <div className="flex-1 bg-white border border-[#eaedf3] rounded-2xl p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs font-semibold text-[#374151]">Storage Usage</span>
-              <span className="text-[11px] font-bold text-[#6366f1]">{Math.round(storagePercent)}%</span>
+              {storage && <span className="text-[11px] font-bold text-[#6366f1]">{Math.round(storagePercent)}%</span>}
             </div>
             <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden mb-2">
               <div className={`h-full rounded-full transition-all duration-500 ${storageColor}`} style={{ width: `${storagePercent}%` }}/>
             </div>
-            <p className="text-[11px] text-[#6b7280]">
-              {fmtBytes(totalUsedBytes)} of {fmtBytes(limitBytes)} used{' '}
-              <span className="ml-1 px-1.5 py-0.5 bg-[#eef2ff] text-[#6366f1] text-[10px] font-semibold rounded-full">{storage?.plan ?? 'Free'}</span>
-            </p>
+            {storage && (
+              <p className="text-[11px] text-[#6b7280]">
+                {fmtBytes(storage.usedBytes)} of {fmtBytes(storage.limitBytes)} used{' '}
+                <span className="ml-1 px-1.5 py-0.5 bg-[#eef2ff] text-[#6366f1] text-[10px] font-semibold rounded-full">{storage.plan}</span>
+              </p>
+            )}
           </div>
           <input type="file" ref={fileInputRef} className="hidden" onChange={handleUpload} multiple/>
           <button
@@ -345,7 +346,7 @@ export default function DocumentsPage() {
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wider">
               Staged Files ({displayed.length}){' '}
-              <span className="normal-case font-normal text-[#9ca3af]">· auto-deleted after {storage?.plan === 'Pro' ? '5' : '3'} days</span>
+              {retentionDays && <span className="normal-case font-normal text-[#9ca3af]">· auto-deleted after {retentionDays} days</span>}
             </p>
             <div className="flex items-center gap-2">
               <div className="relative">
@@ -377,7 +378,9 @@ export default function DocumentsPage() {
                 <svg className="w-8 h-8 text-[#8b5cf6]" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
               </div>
               <h3 className="text-sm font-bold text-[#111827] mb-1">Upload files to convert</h3>
-              <p className="text-xs text-[#6b7280]">Files are stored temporarily and auto-deleted after {storage?.plan === 'Pro' ? '5' : '3'} days.</p>
+              <p className="text-xs text-[#6b7280]">
+                Files are stored temporarily{retentionDays ? ` and auto-deleted after ${retentionDays} days` : ''}.
+              </p>
             </div>
           ) : viewMode === 'grid' ? (
             /* Grid */

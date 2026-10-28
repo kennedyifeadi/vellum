@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/dashboard/Sidebar";
+import { storageNotice } from "@/lib/storage-limits";
 
 // Types for Notifications
 export interface AppNotification {
@@ -163,26 +164,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Automated Storage Notifications — use a ref to avoid re-triggering on every render
   useEffect(() => {
     if (!storage || !user?._id) return;
-    const percent = (storage.usedBytes / storage.limitBytes) * 100;
+    const notice = storageNotice(storage.usedBytes, storage.limitBytes, storage.plan);
 
     // Prevent duplicate storage alerts by checking if one already exists
-    const alreadyHasFull = notifications.some(n => n.title === 'Storage Full' && !n.isRead);
-    const alreadyHasWarning = notifications.some(n => n.title === 'Storage Warning' && !n.isRead);
-
-    if (percent >= 100 && !alreadyHasFull) {
-      addNotification({
-        type: 'error',
-        title: 'Storage Full',
-        message: 'You have reached your storage limit. Please delete some files or upgrade to Pro.',
-        link: '/dashboard/documents'
-      });
-    } else if (percent >= 50 && percent < 100 && !alreadyHasWarning) {
-      addNotification({
-        type: 'warning',
-        title: 'Storage Warning',
-        message: `Your storage is ${Math.round(percent)}% full. Free users have a 5GB limit.`,
-        link: '/dashboard/documents'
-      });
+    if (notice && !notifications.some(n => n.title === notice.title && !n.isRead)) {
+      addNotification({ ...notice, link: '/dashboard/documents' });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storage, user?._id]);

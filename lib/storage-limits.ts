@@ -57,3 +57,32 @@ export function storageFullMessage(plan: string | null | undefined, fileName?: s
   const upgrade = larger ? ` Upgrade to ${larger} for more space.` : ' Delete some files to make room.';
   return `Storage limit reached. ${what} The ${current} plan stores up to ${formatQuota(STORAGE_LIMITS[current].quotaBytes)}.${upgrade}`;
 }
+
+export interface StorageNotice {
+  type: 'error' | 'warning';
+  title: 'Storage Full' | 'Storage Warning';
+  message: string;
+}
+
+/** The dashboard's notice for this much use of the quota, or null below half full. */
+export function storageNotice(usedBytes: number, limitBytes: number, plan: string | null | undefined): StorageNotice | null {
+  const percent = (usedBytes / limitBytes) * 100;
+  const current = accountPlan(plan);
+  const quota = formatQuota(limitBytes);
+  if (percent >= 100) {
+    const larger = largerStoragePlan(current);
+    return {
+      type: 'error',
+      title: 'Storage Full',
+      message: `You have used all ${quota} of storage on the ${current} plan. Delete some files${larger ? ` or upgrade to ${larger}` : ''} to upload more.`,
+    };
+  }
+  if (percent >= 50) {
+    return {
+      type: 'warning',
+      title: 'Storage Warning',
+      message: `Your storage is ${Math.round(percent)}% full. The ${current} plan stores up to ${quota}.`,
+    };
+  }
+  return null;
+}
