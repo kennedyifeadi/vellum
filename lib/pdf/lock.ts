@@ -1,13 +1,39 @@
-import { PDFDocument } from 'pdf-lib-plus-encrypt';
+import { PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib-plus-encrypt';
 import { ClientError } from '@/lib/convert/errors';
 import { corruptPdfMessage, emptyPdfMessage } from '@/lib/pdf/loadPdf';
-import { validateLockPassword } from '@/lib/pdf/lock-password';
+import { r6PasswordEntries } from '@/lib/pdf/aes256-r6';
+import { lockPasswordBytes, validateLockPassword } from '@/lib/pdf/lock-password';
 
 const AES256_HEADER_VERSION = '1.7ext3';
 
 interface LockPdfOptions {
   pdfBuffer: Buffer;
   password: string;
+}
+
+function fileKeyBytes(pdfDoc: PDFDocument): Buffer {
+  const key = pdfDoc._security!.encryptionKey;
+  const bytes = Buffer.alloc(key.sigBytes);
+  for (let i = 0; i < key.sigBytes; i++) {
+    bytes[i] = (key.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+  }
+  return bytes;
+}
+
+// R5 checks a password with one unsalted-iteration SHA-256, which is weak against offline
+// guessing, and pdf.js reads R5 passwords as single bytes, so it cannot open a file locked
+// with a non-ASCII one. R6 differs only in how /U, /UE, /O and /OE are derived from the
+// password: the random file key, /Perms and the AESV3 encryption of every object stay as
+// the fork made them.
+function upgradeToR6(pdfDoc: PDFDocument, password: Buffer): void {
+  const { context } = pdfDoc;
+  const encryptDict = context.lookup(context.trailerInfo.Encrypt, PDFDict);
+  const entries = r6PasswordEntries(password, password, fileKeyBytes(pdfDoc));
+
+  encryptDict.set(PDFName.of('R'), PDFNumber.of(6));
+  for (const [key, value] of Object.entries(entries)) {
+    encryptDict.set(PDFName.of(key), context.obj(value));
+  }
 }
 
 export async function lockPdf({
@@ -49,10 +75,8 @@ export async function lockPdf({
   // encrypt() in this fork ignores any caller-supplied pdfVersion and derives the
   // scheme from context.header.getVersion(): <=1.3 -> RC4-40, 1.4/1.5 -> RC4-128,
   // 1.6/1.7 -> AES-128, and only '1.7ext3' -> AES-256. Pin getVersion() for the
-  // duration of encrypt() so every document is locked with AES-256 (V5/R5)
-  // regardless of the source header. This also routes password handling through
-  // processPasswordR5 (127-byte, NFKC-normalised) instead of the 32-byte,
-  // Latin-1-only processPasswordR2R3R4.
+  // duration of encrypt() so every document is locked with AES-256 (V5) regardless
+  // of the source header; upgradeToR6 then replaces the fork's R5 password entries.
   const { header } = pdfDoc.context;
   const originalGetVersion = header.getVersion;
   header.getVersion = () => AES256_HEADER_VERSION;
@@ -65,6 +89,8 @@ export async function lockPdf({
   } finally {
     header.getVersion = originalGetVersion;
   }
+
+  upgradeToR6(pdfDoc, Buffer.from(lockPasswordBytes(password)));
 
   const encryptedPdfBytes = await pdfDoc.save();
 
