@@ -35,8 +35,8 @@ describe('uploadLimitLabel', () => {
     ['compress-pdf', 'Pro', 'Pro plan: up to 100 MB per file'],
     ['find-pdf', 'Basic', 'Basic plan: up to 50 MB and 50 pages per file'],
     ['image-compress', 'Free', 'Free plan: up to 3 files, 25 MB in total'],
-    ['image-compress', 'Enterprise', 'Enterprise plan: up to 250 files, 500 MB in total'],
-    ['merge-pdf', 'Enterprise', 'Enterprise plan: up to 250 files, 250 MB in total'],
+    ['image-compress', 'Enterprise', 'Enterprise plan: up to 100 files, 200 MB in total'],
+    ['merge-pdf', 'Enterprise', 'Enterprise plan: up to 100 files, 250 MB in total'],
     ['video-compress', 'Pro', 'Pro plan: up to 500 MB per file'],
   ])('%s on %s', (tool, plan, label) => {
     expect(uploadLimitLabel(tool, plan)).toBe(label);
@@ -67,8 +67,9 @@ describe('admitFiles', () => {
   });
 
   it('gives Enterprise its own caps rather than the guest’s', () => {
-    expect(admitFiles([], [file('big.pdf', 400)], 'compress-pdf', 'Compress PDF', 'Enterprise').error).toBeNull();
-    expect(admitFiles([], [file('big.pdf', 400)], 'compress-pdf', 'Compress PDF', 'Free').error).not.toBeNull();
+    expect(admitFiles([], [file('big.pdf', 200)], 'compress-pdf', 'Compress PDF', 'Enterprise').error).toBeNull();
+    expect(admitFiles([], [file('big.pdf', 200.01)], 'compress-pdf', 'Compress PDF', 'Enterprise').error).not.toBeNull();
+    expect(admitFiles([], [file('big.pdf', 200)], 'compress-pdf', 'Compress PDF', 'Free').error).not.toBeNull();
   });
 
   it('checks Compress Image against the total of the request, not each image', () => {
@@ -140,7 +141,7 @@ describe('drop zone', () => {
     ['Free', 25],
     ['Basic', 50],
     ['Pro', 100],
-    ['Enterprise', 500],
+    ['Enterprise', 200],
   ])('on %s takes up to %i MB', (plan, mb) => {
     expect(dropZoneMaxBytes(plan)).toBe(mb * MB);
     expect(dropZoneLabel(plan)).toBe(`Max file size ${mb} MB on the ${plan} plan; some tools allow less.`);

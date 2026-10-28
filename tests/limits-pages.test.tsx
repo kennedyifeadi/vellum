@@ -27,7 +27,9 @@ describe('toolLimitSummary', () => {
     ['pdf-to-docx', 'guest', '5 MB, 100 pages, 8,000 lines of text'],
     ['pdf-to-docx', 'Enterprise', '25 MB, 500 pages, 40,000 lines of text'],
     ['find-pdf', 'Basic', '50 MB, 50 pages'],
-    ['merge-pdf', 'Enterprise', '250 MB in total, 250 files'],
+    ['merge-pdf', 'Enterprise', '250 MB in total, 100 files'],
+    ['image-compress', 'Enterprise', '200 MB in total, 100 files, 50 megapixels per image'],
+    ['compress-pdf', 'Enterprise', '200 MB'],
     ['image-compress', 'guest', '25 MB in total, 3 files, 50 megapixels per image'],
     ['video-compress', 'Pro', '500 MB, up to 30 minutes'],
   ] as const)('%s on %s', (tool, tier, summary) => {
@@ -68,8 +70,8 @@ describe('pricing', () => {
   it('shows Enterprise its real values and points to Help', () => {
     const markup = renderToStaticMarkup(<PricingPage />);
 
-    expect(markup).toContain('500MB Max File Size (500MB Video)');
-    expect(markup).toContain('250 Files per Batch Conversion');
+    expect(markup).toContain('200MB Max File Size (500MB Video)');
+    expect(markup).toContain('100 Files per Batch Conversion');
     expect(markup).not.toContain('Custom Max File Sizes');
     expect(markup).toContain(LIMITS_VARY_NOTE);
     expect(markup).toContain('href="/dashboard/help"');
@@ -78,10 +80,12 @@ describe('pricing', () => {
   it('the compare table rows come from the same values', () => {
     const markup = renderToStaticMarkup(<PricingCompareTable />);
 
-    for (const row of ['25MB', '50MB', '100MB', '500MB', '3 files', '250 files', '10 pages', '500 pages']) {
+    for (const row of ['25MB', '50MB', '100MB', '200MB', '500MB', '3 files', '100 files', '10 pages', '500 pages']) {
       expect(markup).toContain(`>${row}<`);
     }
+    expect(markup).not.toContain('250 files');
     expect(markup).not.toContain('Unlimited');
     expect(markup).toContain(LIMITS_VARY_NOTE);
   });
+
 });

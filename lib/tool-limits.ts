@@ -30,7 +30,7 @@ export interface ToolLimits {
   /** Lines of extracted text per document. */
   maxLines?: PlanTierValues<number>;
   maxMegapixelsPerImage?: number;
-  /** The longest video accepted at any resolution; most are refused sooner, see `lengthNote`. */
+  /** The longest video accepted at any resolution; most are refused sooner, see `VIDEO_LENGTH_NOTE`. */
   maxVideoMinutes?: PlanTierValues<number>;
 }
 
@@ -40,7 +40,7 @@ const PDF_TOOL_SIZE: PlanTierValues<number> = {
   guest: 25 * MB,
   Basic: 50 * MB,
   Pro: 100 * MB,
-  Enterprise: 500 * MB,
+  Enterprise: 200 * MB,
 };
 
 const SINGLE_PDF_TOOL: ToolLimits = { maxBytes: PDF_TOOL_SIZE, sizeApplies: 'file', maxFiles: ONE_FILE };
@@ -52,7 +52,7 @@ const SINGLE_PDF_TOOL: ToolLimits = { maxBytes: PDF_TOOL_SIZE, sizeApplies: 'fil
 export const IMAGE_TOOL_LIMITS = {
   maxBytes: PDF_TOOL_SIZE,
   sizeApplies: 'request',
-  maxFiles: { guest: 3, Basic: 30, Pro: 50, Enterprise: 250 },
+  maxFiles: { guest: 3, Basic: 30, Pro: 50, Enterprise: 100 },
   maxMegapixelsPerImage: 50,
 } satisfies ToolLimits;
 
@@ -69,7 +69,7 @@ export const TOOL_LIMITS = {
   'merge-pdf': {
     maxBytes: { guest: 25 * MB, Basic: 50 * MB, Pro: 100 * MB, Enterprise: 250 * MB },
     sizeApplies: 'request',
-    maxFiles: { guest: 3, Basic: 30, Pro: 50, Enterprise: 250 },
+    maxFiles: { guest: 3, Basic: 30, Pro: 50, Enterprise: 100 },
   },
   // Lower than the other PDF tools because the DOCX build runs on the request's own event
   // loop. The pages and lines are sized by measurement on ordinary text: the largest a

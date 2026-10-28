@@ -12,7 +12,7 @@ const SIZE_CAPS_MB: [string, number][] = [
   ['Free', 25],
   ['Basic', 50],
   ['Pro', 100],
-  ['Enterprise', 500],
+  ['Enterprise', 200],
 ];
 
 const PAGE_CAPS: [string, number][] = [

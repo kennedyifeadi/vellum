@@ -131,19 +131,32 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+jest.setTimeout(30_000);
+
 describe('Enterprise plan limits — PDF size (split-pdf)', () => {
-  it('allows an Enterprise user a PDF larger than the Pro cap (100MB)', async () => {
+  it('accepts an Enterprise PDF of exactly 200MB', async () => {
     mockResolvedFiles = [fakeFile(200 * MB, 'big.pdf')];
     const res = await handleSplitPdf(postReq('/api/convert/split-pdf'));
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/pdf');
   });
 
-  it('rejects an Enterprise user only past the Enterprise cap (500MB), not the guest cap', async () => {
-    mockResolvedFiles = [fakeFile(501 * MB, 'huge.pdf')];
+  it('refuses an Enterprise PDF one byte past 200MB, naming the cap', async () => {
+    mockResolvedFiles = [fakeFile(200 * MB + 1, 'huge.pdf')];
     const res = await handleSplitPdf(postReq('/api/convert/split-pdf'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('500MB');
+    expect((await res.json()).error).toContain('200MB');
+  });
+
+  it('still holds Pro to 100MB', async () => {
+    mockPlan = 'Pro';
+    mockResolvedFiles = [fakeFile(100 * MB, 'ok.pdf')];
+    expect((await handleSplitPdf(postReq('/api/convert/split-pdf'))).status).toBe(200);
+
+    mockResolvedFiles = [fakeFile(100 * MB + 1, 'big.pdf')];
+    const res = await handleSplitPdf(postReq('/api/convert/split-pdf'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('100MB');
   });
 
   it('still rejects a guest at the guest cap (25MB) — the fallthrough bug is gone, not universal', async () => {
@@ -157,17 +170,36 @@ describe('Enterprise plan limits — PDF size (split-pdf)', () => {
 });
 
 describe('Enterprise plan limits — file count (merge-pdf)', () => {
-  it('allows an Enterprise user more files than the Pro cap (50)', async () => {
-    mockResolvedFiles = Array(120).fill(fakeFile(MB, 'a.pdf'));
+  it('accepts 100 files from an Enterprise user', async () => {
+    mockResolvedFiles = Array(100).fill(fakeFile(MB, 'a.pdf'));
     const res = await handleMergePdf(postReq('/api/convert/merge-pdf'));
     expect(res.status).toBe(200);
   });
 
-  it('rejects an Enterprise user only past the Enterprise cap (250 files)', async () => {
-    mockResolvedFiles = Array(251).fill(fakeFile(MB, 'a.pdf'));
+  it('refuses a 101st file from an Enterprise user, naming the cap', async () => {
+    mockResolvedFiles = Array(101).fill(fakeFile(MB, 'a.pdf'));
     const res = await handleMergePdf(postReq('/api/convert/merge-pdf'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('250 files');
+    expect((await res.json()).error).toBe('Your current plan allows up to 100 files per merge.');
+  });
+
+  it('keeps the Enterprise request total at 250MB', async () => {
+    const quarter = (250 * MB) / 4;
+    mockResolvedFiles = Array(4).fill(fakeFile(quarter, 'a.pdf'));
+    expect((await handleMergePdf(postReq('/api/convert/merge-pdf'))).status).toBe(200);
+
+    mockResolvedFiles = [...Array(3).fill(fakeFile(quarter, 'a.pdf')), fakeFile(quarter + 1, 'b.pdf')];
+    const res = await handleMergePdf(postReq('/api/convert/merge-pdf'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('250MB');
+  });
+
+  it('still holds Pro to 50 files', async () => {
+    mockPlan = 'Pro';
+    mockResolvedFiles = Array(51).fill(fakeFile(MB, 'a.pdf'));
+    const res = await handleMergePdf(postReq('/api/convert/merge-pdf'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('up to 50 files');
   });
 
   it('still caps a guest at 3 files', async () => {
@@ -180,27 +212,51 @@ describe('Enterprise plan limits — file count (merge-pdf)', () => {
   });
 });
 
-describe('Enterprise plan limits — file count (image-to-pdf)', () => {
-  it('allows an Enterprise user more files than the Pro cap (50)', async () => {
-    mockResolvedFiles = Array(120).fill(fakeFile(MB, 'a.jpg'));
+describe('Enterprise plan limits — image-to-pdf', () => {
+  it('accepts 100 images totalling exactly 200MB from an Enterprise user', async () => {
+    mockResolvedFiles = Array(100).fill(fakeFile(2 * MB, 'a.jpg'));
     const res = await handleImageToPdf(postReq('/api/convert/image-to-pdf'));
     expect(res.status).toBe(200);
   });
 
-  it('rejects an Enterprise user only past the Enterprise cap (250 files)', async () => {
-    mockResolvedFiles = Array(251).fill(fakeFile(MB, 'a.jpg'));
+  it('refuses a 101st image from an Enterprise user, naming the cap', async () => {
+    mockResolvedFiles = Array(101).fill(fakeFile(MB, 'a.jpg'));
     const res = await handleImageToPdf(postReq('/api/convert/image-to-pdf'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('250 files');
+    expect((await res.json()).error).toContain('100 files');
+  });
+
+  it('refuses an Enterprise request one byte past 200MB, naming the cap', async () => {
+    mockResolvedFiles = [...Array(99).fill(fakeFile(2 * MB, 'a.jpg')), fakeFile(2 * MB + 1, 'b.jpg')];
+    const res = await handleImageToPdf(postReq('/api/convert/image-to-pdf'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('200MB');
+  });
+
+  it('still holds Pro to 50 images', async () => {
+    mockPlan = 'Pro';
+    mockResolvedFiles = Array(51).fill(fakeFile(MB, 'a.jpg'));
+    const res = await handleImageToPdf(postReq('/api/convert/image-to-pdf'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('50 files');
   });
 });
 
 describe('Enterprise plan limits — file count (image-compress, jpg-to-png)', () => {
-  it('rejects image-compress for an Enterprise user only past the Enterprise cap (250)', async () => {
-    mockResolvedFiles = Array(251).fill(fakeFile(MB, 'a.jpg'));
-    const res = await handleImageCompress(postReq('/api/convert/image-compress'));
+  it.each([
+    ['image-compress', () => handleImageCompress(postReq('/api/convert/image-compress'))],
+    ['jpg-to-png', () => handleJpgToPng(postReq('/api/convert/jpg-to-png'))],
+  ])('%s refuses a 101st image from Enterprise and a 51st from Pro', async (_tool, send) => {
+    mockResolvedFiles = Array(101).fill(fakeFile(MB, 'a.jpg'));
+    let res = await send();
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('up to 250 images');
+    expect((await res.json()).error).toContain('up to 100 images');
+
+    mockPlan = 'Pro';
+    mockResolvedFiles = Array(51).fill(fakeFile(MB, 'a.jpg'));
+    res = await send();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('up to 50 images');
   });
 
   it('still caps image-compress for a guest at 3', async () => {
@@ -210,13 +266,6 @@ describe('Enterprise plan limits — file count (image-compress, jpg-to-png)', (
     const res = await handleImageCompress(postReq('/api/convert/image-compress'));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('up to 3 images');
-  });
-
-  it('rejects jpg-to-png for an Enterprise user only past the Enterprise cap (250)', async () => {
-    mockResolvedFiles = Array(251).fill(fakeFile(MB, 'a.jpg'));
-    const res = await handleJpgToPng(postReq('/api/convert/jpg-to-png'));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('up to 250 images');
   });
 
   it('still caps jpg-to-png for a guest at 3', async () => {

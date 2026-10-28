@@ -102,7 +102,7 @@ describe('image-to-pdf per-plan total upload size limit', () => {
     ['a signed-in user with an unrecognised plan', 'Platinum', 25],
     ['Basic', 'Basic', 50],
     ['Pro', 'Pro', 100],
-    ['Enterprise', 'Enterprise', 500],
+    ['Enterprise', 'Enterprise', 200],
   ])('holds %s to its own cap', async (_label, plan, capMb) => {
     if (plan !== null) signIn(plan);
     const overCap = imageFile(capMb * MB + 1);

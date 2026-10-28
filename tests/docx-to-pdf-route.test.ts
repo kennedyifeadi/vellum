@@ -114,15 +114,15 @@ describe('docx-to-pdf route: auth + per-plan upload cap run before conversion', 
     expect((await res.json()).error).toBe('Your current plan allows DOCX files up to 100MB.');
   });
 
-  it('gives Enterprise a 500MB cap and still enforces it', async () => {
+  it('gives Enterprise a 200MB cap and still enforces it', async () => {
     mockUserId = VALID_HEX_ENTERPRISE;
     mockPlan = 'Enterprise';
-    mockResolvedFiles = [fakeFile(await makeDocx('<doc/>'), { size: 501 * MB })];
+    mockResolvedFiles = [fakeFile(await makeDocx('<doc/>'), { size: 200 * MB + 1 })];
 
     const res = await handleDocxToPdf(docxRequest());
 
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe('Your current plan allows DOCX files up to 500MB.');
+    expect((await res.json()).error).toBe('Your current plan allows DOCX files up to 200MB.');
   });
 
   it('converts a normal small DOCX', async () => {

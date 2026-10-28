@@ -110,7 +110,7 @@ describe('lock-pdf per-plan upload size limit', () => {
     ['a signed-in user with an unrecognised plan', 'Platinum', 25],
     ['Basic', 'Basic', 50],
     ['Pro', 'Pro', 100],
-    ['Enterprise', 'Enterprise', 500],
+    ['Enterprise', 'Enterprise', 200],
   ])('holds %s to its own cap', async (_label, plan, capMb) => {
     if (plan !== null) signIn(plan);
     const overCap = pdfFile(capMb * MB + 1);

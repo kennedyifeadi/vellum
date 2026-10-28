@@ -13,7 +13,7 @@ describe('DragAndDrop', () => {
   it.each([
     [null, 'Max file size 25 MB on the Free plan'],
     [{ plan: 'Basic' }, 'Max file size 50 MB on the Basic plan'],
-    [{ plan: 'Enterprise' }, 'Max file size 500 MB on the Enterprise plan'],
+    [{ plan: 'Enterprise' }, 'Max file size 200 MB on the Enterprise plan'],
   ])('shows the cap for %p', (user, label) => {
     mockUser = user;
 

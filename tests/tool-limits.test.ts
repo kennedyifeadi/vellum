@@ -174,20 +174,20 @@ describe('page, line, pixel and length caps', () => {
 describe('TOOL_LIMITS', () => {
   const sizesInMb = (tool: ToolId) => Object.values(TOOL_LIMITS[tool].maxBytes).map((bytes) => bytes / MB);
 
-  it('holds the values the routes enforced before the routes read it', () => {
+  it("holds each plan's values", () => {
     for (const tool of ['compress-pdf', 'split-pdf', 'lock-pdf', 'find-pdf', 'html-to-pdf', 'docx-to-pdf'] as const) {
-      expect(sizesInMb(tool)).toEqual([25, 50, 100, 500]);
+      expect(sizesInMb(tool)).toEqual([25, 50, 100, 200]);
       expect(TOOL_LIMITS[tool].maxFiles).toEqual({ guest: 1, Basic: 1, Pro: 1, Enterprise: 1 });
     }
     expect(sizesInMb('merge-pdf')).toEqual([25, 50, 100, 250]);
-    expect(TOOL_LIMITS['merge-pdf'].maxFiles).toEqual({ guest: 3, Basic: 30, Pro: 50, Enterprise: 250 });
+    expect(TOOL_LIMITS['merge-pdf'].maxFiles).toEqual({ guest: 3, Basic: 30, Pro: 50, Enterprise: 100 });
     expect(TOOL_LIMITS['find-pdf'].maxPages).toEqual({ guest: 10, Basic: 50, Pro: 100, Enterprise: 500 });
     expect(sizesInMb('pdf-to-docx')).toEqual([5, 10, 15, 25]);
     expect(TOOL_LIMITS['pdf-to-docx'].maxPages).toEqual({ guest: 100, Basic: 200, Pro: 300, Enterprise: 500 });
     expect(TOOL_LIMITS['pdf-to-docx'].maxLines).toEqual({ guest: 8_000, Basic: 16_000, Pro: 24_000, Enterprise: 40_000 });
     for (const tool of ['image-to-pdf', 'image-compress', 'jpg-to-png'] as const) {
-      expect(sizesInMb(tool)).toEqual([25, 50, 100, 500]);
-      expect(TOOL_LIMITS[tool].maxFiles).toEqual({ guest: 3, Basic: 30, Pro: 50, Enterprise: 250 });
+      expect(sizesInMb(tool)).toEqual([25, 50, 100, 200]);
+      expect(TOOL_LIMITS[tool].maxFiles).toEqual({ guest: 3, Basic: 30, Pro: 50, Enterprise: 100 });
       expect(TOOL_LIMITS[tool].maxMegapixelsPerImage).toBe(50);
     }
     expect(sizesInMb('video-compress')).toEqual([50, 100, 500, 500]);
