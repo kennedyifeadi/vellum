@@ -180,7 +180,7 @@ describe('Upload Rates & Storage Quota System Tests', () => {
       const res = await handleDocumentUpload(createUploadRequest(uploadBytes, 'heavy-project.zip'));
       expect(res.status).toBe(507);
       const data = await res.json();
-      expect(data.error).toBe('Storage limit reached. Cannot upload "heavy-project.zip". Upgrade to Pro for more space.');
+      expect(data.error).toBe('Storage limit reached. Cannot upload "heavy-project.zip". The Basic plan stores up to 50 MB. Upgrade to Pro for more space.');
     });
 
     it('should allow larger upload up to 100 MB for Pro plan users', async () => {

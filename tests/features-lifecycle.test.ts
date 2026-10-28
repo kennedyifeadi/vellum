@@ -129,6 +129,16 @@ describe('Features & Conversion Lifecycle System Tests', () => {
       expect(actualDiffMs).toBeLessThanOrEqual(expected5DaysMs + 5000);
     });
 
+    it('keeps a stored Enterprise conversion for 7 days', async () => {
+      mockFindByIdResult = { plan: 'Enterprise', preferences: { autoDelete: false } };
+      const before = Date.now();
+
+      const record: any = await saveConversionRecord(userId, 'Split PDF', 'split.pdf', dummyBuffer);
+
+      const dayMs = 24 * 60 * 60 * 1000;
+      expect(Math.round((new Date(record.expiresAt).getTime() - before) / dayMs)).toBe(7);
+    });
+
     it('should set nearly immediate expiration (1 second) when autoDelete preference is true', async () => {
       mockFindByIdResult = { plan: 'Pro', preferences: { autoDelete: true } };
       const now = Date.now();
@@ -205,7 +215,7 @@ describe('Features & Conversion Lifecycle System Tests', () => {
     it.each([
       ['Basic', 3],
       ['Pro', 5],
-      ['Enterprise', 5],
+      ['Enterprise', 7],
     ])('keeps a %s row for %d days, like a stored conversion', async (plan, days) => {
       mockFindByIdResult = { plan, preferences: { autoDelete: false } };
       const now = Date.now();

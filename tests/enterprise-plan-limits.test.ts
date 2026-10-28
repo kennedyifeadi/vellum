@@ -337,33 +337,34 @@ describe('Enterprise plan limits — page count (find-pdf)', () => {
   });
 });
 
-describe('Enterprise plan limits — storage staging quota (documents/upload)', () => {
+describe('Enterprise plan limits — storage quota (documents/upload)', () => {
   function uploadReq(byteSize: number, fileName = 'doc.pdf') {
     const formData = new FormData();
     formData.append('files', new File([new Uint8Array(byteSize)], fileName, { type: 'application/pdf' }));
     return new NextRequest('http://localhost:3000/api/documents/upload', { method: 'POST', body: formData });
   }
 
-  it('lets an Enterprise user stage past the 100MB Pro cap', async () => {
-    mockExistingUsage = 150 * MB;
+  it('lets an Enterprise user store past the old 500MB cap', async () => {
+    mockExistingUsage = 900 * MB;
     const res = await handleDocumentUpload(uploadReq(2000));
     expect(res.status).toBe(201);
   });
 
-  it('rejects an Enterprise user only past the 500MB Enterprise cap', async () => {
-    mockExistingUsage = 500 * MB - 50;
+  it('refuses an Enterprise user only past 1GB, naming it', async () => {
+    mockExistingUsage = GB - 50;
     const res = await handleDocumentUpload(uploadReq(100, 'over.zip'));
     expect(res.status).toBe(507);
+    expect((await res.json()).error).toContain('1 GB');
   });
 });
 
 describe('Enterprise plan limits — storage total (storage route)', () => {
-  it('reports the 100GB Enterprise limit, not the 5GB Basic fallback', async () => {
+  it('reports the 1GB Enterprise quota that upload enforces', async () => {
     const req = new NextRequest('http://localhost:3000/api/storage', { method: 'GET' });
     const res = await handleStorage(req);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.plan).toBe('Enterprise');
-    expect(data.limitBytes).toBe(100 * GB);
+    expect(data.limitBytes).toBe(GB);
   });
 });

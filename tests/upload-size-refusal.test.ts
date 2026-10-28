@@ -98,7 +98,7 @@ const ROUTES: UploadRoute[] = [
   { name: 'video-compress', handler: videoCompress, url: '/api/convert/video-compress', field: 'video', guestCapMb: 50, guestRefusal: 'Your current plan allows videos up to 50MB.', proCapMb: 500 },
 ];
 
-const STORAGE_FULL_MESSAGE = 'Storage limit reached. Cannot upload these files. Upgrade to Pro for more space.';
+const STORAGE_FULL_MESSAGE = 'Storage limit reached. Cannot upload these files. The Basic plan stores up to 50 MB. Upgrade to Pro for more space.';
 
 function upload(route: { url: string; field: string }, sizeBytes: number, declareLength = true) {
   return streamedUpload(`http://localhost:3000${route.url}`, route.field, sizeBytes, { declareLength });

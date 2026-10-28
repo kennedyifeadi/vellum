@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import User from '@/models/user';
-import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import mongoose from 'mongoose';
-import { resolvePlanLimit } from '@/lib/plan-limits';
+import { retentionExpiry, storageFullMessage, storageLimits } from '@/lib/storage-limits';
+import { usedStorageBytes } from '@/lib/storage-usage';
 import { ClientError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget, uploadedFiles } from '@/lib/http/read-upload';
 import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
@@ -34,26 +33,8 @@ export async function POST(req: NextRequest) {
 
   const user = await User.findById(userId).lean() as { plan?: string } | null;
   const plan = (user?.plan as string) ?? 'Basic';
-  const limitBytes = resolvePlanLimit(plan, {
-    guest: 50 * 1024 * 1024,
-    Basic: 50 * 1024 * 1024,
-    Pro: 100 * 1024 * 1024,
-    Enterprise: 500 * 1024 * 1024,
-  });
-  const ttlDays = resolvePlanLimit(plan, {
-    guest: 3,
-    Basic: 3,
-    Pro: 5,
-    Enterprise: 5,
-  });
-
-  // Calculate current storage usage (conversions + staged docs)
-  const uid = new mongoose.Types.ObjectId(userId);
-  const [convAgg, docAgg] = await Promise.all([
-    Conversion.aggregate([{ $match: { userId: uid } }, { $group: { _id: null, total: { $sum: '$fileSize' } } }]),
-    UserDocumentModel.aggregate([{ $match: { userId: uid } }, { $group: { _id: null, total: { $sum: '$fileSize' } } }]),
-  ]);
-  const currentUsed = (convAgg[0]?.total ?? 0) + (docAgg[0]?.total ?? 0);
+  const limitBytes = storageLimits(plan).quotaBytes;
+  const currentUsed = await usedStorageBytes(userId);
 
   let files: File[];
   try {
@@ -61,7 +42,7 @@ export async function POST(req: NextRequest) {
       req,
       uploadBudget(
         Math.max(0, limitBytes - currentUsed),
-        'Storage limit reached. Cannot upload these files. Upgrade to Pro for more space.',
+        storageFullMessage(plan),
         507,
       ),
     );
@@ -82,7 +63,7 @@ export async function POST(req: NextRequest) {
   for (const file of files) {
     if (usedSoFar + file.size > limitBytes) {
       return NextResponse.json(
-        { error: `Storage limit reached. Cannot upload "${file.name}". Upgrade to Pro for more space.` },
+        { error: storageFullMessage(plan, file.name) },
         { status: 507 }
       );
     }
@@ -92,14 +73,13 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await storage.put(`docs/${diskFileName}`, buffer);
 
-    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
     const doc = await UserDocumentModel.create({
       userId,
       fileName: file.name,
       diskFileName,
       fileSize: file.size,
       mimeType: file.type,
-      expiresAt,
+      expiresAt: retentionExpiry(plan),
     });
 
     usedSoFar += file.size;

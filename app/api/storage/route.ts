@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
-import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
-import mongoose from 'mongoose';
-import { resolvePlanLimit } from '@/lib/plan-limits';
+import { storageLimits } from '@/lib/storage-limits';
+import { usedStorageBytes } from '@/lib/storage-usage';
 
 export const dynamic = 'force-dynamic';
-
-const GB = 1024 * 1024 * 1024;
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,19 +17,8 @@ export async function GET(req: NextRequest) {
 
     const user = await User.findById(userId).lean() as { plan?: string } | null;
     const plan = (user?.plan as string) ?? 'Basic';
-    const limitBytes = resolvePlanLimit(plan, {
-      guest: 5 * GB,
-      Basic: 5 * GB,
-      Pro: 20 * GB,
-      Enterprise: 100 * GB,
-    });
-
-    const agg = await Conversion.aggregate([
-      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
-      { $group: { _id: null, total: { $sum: '$fileSize' } } },
-    ]);
-
-    const usedBytes: number = agg[0]?.total ?? 0;
+    const limitBytes = storageLimits(plan).quotaBytes;
+    const usedBytes = await usedStorageBytes(userId);
 
     return NextResponse.json({ usedBytes, limitBytes, plan });
   } catch (error) {
