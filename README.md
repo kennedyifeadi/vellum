@@ -121,7 +121,7 @@ The image runs `next start` as the non-root `node` user under `tini`, listening 
 (3000 by default). It ships the full production `node_modules` rather than Next's
 `standalone` output: the worker threads, Chromium and ffmpeg are all found at runtime by
 path, and the working directory keeps them where the code looks. The runtime image is about
-2.1 GB, most of it Chromium and `node_modules`.
+1.8 GB, most of it Chromium and `node_modules`.
 
 `NEXT_PUBLIC_GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_API_KEY` are compiled into the
 browser bundle, so they must be given at build time (`docker build --build-arg ...`). Never
