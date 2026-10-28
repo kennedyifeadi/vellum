@@ -1,4 +1,4 @@
-import { PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib-plus-encrypt';
+import { PDFDict, PDFDocument, PDFHeader, PDFName, PDFNumber } from 'pdf-lib-plus-encrypt';
 import { ClientError } from '@/lib/convert/errors';
 import { corruptPdfMessage, emptyPdfMessage } from '@/lib/pdf/loadPdf';
 import { r6PasswordEntries } from '@/lib/pdf/aes256-r6';
@@ -34,6 +34,18 @@ function upgradeToR6(pdfDoc: PDFDocument, password: Buffer): void {
   for (const [key, value] of Object.entries(entries)) {
     encryptDict.set(PDFName.of(key), context.obj(value));
   }
+}
+
+// R6 is Adobe's extension level 8 to PDF 1.7 (and native to PDF 2.0). Declare it the
+// way qpdf marks its own R6 output, so a reader knows which version the file needs.
+function markForR6Readers(pdfDoc: PDFDocument): void {
+  const { context, catalog } = pdfDoc;
+  if (Number.parseFloat(context.header.getVersion()) < 1.7) {
+    context.header = PDFHeader.forVersion(1, 7);
+  }
+  const extensions = catalog.lookupMaybe(PDFName.of('Extensions'), PDFDict) ?? context.obj({});
+  extensions.set(PDFName.of('ADBE'), context.obj({ BaseVersion: '1.7', ExtensionLevel: 8 }));
+  catalog.set(PDFName.of('Extensions'), extensions);
 }
 
 export async function lockPdf({
@@ -91,6 +103,7 @@ export async function lockPdf({
   }
 
   upgradeToR6(pdfDoc, Buffer.from(lockPasswordBytes(password)));
+  markForR6Readers(pdfDoc);
 
   const encryptedPdfBytes = await pdfDoc.save();
 

@@ -1,4 +1,7 @@
+import { createDecipheriv } from 'crypto';
+import { inflateSync } from 'zlib';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { hashR6Password } from '../lib/pdf/aes256-r6';
 import { lockPdf } from '../lib/pdf/lock';
 import { openPdfWithPassword } from './helpers/openPdfWithPassword';
 
@@ -34,6 +37,27 @@ function encryptDict(pdf: Buffer): string {
     throw new Error('no standard security handler in output');
   }
   return text.slice(start, start + 700);
+}
+
+// The catalog is written inside an encrypted object stream, so read it the way a reader
+// would: unwrap the file key from /UE, then decrypt and inflate every /ObjStm.
+function decryptedObjectStreams(pdf: Buffer, password: string): string {
+  const dict = encryptDict(pdf);
+  const entry = (name: string) => Buffer.from(dict.match(new RegExp(`/${name}\\s*<([0-9a-fA-F]+)>`))![1], 'hex');
+  const u = entry('U');
+  const passwordBytes = Buffer.from(password, 'utf8');
+  const unwrap = createDecipheriv('aes-256-cbc', hashR6Password(passwordBytes, u.subarray(40, 48)), Buffer.alloc(16));
+  const fileKey = Buffer.concat([unwrap.setAutoPadding(false).update(entry('UE')), unwrap.final()]);
+
+  const text = pdf.toString('latin1');
+  const decoded: string[] = [];
+  for (const match of text.matchAll(/\/Type \/ObjStm[\s\S]*?\/Length (\d+)\s*>>\s*stream\r?\n/g)) {
+    const start = match.index! + match[0].length;
+    const data = pdf.subarray(start, start + Number(match[1]));
+    const decipher = createDecipheriv('aes-256-cbc', fileKey, data.subarray(0, 16));
+    decoded.push(inflateSync(Buffer.concat([decipher.update(data.subarray(16)), decipher.final()])).toString('latin1'));
+  }
+  return decoded.join('\n');
 }
 
 async function opensWith(pdf: Buffer, password: string): Promise<boolean> {
@@ -132,6 +156,22 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
       expect(dict).toMatch(/\/CFM\s*\/AESV3/);
     }
   );
+
+  // R6 is Adobe extension level 8 to PDF 1.7, which is how qpdf marks its own R6 output.
+  it.each([
+    ['1.3', '%PDF-1.7'],
+    ['1.7', '%PDF-1.7'],
+    ['2.0', '%PDF-2.0'],
+  ])('marks a %s source as %s with the ADBE extension level 8', async (version, header) => {
+    const pdfBuffer = await createPdfWithHeader(version);
+
+    const locked = await lockPdf({ pdfBuffer, password: 'letmein!' });
+
+    expect(locked.subarray(0, header.length).toString('latin1')).toBe(header);
+    expect(decryptedObjectStreams(locked, 'letmein!')).toMatch(
+      /\/Extensions\s*<<\s*\/ADBE\s*<<\s*\/BaseVersion\s*\/1\.7\s*\/ExtensionLevel\s*8\s*>>\s*>>/
+    );
+  });
 
   it('opens in pdf.js with the password, keeping every page and its text, and refuses a wrong one', async () => {
     const pdfBuffer = await createPdfWithHeader('1.3', 3);
