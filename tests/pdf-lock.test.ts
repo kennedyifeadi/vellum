@@ -3,10 +3,10 @@ import { inflateSync } from 'zlib';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { hashR6Password } from '../lib/pdf/aes256-r6';
 import { lockPdf } from '../lib/pdf/lock';
-import { openPdfWithPassword } from './helpers/openPdfWithPassword';
+import { openPdfWithPasswords } from './helpers/openPdfWithPasswords';
 
 // Each pdf.js check starts a Node process, which is slow on a loaded machine.
-jest.setTimeout(60_000);
+jest.setTimeout(180_000);
 
 async function createPdf(pageCount: number): Promise<Buffer> {
   const doc = await PDFDocument.create();
@@ -60,12 +60,13 @@ function decryptedObjectStreams(pdf: Buffer, password: string): string {
   return decoded.join('\n');
 }
 
-async function opensWith(pdf: Buffer, password: string): Promise<boolean> {
-  const result = await openPdfWithPassword(pdf, password);
-  if ('error' in result && result.error !== 'PasswordException') {
-    throw new Error(`pdf.js failed for a reason other than the password: ${result.error}`);
-  }
-  return 'pageTexts' in result;
+async function opensWith(pdf: Buffer, passwords: string[]): Promise<boolean[]> {
+  return (await openPdfWithPasswords(pdf, passwords)).map((result) => {
+    if ('error' in result && result.error !== 'PasswordException') {
+      throw new Error(`pdf.js failed for a reason other than the password: ${result.error}`);
+    }
+    return 'pageTexts' in result;
+  });
 }
 
 describe('lockPdf (lib/pdf/lock.ts)', () => {
@@ -110,8 +111,7 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
 
     const locked = await lockPdf({ pdfBuffer, password });
 
-    expect(await opensWith(locked, password)).toBe(true);
-    expect(await opensWith(locked, [...password].slice(0, -1).join(''))).toBe(false);
+    expect(await opensWith(locked, [password, [...password].slice(0, -1).join('')])).toEqual([true, false]);
   });
 
   it('rejects a password containing control characters', async () => {
@@ -127,8 +127,7 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
 
     const locked = await lockPdf({ pdfBuffer, password });
 
-    expect(await opensWith(locked, password)).toBe(true);
-    expect(await opensWith(locked, `${'A'.repeat(126)}B`)).toBe(false);
+    expect(await opensWith(locked, [password, `${'A'.repeat(126)}B`])).toEqual([true, false]);
   });
 
   it.each([
@@ -178,9 +177,11 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
 
     const locked = await lockPdf({ pdfBuffer, password: 'correct horse' });
 
-    expect(await openPdfWithPassword(locked, 'correct horse')).toEqual({ pageTexts: ['Page 1', 'Page 2', 'Page 3'] });
-    expect(await openPdfWithPassword(locked, 'wrong horse')).toEqual({ error: 'PasswordException' });
-    expect(await openPdfWithPassword(locked, '')).toEqual({ error: 'PasswordException' });
+    expect(await openPdfWithPasswords(locked, ['correct horse', 'wrong horse', ''])).toEqual([
+      { pageTexts: ['Page 1', 'Page 2', 'Page 3'] },
+      { error: 'PasswordException' },
+      { error: 'PasswordException' },
+    ]);
   });
 
   it('round-trips a password longer than 32 bytes without truncating it', async () => {
@@ -189,9 +190,7 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
 
     const locked = await lockPdf({ pdfBuffer, password });
 
-    expect(await opensWith(locked, password)).toBe(true);
-    expect(await opensWith(locked, 'A'.repeat(32))).toBe(false);
-    expect(await opensWith(locked, `${'A'.repeat(40)}ZZZZ`)).toBe(false);
+    expect(await opensWith(locked, [password, 'A'.repeat(32), `${'A'.repeat(40)}ZZZZ`])).toEqual([true, false, false]);
   });
 
   // Readers hash what the user types: pdf.js and qpdf use the raw UTF-8, Acrobat may apply
@@ -217,7 +216,6 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
 
     const locked = await lockPdf({ pdfBuffer, password });
 
-    expect(await opensWith(locked, password)).toBe(true);
-    expect(await opensWith(locked, 'password')).toBe(false);
+    expect(await opensWith(locked, [password, 'password'])).toEqual([true, false]);
   });
 });
