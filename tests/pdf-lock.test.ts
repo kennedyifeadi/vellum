@@ -194,6 +194,20 @@ describe('lockPdf (lib/pdf/lock.ts)', () => {
     expect(await opensWith(locked, `${'A'.repeat(40)}ZZZZ`)).toBe(false);
   });
 
+  // Readers hash what the user types: pdf.js and qpdf use the raw UTF-8, Acrobat may apply
+  // SASLprep. Only a password that normalisation leaves alone opens the same everywhere.
+  it.each([
+    ['a ligature', 'conﬁdential-pw'],
+    ['full-width letters', 'Ｐａｓｓword-123'],
+    ['accents typed as separate combining marks', 'pásswörd-é'],
+  ])('refuses a password with %s, which readers would not agree on', async (_label, password) => {
+    const pdfBuffer = await createPdf(1);
+
+    await expect(lockPdf({ pdfBuffer, password })).rejects.toThrow(
+      'Password has characters some PDF readers won’t accept, such as ligatures or full-width letters. Use letters, numbers and symbols from a standard keyboard.'
+    );
+  });
+
   it.each([
     ['accented Latin', 'pásswörd-éü'],
     ['CJK', '密码保护文件安全测试'],

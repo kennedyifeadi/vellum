@@ -31,5 +31,11 @@ export function validateLockPassword(password: unknown): string | null {
   if (hasControlCharacter(password)) {
     return 'Password must not contain control characters.';
   }
+  // pdf.js and qpdf hash the UTF-8 the user types as-is, while the file is locked with the
+  // normalised form (and Acrobat may normalise too), so a password that normalisation
+  // changes would open in some readers and not others.
+  if (password.normalize('NFKC') !== password) {
+    return 'Password has characters some PDF readers won’t accept, such as ligatures or full-width letters. Use letters, numbers and symbols from a standard keyboard.';
+  }
   return null;
 }
