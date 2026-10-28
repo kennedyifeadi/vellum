@@ -190,6 +190,11 @@ limit, peak read from the container's cgroup `memory.peak`; ranges are over thre
 | Started, idle | 185-188 MB |
 | After one request to each tool family | 345-348 MB peak |
 | Two Image to PDF jobs, then two Compress Image jobs, each on a 49-megapixel PNG, two at a time | 764-1,064 MB peak |
+| One HTML to PDF render of a 22 MB page (5000-row table, inline photos) | 749 MiB above the level before it |
+| One DOCX to PDF render of a 20 MB document of photos | 662 MiB above the level before it |
+
+The two render rows are one run, from `memory.current` sampled about every 0.2 s while the
+render ran (`scripts/container-smoke.mjs --heavy-render`), so a shorter spike can be missed.
 
 That last row was measured before guests were limited to one job at a time and one slot of
 each pool (see Heavy jobs per caller). CI has no signed-in user, so it now runs one job of
@@ -199,14 +204,18 @@ The CI images are flat-colour PNGs, which are cheap to compress. Earlier measure
 Windows (in the PRs that set the image limits) put two Image to PDF or Compress Image jobs at
 the pixel cap on photographic images at about 1.9 GB above the idle server. On top of that,
 at the same time, the server can be running two PDF extraction workers (up to 256 MB of heap
-each, plus decoded data outside the heap), a Chromium per HTML or DOCX to PDF request, two
-ffmpeg encodes, and holding whole uploads in memory (each upload route reads its upload
-into memory, up to the plan's cap: 500 MB at most).
+each, plus decoded data outside the heap), two Chromium renders (HTML and DOCX to PDF
+together), two ffmpeg encodes, and holding whole uploads in memory (each upload route reads
+its upload into memory, up to the plan's cap: 500 MB at most). On Windows one render near
+the guest cap peaked at 1.06 GB in Chromium, and an 88 MB page (under the Pro cap) at 1.7 GB
+before the 30-second render deadline stopped it, so two renders take about 1.5-2.1 GB at
+guest sizes and up to about 3.4 GB for two large pages (`lib/puppeteer/render-jobs.ts`).
 
 Recommendation: **8 GB of memory and 4 vCPU**. Two video encodes alone take four cores
-(`-threads 2` each, at most two at once), and the sum of the peaks above comes to about
-5 GB with two large uploads in flight. 4 GB is enough for light traffic without large
-video uploads. Watch the memory graph during the first weeks and adjust.
+(`-threads 2` each, at most two at once), and the sum of the peaks above, without the
+renders, comes to about 5 GB with two large uploads in flight; two heavy renders at the
+same moment add 1.5-3.4 GB. 4 GB is enough for light traffic without large video uploads.
+Watch the memory graph during the first weeks and adjust.
 
 ### Limits
 
