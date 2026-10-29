@@ -137,19 +137,19 @@ describe('compress-pdf per-plan upload size limit', () => {
     expect((await res.json()).error).toBe('Your current plan allows PDFs up to 100MB.');
   });
 
-  it('gives Enterprise a 500MB cap and still enforces it', async () => {
+  it('gives Enterprise a 200MB cap and still enforces it', async () => {
     mockUserId = VALID_HEX_ENTERPRISE;
     mockPlan = 'Enterprise';
 
-    mockResolvedFiles = [pdfFile(await realPdf(), 450 * MB)];
+    mockResolvedFiles = [pdfFile(await realPdf(), 200 * MB)];
     expect((await handleCompressPdf(compressRequest('medium'))).status).toBe(200);
 
-    const file = pdfFile(await realPdf(), 501 * MB);
+    const file = pdfFile(await realPdf(), 200 * MB + 1);
     mockResolvedFiles = [file];
     const rejected = await handleCompressPdf(compressRequest('medium'));
 
     expect(rejected.status).toBe(400);
-    expect((await rejected.json()).error).toBe('Your current plan allows PDFs up to 500MB.');
+    expect((await rejected.json()).error).toBe('Your current plan allows PDFs up to 200MB.');
     expect(file.arrayBuffer).not.toHaveBeenCalled();
   });
 

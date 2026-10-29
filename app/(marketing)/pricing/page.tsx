@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import PricingCompareTable from "@/components/marketing/PricingCompareTable";
 import ToolsCarousel from "@/components/marketing/ToolsCarousel";
 import { LIMITS_VARY_NOTE, headlineFeatures } from "@/lib/upload-limits";
+import { storageFeatures } from "@/lib/storage-limits";
 
 export default function PricingPage() {
   const [isYearly, setIsYearly] = useState(true);
@@ -34,8 +35,7 @@ export default function PricingPage() {
       limitLabel: "Increased usage limits",
       features: [
         ...headlineFeatures("Basic"),
-        "3 Days File Retention",
-        "5GB Cloud Storage"
+        ...storageFeatures("Basic"),
       ],
       buttonText: "Start with Basic",
       buttonLink: "/signup",
@@ -49,8 +49,7 @@ export default function PricingPage() {
       limitLabel: "Professional limits",
       features: [
         ...headlineFeatures("Pro"),
-        "5 Days File Retention",
-        "20GB Cloud Storage"
+        ...storageFeatures("Pro"),
       ],
       buttonText: "Start with Pro",
       buttonLink: "/signup?plan=pro",
@@ -64,8 +63,8 @@ export default function PricingPage() {
       limitLabel: "Highest usage limits",
       features: [
         ...headlineFeatures("Enterprise"),
+        ...storageFeatures("Enterprise"),
         "Uptime Guarantee",
-        "Custom Cloud Storage",
         "Dedicated Support"
       ],
       buttonText: "Contact Us",

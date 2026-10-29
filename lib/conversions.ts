@@ -4,6 +4,7 @@ import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage, LocalDiskStorage } from '@/lib/storage';
+import { retentionExpiry } from '@/lib/storage-limits';
 
 const STORED_CONTENT_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -34,15 +35,12 @@ async function resolveExpiry(userId: string): Promise<Date | null> {
     return null;
   }
 
-  const extendedRetention = user.plan === 'Pro' || user.plan === 'Enterprise';
   const autoDelete = user.preferences?.autoDelete === true;
 
   // If autoDelete is true, set expiresAt to basically immediately so cleanupStorage picks it up instantly.
-  // Otherwise, default to 5 days for Pro/Enterprise, 3 days for Basic/guest.
-  const daysToKeep = extendedRetention ? 5 : 3;
   return autoDelete
     ? new Date(Date.now() + 1000) // Expires in 1 second
-    : new Date(Date.now() + daysToKeep * 24 * 60 * 60 * 1000);
+    : retentionExpiry(user.plan);
 }
 
 /**

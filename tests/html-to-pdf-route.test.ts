@@ -168,17 +168,17 @@ describe('html-to-pdf route: per-plan upload cap runs before conversion', () => 
     expect((await res.json()).error).toBe('Your current plan allows HTML files up to 100MB.');
   });
 
-  it('gives Enterprise a 500MB cap and still enforces it', async () => {
+  it('gives Enterprise a 200MB cap and still enforces it', async () => {
     mockUserId = VALID_HEX_ENTERPRISE;
     mockPlan = 'Enterprise';
 
-    mockResolvedFiles = [fakeHtmlFile(400 * MB)];
+    mockResolvedFiles = [fakeHtmlFile(200 * MB)];
     expect((await handleHtmlToPdf(multipartRequest())).status).toBe(200);
 
-    mockResolvedFiles = [fakeHtmlFile(501 * MB)];
+    mockResolvedFiles = [fakeHtmlFile(200 * MB + 1)];
     const rejected = await handleHtmlToPdf(multipartRequest());
     expect(rejected.status).toBe(400);
-    expect((await rejected.json()).error).toBe('Your current plan allows HTML files up to 500MB.');
+    expect((await rejected.json()).error).toBe('Your current plan allows HTML files up to 200MB.');
   });
 
   it('surfaces a render-deadline timeout as a 4xx, not a 500', async () => {

@@ -22,14 +22,14 @@ const FILE_CAPS: [string, number][] = [
   ['Free', 3],
   ['Basic', 30],
   ['Pro', 50],
-  ['Enterprise', 250],
+  ['Enterprise', 100],
 ];
 
 const SIZE_CAPS_MB: [string, number][] = [
   ['Free', 25],
   ['Basic', 50],
   ['Pro', 100],
-  ['Enterprise', 500],
+  ['Enterprise', 200],
 ];
 
 describe('image-to-pdf conversion limits', () => {

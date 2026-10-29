@@ -1,8 +1,15 @@
 import React from 'react';
 import { LIMITS_VARY_NOTE, PlanTier, planHeadlines } from '@/lib/upload-limits';
+import { Plan } from '@/lib/plan-limits';
+import { STORAGE_LIMITS, formatQuota, retentionLabel } from '@/lib/storage-limits';
 
 function headlineRow(name: string, value: (tier: PlanTier) => string) {
   return { name, free: value('guest'), basic: value('Basic'), pro: value('Pro'), enterprise: value('Enterprise') };
+}
+
+// Guests store nothing, so Free has no storage or retention.
+function storageRow(name: string, value: (plan: Plan) => string) {
+  return { name, free: 'None', basic: value('Basic'), pro: value('Pro'), enterprise: value('Enterprise') };
 }
 
 const compareData = [
@@ -40,8 +47,8 @@ const compareData = [
   {
     category: "Storage & Access",
     features: [
-      { name: "Cloud Storage", free: "None", basic: "5GB", pro: "20GB", enterprise: "Custom" },
-      { name: "File Retention", free: "None", basic: "3 Days", pro: "5 Days", enterprise: "Custom" },
+      storageRow("Cloud Storage", (plan) => formatQuota(STORAGE_LIMITS[plan].quotaBytes)),
+      storageRow("File Retention", retentionLabel),
       { name: "Access Anywhere", free: "No", basic: "Yes", pro: "Yes", enterprise: "Yes" },
     ]
   },

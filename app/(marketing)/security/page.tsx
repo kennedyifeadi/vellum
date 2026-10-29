@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { STORAGE_LIMITS } from '@/lib/storage-limits';
 
 export const metadata = {
   title: "Trust & Security | Vellum",
@@ -33,7 +34,7 @@ export default function SecurityPage() {
             </div>
             <h3 className="text-xl font-bold mb-3">Automatic Deletion</h3>
             <p className="text-gray-600 text-sm leading-relaxed">
-              We process your files temporarily. For unauthenticated users (Guests), processed files are deleted immediately after download. For our Basic and Pro tiers, files are automatically wiped from our servers after 3 to 5 days, guaranteeing zero lingering data.
+              We process your files temporarily. For unauthenticated users (Guests), processed files are deleted immediately after download. For our Basic, Pro and Enterprise plans, files are automatically wiped from our servers after {STORAGE_LIMITS.Basic.retentionDays} to {STORAGE_LIMITS.Enterprise.retentionDays} days, guaranteeing zero lingering data.
             </p>
           </div>
 
