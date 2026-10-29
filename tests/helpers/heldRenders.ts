@@ -26,8 +26,30 @@ function trackProcess(browser: Browser): void {
   if (userDataDir) userDataDirs.add(userDataDir.slice('--user-data-dir='.length));
 
   liveBrowsers.add(process);
-  peakBrowsers = Math.max(peakBrowsers, liveBrowsers.size);
-  process.once('exit', () => liveBrowsers.delete(process));
+  peakBrowsers = Math.max(peakBrowsers, countLiveBrowsers());
+}
+
+// On a loaded Windows machine Node sometimes never emits 'exit' for a browser the OS has
+// already ended, so whether a browser still runs is asked of the OS instead.
+function isRunning(child: ChildProcess): boolean {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return false;
+  try {
+    process.kill(child.pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+function countLiveBrowsers(): number {
+  for (const child of liveBrowsers) {
+    if (!isRunning(child)) liveBrowsers.delete(child);
+  }
+  return liveBrowsers.size;
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 function holdSetContent(page: Page, browser: Browser): void {
@@ -40,7 +62,7 @@ function holdSetContent(page: Page, browser: Browser): void {
           resolve();
         },
         killBrowser() {
-          browser.process()?.kill('SIGKILL');
+          killProcessTree(browser.process());
           render.finish();
         },
       };
@@ -49,6 +71,17 @@ function holdSetContent(page: Page, browser: Browser): void {
     });
     return setContent(html, options);
   };
+}
+
+// Killing only the main process on Windows leaves its GPU and crash-reporter children
+// running, where Linux takes them down with it, so a crash there is the whole tree.
+function killProcessTree(child: ChildProcess | null): void {
+  if (!child?.pid) return;
+  if (process.platform === 'win32') {
+    execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    child.kill('SIGKILL');
+  }
 }
 
 /** Launches a real browser with `launch`, counted and with its renders held. */
@@ -79,7 +112,7 @@ export async function nextHeldRender(stopWaiting = () => false): Promise<HeldRen
 }
 
 export function liveBrowserCount(): number {
-  return liveBrowsers.size;
+  return countLiveBrowsers();
 }
 
 export function peakBrowserCount(): number {
@@ -90,21 +123,31 @@ export function peakBrowserCount(): number {
 export function resetHeldRenders(): void {
   for (const render of unreleased) render.finish();
   started.length = 0;
-  peakBrowsers = liveBrowsers.size;
+  peakBrowsers = countLiveBrowsers();
 }
 
 /** Waits for every browser the tests launched to have exited. */
 export async function allBrowsersExited(): Promise<void> {
-  while (liveBrowsers.size > 0) {
-    await new Promise((resolve) => setImmediate(resolve));
+  while (countLiveBrowsers() > 0) {
+    await nextTurn();
   }
 }
 
 /**
  * Operating-system processes, a browser's children included, still running with the
- * profile directory of a browser these tests launched.
+ * profile directory of a browser these tests launched, once they have had `graceMs` to go.
+ * A killed browser's GPU and crash-reporter children notice and exit a moment after it.
  */
-export function leftoverChromiumProcesses(): string[] {
+export async function leftoverChromiumProcesses(graceMs = 60_000): Promise<string[]> {
+  const giveUpAt = Date.now() + graceMs;
+  for (;;) {
+    const leftovers = chromiumProcessesOfTheseTests();
+    if (leftovers.length === 0 || Date.now() > giveUpAt) return leftovers;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+}
+
+function chromiumProcessesOfTheseTests(): string[] {
   if (userDataDirs.size === 0) return [];
   return runningCommandLines().filter((line) => [...userDataDirs].some((dir) => line.includes(dir)));
 }
