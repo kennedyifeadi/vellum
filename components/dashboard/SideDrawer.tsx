@@ -8,6 +8,7 @@ import Script from 'next/script';
 import Image from 'next/image';
 import { admitFiles, selectionError, uploadLimitLabel } from '@/lib/upload-limits';
 import { RetryCancelledError, fetchWithBusyRetry } from '@/lib/busy-retry';
+import { MIN_LOCK_PASSWORD_LENGTH, validateLockPassword } from '@/lib/pdf/lock-password';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -201,6 +202,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [splitOptions, setSplitOptions] = useState({ startPage: 1, endPage: 1, splitEvery: false });
   const [pdfPageCount, setPdfPageCount] = useState<number>(0);
   const [lockOptions, setLockOptions] = useState({ password: '', confirmPassword: '' });
+  const lockPasswordError = lockOptions.password ? validateLockPassword(lockOptions.password) : null;
   const [findOptions, setFindOptions] = useState({ searchTerm: '' });
   const [htmlOptions, setHtmlOptions] = useState({ url: '', mode: 'file' as 'file' | 'url' });
   const [findResults, setFindResults] = useState<{ matches: FindMatch[], matchCount: number, pdfBase64?: string } | null>(null);
@@ -433,11 +435,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               <label className="text-[10px] font-medium text-[#6b7280]">Password</label>
               <input 
                 type="password" 
-                placeholder="Min 6 characters"
+                placeholder={`At least ${MIN_LOCK_PASSWORD_LENGTH} characters`}
                 value={lockOptions.password}
                 onChange={(e) => setLockOptions(prev => ({ ...prev, password: e.target.value }))}
                 className="w-full h-9 bg-white border border-[#eaedf3] rounded-lg px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#6366f1]"
               />
+              {lockPasswordError && (
+                <p className="text-[10px] text-[#ef4444]">{lockPasswordError}</p>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-medium text-[#6b7280]">Confirm Password</label>
@@ -605,7 +610,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       case 'split-pdf':
         return !splitOptions.startPage || !splitOptions.endPage;
       case 'lock-pdf':
-        return lockOptions.password.length < 6 || lockOptions.password !== lockOptions.confirmPassword;
+        return validateLockPassword(lockOptions.password) !== null || lockOptions.password !== lockOptions.confirmPassword;
       case 'find-pdf':
         return !findOptions.searchTerm.trim();
       case 'html-to-pdf':

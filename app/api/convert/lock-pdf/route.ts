@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { lockPdf, validateLockPassword } from '@/lib/pdf/lock';
+import { lockPdf } from '@/lib/pdf/lock';
+import { validateLockPassword } from '@/lib/pdf/lock-password';
 import { resolveCaller } from '@/lib/auth/caller';
 import { saveConversionRecord } from '@/lib/conversions';
 import { ensureExtension } from '@/lib/paths';
