@@ -655,6 +655,446 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     }
   };
 
+  const handleProcess = async () => {
+    // Files added before a tool was chosen were checked only against the largest cap.
+    const notSendable = selectionError(fileList, selectedTool, toolName, plan);
+    if (notSendable) {
+      showToast(notSendable, 'error');
+      return;
+    }
+    if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf' || selectedTool === 'image-compress' || selectedTool === 'video-compress' || selectedTool === 'pdf-to-docx') {
+      setIsProcessing(true);
+      try {
+        const formData = new FormData();
+        let fileKey = 'file';
+        if (selectedTool === 'merge-pdf') fileKey = 'pdfs';
+        else if (selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') fileKey = 'images';
+        else if (selectedTool === 'video-compress') fileKey = 'video';
+        else if (selectedTool === 'compress-pdf' || selectedTool === 'find-pdf' || selectedTool === 'pdf-to-docx') fileKey = 'pdf';
+        else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
+
+        fileList.forEach(file => {
+          if ('isDriveFile' in file) {
+            formData.append('googleDriveFiles', JSON.stringify({
+              id: file.id,
+              accessToken: file.accessToken,
+              name: file.name
+            }));
+          } else {
+            formData.append(fileKey, file);
+          }
+        });
+        
+        if (selectedTool === 'find-pdf') {
+          formData.append('searchTerm', findOptions.searchTerm);
+        }
+        if (selectedTool === 'compress-pdf') {
+          formData.append('level', compressLevel);
+        }
+        if (selectedTool === 'image-compress') {
+          formData.append('level', imageCompressLevel);
+        }
+        if (selectedTool === 'video-compress') {
+          formData.append('quality', videoCompressOptions.quality);
+          formData.append('resolution', videoCompressOptions.resolution);
+        }
+        
+        const apiUrl = `/api/convert/${selectedTool}`;
+        const response = await sendWithBusyRetry(() => fetch(apiUrl, {
+          method: 'POST',
+          body: formData,
+        }));
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to process: ${selectedTool}`);
+        }
+
+        if (selectedTool === 'find-pdf') {
+          // find-pdf returns JSON (with base64 PDF inside)
+          const data = await response.json();
+          setFindResults(data);
+          showToast(`Found ${data.matchCount} matches!`, 'success');
+          
+          const blob = await (await fetch(`data:application/pdf;base64,${data.pdfBase64}`)).blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `highlighted_${fileList[0].name}`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        } else {
+          // All other tools return a raw binary stream (PDF, ZIP, PNG, etc.)
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const baseName = fileList[0].name.replace(/\.[^/.]+$/, "");
+          const downloadName = selectedTool === 'compress-pdf' || selectedTool === 'video-compress' || (selectedTool === 'image-compress' && fileList.length === 1) ? `compressed_${fileList[0].name}` : 
+                             selectedTool === 'docx-to-pdf' || selectedTool === 'image-to-pdf' ? `${baseName}.pdf` :
+                             selectedTool === 'pdf-to-docx' ? `${baseName}.docx` :
+                             (selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') && fileList.length > 1 ? 'images.zip' :
+                             `processed_${fileList[0].name}`;
+          a.download = downloadName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+
+          if (selectedTool === 'compress-pdf') {
+            const savedPct = response.headers.get('X-Saved-Percent');
+            const origSize = response.headers.get('X-Original-Size');
+            const compSize = response.headers.get('X-Compressed-Size');
+            const savedKb = origSize && compSize
+              ? (((parseInt(origSize) - parseInt(compSize)) / 1024)).toFixed(0)
+              : null;
+            const pct = savedPct ? parseInt(savedPct) : 0;
+            if (pct > 0 && savedKb) {
+              showToast(`Reduced by ${pct}% — ${savedKb} KB saved!`, 'success');
+            } else {
+              showToast('PDF optimised! File was already well-compressed.', 'success');
+            }
+          } else {
+            showToast(`${currentToolInfo?.name || 'File'} processed successfully!`, 'success');
+          }
+        }
+        
+        addNotification({
+          type: 'success',
+          title: 'Conversion Complete',
+          message: `Your file is ready.`,
+          link: '/dashboard/recent'
+        });
+        window.dispatchEvent(new Event('activityUpdated'));
+        if (selectedTool !== 'find-pdf') {
+          onClose();
+          setFileList([]);
+        }
+      } catch (error) {
+        if (error instanceof RetryCancelledError) return;
+        console.error('Process error:', error);
+        const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';
+        showToast(msg, 'error');
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (selectedTool === 'lock-pdf') {
+      setIsProcessing(true);
+      try {
+        const formData = new FormData();
+        if ('isDriveFile' in fileList[0]) {
+          formData.append('googleDriveFiles', JSON.stringify({
+            id: fileList[0].id,
+            accessToken: fileList[0].accessToken,
+            name: fileList[0].name
+          }));
+        } else {
+          formData.append('pdf', fileList[0]);
+        }
+        formData.append('password', lockOptions.password);
+        
+        const response = await sendWithBusyRetry(() => fetch('/api/convert/lock-pdf', {
+          method: 'POST',
+          body: formData,
+        }));
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || 'Error locking PDF. Please try again.');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'locked.pdf';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showToast('PDF locked successfully!', 'success');
+        addNotification({
+          type: 'success',
+          title: 'Lock Complete',
+          message: 'Your PDF has been successfully password protected.',
+          link: '/dashboard/recent'
+        });
+        window.dispatchEvent(new Event('activityUpdated'));
+        onClose();
+        setFileList([]);
+        setLockOptions({ password: '', confirmPassword: '' });
+      } catch (error) {
+        if (error instanceof RetryCancelledError) return;
+        console.error('Process error:', error);
+        showToast(error instanceof Error ? error.message : 'Error locking PDF. Please try again.', 'error');
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (selectedTool === 'split-pdf') {
+      setIsProcessing(true);
+      try {
+        const formData = new FormData();
+        if ('isDriveFile' in fileList[0]) {
+          formData.append('googleDriveFiles', JSON.stringify({
+            id: fileList[0].id,
+            accessToken: fileList[0].accessToken,
+            name: fileList[0].name
+          }));
+        } else {
+          formData.append('pdf', fileList[0]);
+        }
+        formData.append('startPage', splitOptions.startPage.toString());
+        formData.append('endPage', splitOptions.endPage.toString());
+        formData.append('splitEvery', splitOptions.splitEvery.toString());
+        
+        const response = await sendWithBusyRetry(() => fetch('/api/convert/split-pdf', {
+          method: 'POST',
+          body: formData,
+        }));
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || 'Error splitting PDF. Please try again.');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const isZip = response.headers.get('Content-Type') === 'application/zip';
+        a.download = isZip ? 'split_documents.zip' : `split_document_pages_${splitOptions.startPage}_to_${splitOptions.endPage}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showToast('PDF split successfully!', 'success');
+        window.dispatchEvent(new Event('activityUpdated'));
+        onClose();
+        setFileList([]);
+        setSplitOptions({ startPage: 1, endPage: 1, splitEvery: false });
+      } catch (error) {
+        if (error instanceof RetryCancelledError) return;
+        console.error('Process error:', error);
+        showToast(error instanceof Error ? error.message : 'Error splitting PDF. Please try again.', 'error');
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (selectedTool === 'html-to-pdf') {
+      setIsProcessing(true);
+      try {
+        let response: Response;
+
+        if (htmlOptions.mode === 'url') {
+          response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: htmlOptions.url }),
+          }));
+        } else {
+          const formData = new FormData();
+          if ('isDriveFile' in fileList[0]) {
+            formData.append('googleDriveFiles', JSON.stringify({
+              id: fileList[0].id,
+              accessToken: fileList[0].accessToken,
+              name: fileList[0].name
+            }));
+          } else {
+            formData.append('html', fileList[0]);
+          }
+          response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
+            method: 'POST',
+            body: formData,
+          }));
+        }
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to convert HTML to PDF');
+        }
+
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const nameMatch = disposition.match(/filename="(.+?)"/);
+        const downloadName = nameMatch ? nameMatch[1] : 'converted.pdf';
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showToast('HTML converted to PDF successfully!', 'success');
+        window.dispatchEvent(new Event('activityUpdated'));
+        onClose();
+        setFileList([]);
+        setHtmlOptions({ url: '', mode: 'file' });
+      } catch (error) {
+        if (error instanceof RetryCancelledError) return;
+        console.error('HTML to PDF error:', error);
+        const msg = error instanceof Error ? error.message : 'Error converting HTML to PDF.';
+        showToast(msg, 'error');
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      showToast('Processing started.', 'success');
+    }
+  };
+
+  const renderToolTitle = () => (
+    <div className="flex items-center gap-2">
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
+        currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
+      }`}>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <div>
+        <h2 className="text-sm font-bold text-[#111827]">
+          {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
+        </h2>
+        <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
+      </div>
+    </div>
+  );
+
+  const renderDriveButton = () => (
+    <button 
+      onClick={() => openGooglePicker()}
+      className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
+    >
+      <svg className="w-4 h-4" viewBox="0 0 87.3 78">
+        <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
+        <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
+        <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
+      </svg>
+      Browse Google Drive
+    </button>
+  );
+
+  const renderToolSelect = () => !toolId && (
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Select Tool</label>
+      <div className="relative">
+        <select
+          value={selectedTool}
+          onChange={(e) => setSelectedTool(e.target.value)}
+          className="w-full h-10 bg-white border border-[#eaedf3] rounded-xl pl-3 pr-8 text-xs text-[#1f2937] focus:outline-none focus:ring-1 focus:ring-[#6366f1] cursor-pointer appearance-none"
+        >
+          <option value="" disabled>Choose a tool to perform...</option>
+          {availableTools.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <svg className="absolute right-3 top-3 w-4 h-4 text-[#9ca3af] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+    </div>
+  );
+
+  const renderFileInput = () => (
+    <input
+      type="file"
+      ref={fileInputRef}
+      className="hidden"
+      onChange={handleFileChange}
+      accept={getAcceptAttribute()}
+      multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool}
+    />
+  );
+
+  const renderActionNote = () => selectedTool && (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-[#f0f9ff]/40 border border-[#bae6fd]/40 rounded-xl p-4 space-y-2"
+    >
+      <p className="text-xs font-semibold text-[#0369a1]">Processing Action Available</p>
+      <p className="text-[11px] text-[#0c4a6e] leading-relaxed">
+        You have selected **{currentToolInfo?.name}**. This action will execute right away when tapping the Process button below.
+      </p>
+    </motion.div>
+  );
+
+  const renderFindResults = () => selectedTool === 'find-pdf' && findResults && (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="space-y-3"
+    >
+      <div className="flex justify-between items-center px-1">
+        <p className="text-[11px] font-bold text-[#4b5563] uppercase">Search Results ({findResults.matchCount})</p>
+        <button
+          onClick={() => setFindResults(null)}
+          className="text-[10px] text-[#6366f1] font-bold hover:underline"
+        >
+          Clear Results
+        </button>
+      </div>
+      <div className="space-y-2 max-h-75 overflow-y-auto pr-2 custom-scrollbar">
+        {findResults.matches.length > 0 ? (
+          findResults.matches.map((match, idx) => (
+            <div key={idx} className="bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-3 hover:border-[#6366f1]/30 transition-colors">
+              <div className="flex justify-between items-start mb-1">
+                <span className="text-[10px] font-bold text-[#6366f1] bg-[#6366f1]/5 px-2 py-0.5 rounded-full">Page {match.page}</span>
+              </div>
+              <p className="text-[11px] text-[#4b5563] italic line-clamp-2 leading-relaxed">
+                {match.snippet}
+              </p>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-8 bg-[#f8fafc] border border-dashed border-[#eaedf3] rounded-xl">
+            <p className="text-[11px] text-[#6b7280]">No text matches found in this document.</p>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+
+  const renderProcessControls = () => (
+    <>
+      <button
+        disabled={isActionDisabled() || isProcessing}
+        onClick={handleProcess}
+        className={`w-full h-10 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+          selectedTool && !isProcessing
+            ? 'bg-[#6366f1] text-white hover:bg-[#4f46e5] shadow-sm shadow-[#6366f1]/20' 
+            : 'bg-[#f3f4f6] text-[#9ca3af] cursor-not-allowed'
+        }`}
+      >
+        {isProcessing ? (
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-[#9ca3af]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+          </svg>
+        )}
+        {processLabel}
+      </button>
+      {isWaitingForSlot && (
+        <button
+          onClick={() => retryControllerRef.current?.abort()}
+          className="w-full h-9 rounded-xl text-xs font-semibold text-[#4b5563] border border-[#eaedf3] hover:bg-[#f9fafb] transition-colors"
+        >
+          Cancel
+        </button>
+      )}
+    </>
+  );
+
   return (
     <>
       <Script src="https://apis.google.com/js/api.js" strategy="lazyOnload" />
@@ -701,21 +1141,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                   currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
                 }`}>
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
-                        currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
-                      }`}>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-[#111827]">
-                          {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
-                        </h2>
-                        <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
-                      </div>
-                    </div>
+                    {renderToolTitle()}
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setMobileSheetSize(mobileSheetSize === 'half' ? 'full' : 'half')}
@@ -803,39 +1229,10 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       <p className="text-xs font-semibold text-[#111827]">Upload File</p>
                       <p className="text-[10px] text-[#6b7280]">Tap to select from your device</p>
                     </div>
-                    <button 
-                      onClick={() => openGooglePicker()}
-                      className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 87.3 78">
-                        <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
-                        <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
-                        <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
-                      </svg>
-                      Browse Google Drive
-                    </button>
+                    {renderDriveButton()}
                   </div>
                 )}
-                {!toolId && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Select Tool</label>
-                    <div className="relative">
-                      <select
-                        value={selectedTool}
-                        onChange={(e) => setSelectedTool(e.target.value)}
-                        className="w-full h-10 bg-white border border-[#eaedf3] rounded-xl pl-3 pr-8 text-xs text-[#1f2937] focus:outline-none focus:ring-1 focus:ring-[#6366f1] cursor-pointer appearance-none"
-                      >
-                        <option value="" disabled>Choose a tool to perform...</option>
-                        {availableTools.map((t) => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                      </select>
-                      <svg className="absolute right-3 top-3 w-4 h-4 text-[#9ca3af] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-                )}
+                {renderToolSelect()}
               </div>
 
               {/* Mobile footer */}
@@ -875,21 +1272,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
               }`}>
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
-                      currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
-                    }`}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-[#111827]">
-                        {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
-                      </h2>
-                      <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
-                    </div>
-                  </div>
+                  {renderToolTitle()}
                   <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -900,14 +1283,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
               {/* Shared body — scrollable content */}
               <div className="flex-1 p-5 overflow-y-auto space-y-5">
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                onChange={handleFileChange}
-                accept={getAcceptAttribute()}
-                multiple={selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress' || !selectedTool}
-              />
+              {renderFileInput()}
               {fileList.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Selected Files ({fileList.length})</p>
@@ -1023,414 +1399,21 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                       <p className="text-[10px] text-[#6b7280] mt-0.5">Select from device or drop here</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => openGooglePicker()}
-                    className="w-full h-11 border border-[#eaedf3] rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-[#4b5563] hover:bg-[#f8fafc] transition-colors"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 87.3 78">
-                      <path d="M29.1 78L0 27.5l14.6-25.3 29.1 50.5z" fill="#1fa363"/>
-                      <path d="M72.8 2.2l14.5 25.3-29.1 50.5H29.1z" fill="#357de8"/>
-                      <path d="M14.6 2.2h58.2L87.3 27.5H29.1z" fill="#ffd14c"/>
-                    </svg>
-                    Browse Google Drive
-                  </button>
+                  {renderDriveButton()}
                 </div>
               )}
 
               {renderToolInputs()}
 
-              {!toolId && (
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-[#4b5563] uppercase tracking-wide">Select Tool</label>
-                  <div className="relative">
-                    <select
-                      value={selectedTool}
-                      onChange={(e) => setSelectedTool(e.target.value)}
-                      className="w-full h-10 bg-white border border-[#eaedf3] rounded-xl pl-3 pr-8 text-xs text-[#1f2937] focus:outline-none focus:ring-1 focus:ring-[#6366f1] cursor-pointer appearance-none"
-                    >
-                      <option value="" disabled>Choose a tool to perform...</option>
-                      {availableTools.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                    <svg className="absolute right-3 top-3 w-4 h-4 text-[#9ca3af] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-              )}
+              {renderToolSelect()}
 
-              {selectedTool && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }} 
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-[#f0f9ff]/40 border border-[#bae6fd]/40 rounded-xl p-4 space-y-2"
-                >
-                  <p className="text-xs font-semibold text-[#0369a1]">Processing Action Available</p>
-                  <p className="text-[11px] text-[#0c4a6e] leading-relaxed">
-                    You have selected **{currentToolInfo?.name}**. This action will execute right away when tapping the Process button below.
-                  </p>
-                </motion.div>
-              )}
+              {renderActionNote()}
 
-              {selectedTool === 'find-pdf' && findResults && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }} 
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-3"
-                >
-                  <div className="flex justify-between items-center px-1">
-                    <p className="text-[11px] font-bold text-[#4b5563] uppercase">Search Results ({findResults.matchCount})</p>
-                    <button 
-                      onClick={() => setFindResults(null)}
-                      className="text-[10px] text-[#6366f1] font-bold hover:underline"
-                    >
-                      Clear Results
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-75 overflow-y-auto pr-2 custom-scrollbar">
-                    {findResults.matches.length > 0 ? (
-                      findResults.matches.map((match, idx) => (
-                        <div key={idx} className="bg-[#f8fafc] border border-[#eaedf3] rounded-xl p-3 hover:border-[#6366f1]/30 transition-colors">
-                          <div className="flex justify-between items-start mb-1">
-                            <span className="text-[10px] font-bold text-[#6366f1] bg-[#6366f1]/5 px-2 py-0.5 rounded-full">Page {match.page}</span>
-                          </div>
-                          <p className="text-[11px] text-[#4b5563] italic line-clamp-2 leading-relaxed">
-                            {match.snippet}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-8 bg-[#f8fafc] border border-dashed border-[#eaedf3] rounded-xl">
-                        <p className="text-[11px] text-[#6b7280]">No text matches found in this document.</p>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
+              {renderFindResults()}
             </div>
 
             <div className="p-5 pl-8 border-t border-[#eaedf3] bg-white rounded-bl-3xl space-y-3">
-              <button 
-                disabled={isActionDisabled() || isProcessing}
-                onClick={async () => {
-                  // Files added before a tool was chosen were checked only against the largest cap.
-                  const notSendable = selectionError(fileList, selectedTool, toolName, plan);
-                  if (notSendable) {
-                    showToast(notSendable, 'error');
-                    return;
-                  }
-                  if (selectedTool === 'merge-pdf' || selectedTool === 'image-to-pdf' || selectedTool === 'docx-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'find-pdf' || selectedTool === 'compress-pdf' || selectedTool === 'image-compress' || selectedTool === 'video-compress' || selectedTool === 'pdf-to-docx') {
-                    setIsProcessing(true);
-                    try {
-                      const formData = new FormData();
-                      let fileKey = 'file';
-                      if (selectedTool === 'merge-pdf') fileKey = 'pdfs';
-                      else if (selectedTool === 'image-to-pdf' || selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') fileKey = 'images';
-                      else if (selectedTool === 'video-compress') fileKey = 'video';
-                      else if (selectedTool === 'compress-pdf' || selectedTool === 'find-pdf' || selectedTool === 'pdf-to-docx') fileKey = 'pdf';
-                      else if (selectedTool === 'docx-to-pdf') fileKey = 'docx';
-
-                      fileList.forEach(file => {
-                        if ('isDriveFile' in file) {
-                          formData.append('googleDriveFiles', JSON.stringify({
-                            id: file.id,
-                            accessToken: file.accessToken,
-                            name: file.name
-                          }));
-                        } else {
-                          formData.append(fileKey, file);
-                        }
-                      });
-                      
-                      if (selectedTool === 'find-pdf') {
-                        formData.append('searchTerm', findOptions.searchTerm);
-                      }
-                      if (selectedTool === 'compress-pdf') {
-                        formData.append('level', compressLevel);
-                      }
-                      if (selectedTool === 'image-compress') {
-                        formData.append('level', imageCompressLevel);
-                      }
-                      if (selectedTool === 'video-compress') {
-                        formData.append('quality', videoCompressOptions.quality);
-                        formData.append('resolution', videoCompressOptions.resolution);
-                      }
-                      
-                      const apiUrl = `/api/convert/${selectedTool}`;
-                      const response = await sendWithBusyRetry(() => fetch(apiUrl, {
-                        method: 'POST',
-                        body: formData,
-                      }));
-
-                      if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.error || `Failed to process: ${selectedTool}`);
-                      }
-
-                      if (selectedTool === 'find-pdf') {
-                        // find-pdf returns JSON (with base64 PDF inside)
-                        const data = await response.json();
-                        setFindResults(data);
-                        showToast(`Found ${data.matchCount} matches!`, 'success');
-                        
-                        const blob = await (await fetch(`data:application/pdf;base64,${data.pdfBase64}`)).blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `highlighted_${fileList[0].name}`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                      } else {
-                        // All other tools return a raw binary stream (PDF, ZIP, PNG, etc.)
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        const baseName = fileList[0].name.replace(/\.[^/.]+$/, "");
-                        const downloadName = selectedTool === 'compress-pdf' || selectedTool === 'video-compress' || (selectedTool === 'image-compress' && fileList.length === 1) ? `compressed_${fileList[0].name}` : 
-                                           selectedTool === 'docx-to-pdf' || selectedTool === 'image-to-pdf' ? `${baseName}.pdf` :
-                                           selectedTool === 'pdf-to-docx' ? `${baseName}.docx` :
-                                           (selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') && fileList.length > 1 ? 'images.zip' :
-                                           `processed_${fileList[0].name}`;
-                        a.download = downloadName;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-
-                        if (selectedTool === 'compress-pdf') {
-                          const savedPct = response.headers.get('X-Saved-Percent');
-                          const origSize = response.headers.get('X-Original-Size');
-                          const compSize = response.headers.get('X-Compressed-Size');
-                          const savedKb = origSize && compSize
-                            ? (((parseInt(origSize) - parseInt(compSize)) / 1024)).toFixed(0)
-                            : null;
-                          const pct = savedPct ? parseInt(savedPct) : 0;
-                          if (pct > 0 && savedKb) {
-                            showToast(`Reduced by ${pct}% — ${savedKb} KB saved!`, 'success');
-                          } else {
-                            showToast('PDF optimised! File was already well-compressed.', 'success');
-                          }
-                        } else {
-                          showToast(`${currentToolInfo?.name || 'File'} processed successfully!`, 'success');
-                        }
-                      }
-                      
-                      addNotification({
-                        type: 'success',
-                        title: 'Conversion Complete',
-                        message: `Your file is ready.`,
-                        link: '/dashboard/recent'
-                      });
-                      window.dispatchEvent(new Event('activityUpdated'));
-                      if (selectedTool !== 'find-pdf') {
-                        onClose();
-                        setFileList([]);
-                      }
-                    } catch (error) {
-                      if (error instanceof RetryCancelledError) return;
-                      console.error('Process error:', error);
-                      const msg = error instanceof Error ? error.message : 'Error processing files. Please try again.';
-                      showToast(msg, 'error');
-                    } finally {
-                      setIsProcessing(false);
-                    }
-                  } else if (selectedTool === 'lock-pdf') {
-                    setIsProcessing(true);
-                    try {
-                      const formData = new FormData();
-                      if ('isDriveFile' in fileList[0]) {
-                        formData.append('googleDriveFiles', JSON.stringify({
-                          id: fileList[0].id,
-                          accessToken: fileList[0].accessToken,
-                          name: fileList[0].name
-                        }));
-                      } else {
-                        formData.append('pdf', fileList[0]);
-                      }
-                      formData.append('password', lockOptions.password);
-                      
-                      const response = await sendWithBusyRetry(() => fetch('/api/convert/lock-pdf', {
-                        method: 'POST',
-                        body: formData,
-                      }));
-
-                      if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.error || 'Error locking PDF. Please try again.');
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'locked.pdf';
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-                      
-                      showToast('PDF locked successfully!', 'success');
-                      addNotification({
-                        type: 'success',
-                        title: 'Lock Complete',
-                        message: 'Your PDF has been successfully password protected.',
-                        link: '/dashboard/recent'
-                      });
-                      window.dispatchEvent(new Event('activityUpdated'));
-                      onClose();
-                      setFileList([]);
-                      setLockOptions({ password: '', confirmPassword: '' });
-                    } catch (error) {
-                      if (error instanceof RetryCancelledError) return;
-                      console.error('Process error:', error);
-                      showToast(error instanceof Error ? error.message : 'Error locking PDF. Please try again.', 'error');
-                    } finally {
-                      setIsProcessing(false);
-                    }
-                  } else if (selectedTool === 'split-pdf') {
-                    setIsProcessing(true);
-                    try {
-                      const formData = new FormData();
-                      if ('isDriveFile' in fileList[0]) {
-                        formData.append('googleDriveFiles', JSON.stringify({
-                          id: fileList[0].id,
-                          accessToken: fileList[0].accessToken,
-                          name: fileList[0].name
-                        }));
-                      } else {
-                        formData.append('pdf', fileList[0]);
-                      }
-                      formData.append('startPage', splitOptions.startPage.toString());
-                      formData.append('endPage', splitOptions.endPage.toString());
-                      formData.append('splitEvery', splitOptions.splitEvery.toString());
-                      
-                      const response = await sendWithBusyRetry(() => fetch('/api/convert/split-pdf', {
-                        method: 'POST',
-                        body: formData,
-                      }));
-
-                      if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.error || 'Error splitting PDF. Please try again.');
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      const isZip = response.headers.get('Content-Type') === 'application/zip';
-                      a.download = isZip ? 'split_documents.zip' : `split_document_pages_${splitOptions.startPage}_to_${splitOptions.endPage}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-                      
-                      showToast('PDF split successfully!', 'success');
-                      window.dispatchEvent(new Event('activityUpdated'));
-                      onClose();
-                      setFileList([]);
-                      setSplitOptions({ startPage: 1, endPage: 1, splitEvery: false });
-                    } catch (error) {
-                      if (error instanceof RetryCancelledError) return;
-                      console.error('Process error:', error);
-                      showToast(error instanceof Error ? error.message : 'Error splitting PDF. Please try again.', 'error');
-                    } finally {
-                      setIsProcessing(false);
-                    }
-                  } else if (selectedTool === 'html-to-pdf') {
-                    setIsProcessing(true);
-                    try {
-                      let response: Response;
-
-                      if (htmlOptions.mode === 'url') {
-                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ url: htmlOptions.url }),
-                        }));
-                      } else {
-                        const formData = new FormData();
-                        if ('isDriveFile' in fileList[0]) {
-                          formData.append('googleDriveFiles', JSON.stringify({
-                            id: fileList[0].id,
-                            accessToken: fileList[0].accessToken,
-                            name: fileList[0].name
-                          }));
-                        } else {
-                          formData.append('html', fileList[0]);
-                        }
-                        response = await sendWithBusyRetry(() => fetch('/api/convert/html-to-pdf', {
-                          method: 'POST',
-                          body: formData,
-                        }));
-                      }
-
-                      if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.error || 'Failed to convert HTML to PDF');
-                      }
-
-                      const disposition = response.headers.get('Content-Disposition') || '';
-                      const nameMatch = disposition.match(/filename="(.+?)"/);
-                      const downloadName = nameMatch ? nameMatch[1] : 'converted.pdf';
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = downloadName;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      showToast('HTML converted to PDF successfully!', 'success');
-                      window.dispatchEvent(new Event('activityUpdated'));
-                      onClose();
-                      setFileList([]);
-                      setHtmlOptions({ url: '', mode: 'file' });
-                    } catch (error) {
-                      if (error instanceof RetryCancelledError) return;
-                      console.error('HTML to PDF error:', error);
-                      const msg = error instanceof Error ? error.message : 'Error converting HTML to PDF.';
-                      showToast(msg, 'error');
-                    } finally {
-                      setIsProcessing(false);
-                    }
-                  } else {
-                    showToast('Processing started.', 'success');
-                  }
-                }}
-                className={`w-full h-10 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                  selectedTool && !isProcessing
-                    ? 'bg-[#6366f1] text-white hover:bg-[#4f46e5] shadow-sm shadow-[#6366f1]/20' 
-                    : 'bg-[#f3f4f6] text-[#9ca3af] cursor-not-allowed'
-                }`}
-              >
-                {isProcessing ? (
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-[#9ca3af]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                  </svg>
-                )}
-                {processLabel}
-              </button>
-              {isWaitingForSlot && (
-                <button
-                  onClick={() => retryControllerRef.current?.abort()}
-                  className="w-full h-9 rounded-xl text-xs font-semibold text-[#4b5563] border border-[#eaedf3] hover:bg-[#f9fafb] transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
+              {renderProcessControls()}
             </div>
           </motion.div>
           )}
