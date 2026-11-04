@@ -121,4 +121,36 @@ describe('lock-pdf route history', () => {
     expect(lockPdf).not.toHaveBeenCalled();
     expect(saveConversionRecord).not.toHaveBeenCalled();
   });
+
+  it('refuses a 7-character password, telling the user the minimum', async () => {
+    const res = await handleLockPdf(lockRequest('abcdefg'));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Password must be at least 8 characters.' });
+    expect(lockPdf).not.toHaveBeenCalled();
+  });
+
+  it('refuses a password readers would not agree on with a 400 that says what to use', async () => {
+    const res = await handleLockPdf(lockRequest('conﬁdential-pw'));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error:
+        'Password has characters some PDF readers won’t accept, such as ligatures or full-width letters. Use letters, numbers and symbols from a standard keyboard.',
+    });
+    expect(lockPdf).not.toHaveBeenCalled();
+  });
+
+  it('accepts a CJK or emoji password', async () => {
+    const res = await handleLockPdf(lockRequest('密码保护文件安全-\u{1F512}'));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts an 8-character password', async () => {
+    const res = await handleLockPdf(lockRequest('abcdefgh'));
+
+    expect(res.status).toBe(200);
+    expect(lockPdf).toHaveBeenCalledWith(expect.objectContaining({ password: 'abcdefgh' }));
+  });
 });

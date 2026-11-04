@@ -160,7 +160,7 @@ describe('compressPdf (lib/pdf/compress.ts)', () => {
 
   it('throws the same clear error for a PDF locked via lockPdf', async () => {
     const pdfBuffer = await createPdf(2);
-    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'secret' });
+    const lockedBuffer = await lockPdf({ pdfBuffer, password: 'secret-1' });
 
     await expect(compressPdf({ pdfBuffer: lockedBuffer, level: 'low' })).rejects.toThrow(
       /password-protected/i
