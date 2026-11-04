@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import {
   CANCELLED_MESSAGE,
@@ -65,23 +66,34 @@ jest.mock('@/lib/video/compress', () => ({
     ),
 }));
 
+jest.mock('@/lib/html/to-pdf', () => ({
+  convertHtmlToPdf: () => require('./helpers/heldJobs').holdInProcess('html-to-pdf', Buffer.from('%PDF-held')),
+}));
+
+jest.mock('@/lib/doc/to-pdf', () => ({
+  convertDocxToPdf: () => require('./helpers/heldJobs').holdInProcess('docx-to-pdf', Buffer.from('%PDF-held')),
+}));
+
 import { POST as pdfToDocx } from '../app/api/convert/pdf-to-docx/route';
 import { POST as findPdf } from '../app/api/convert/find-pdf/route';
 import { POST as imageToPdf } from '../app/api/convert/image-to-pdf/route';
 import { POST as imageCompress } from '../app/api/convert/image-compress/route';
 import { POST as jpgToPng } from '../app/api/convert/jpg-to-png/route';
 import { POST as videoCompress } from '../app/api/convert/video-compress/route';
+import { POST as htmlToPdf } from '../app/api/convert/html-to-pdf/route';
+import { POST as docxToPdf } from '../app/api/convert/docx-to-pdf/route';
 import { CONVERTER_BUSY_MESSAGE, PDF_TOO_COMPLEX_MESSAGE } from '@/lib/convert/pdf-to-docx-limits';
 import { FIND_PDF_BUSY_MESSAGE, PDF_TOO_COMPLEX_MESSAGE as FIND_PDF_TOO_COMPLEX_MESSAGE } from '@/lib/convert/find-pdf-limits';
 import { IMAGE_TO_PDF_BUSY_MESSAGE, IMAGES_TOO_COMPLEX_MESSAGE } from '@/lib/convert/image-to-pdf-limits';
 import { COMPRESS_IMAGE_BUSY_MESSAGE } from '@/lib/convert/image-compress-limits';
 import { JPEG_TO_PNG_BUSY_MESSAGE } from '@/lib/convert/jpg-to-png-limits';
 import { COMPRESS_VIDEO_BUSY_MESSAGE } from '@/lib/convert/video-compress-limits';
+import { DOCX_TO_PDF_BUSY_MESSAGE, HTML_TO_PDF_BUSY_MESSAGE } from '@/lib/puppeteer/render-jobs';
 
 const JOB_IN_PROGRESS = 'You already have a conversion in progress. Please wait for it to finish.';
 
 type Handler = (req: NextRequest) => Promise<Response>;
-type Pool = 'pdf-worker' | 'image' | 'video';
+type Pool = 'pdf-worker' | 'image' | 'video' | 'browser';
 
 interface Route {
   name: string;
@@ -93,6 +105,8 @@ interface Route {
   heldTool: string;
   busyMessage: string;
   extraFields?: [string, string][];
+  /** The upload's bytes, when the route checks more than its size before the held job. */
+  fileBytes?: () => Uint8Array;
 }
 
 const ROUTES: Route[] = [
@@ -102,6 +116,8 @@ const ROUTES: Route[] = [
   { name: 'image-compress', handler: imageCompress, field: 'images', fileName: 'a.jpg', pool: 'image', heldTool: 'image-compress', busyMessage: COMPRESS_IMAGE_BUSY_MESSAGE },
   { name: 'jpg-to-png', handler: jpgToPng, field: 'images', fileName: 'a.jpg', pool: 'image', heldTool: 'jpg-to-png', busyMessage: JPEG_TO_PNG_BUSY_MESSAGE },
   { name: 'video-compress', handler: videoCompress, field: 'video', fileName: 'a.mp4', pool: 'video', heldTool: 'video-compress', busyMessage: COMPRESS_VIDEO_BUSY_MESSAGE },
+  { name: 'html-to-pdf', handler: htmlToPdf, field: 'html', fileName: 'a.html', pool: 'browser', heldTool: 'html-to-pdf', busyMessage: HTML_TO_PDF_BUSY_MESSAGE },
+  { name: 'docx-to-pdf', handler: docxToPdf, field: 'docx', fileName: 'a.docx', pool: 'browser', heldTool: 'docx-to-pdf', busyMessage: DOCX_TO_PDF_BUSY_MESSAGE, fileBytes: () => zipFile },
 ];
 
 const route = (name: string) => ROUTES.find((candidate) => candidate.name === name)!;
@@ -117,11 +133,13 @@ const guest = (ip: string): Caller => ({ ip });
 const ANONYMOUS_GUEST: Caller = {};
 
 let onePagePdf: Uint8Array;
+let zipFile: Uint8Array;
 
 beforeAll(async () => {
   const pdf = await PDFDocument.create();
   pdf.addPage();
   onePagePdf = await pdf.save();
+  zipFile = await new JSZip().file('word/document.xml', '<w:document/>').generateAsync({ type: 'uint8array' });
 });
 
 beforeEach(() => {
@@ -139,9 +157,9 @@ function withCaller(req: NextRequest, { user: userId, ip }: Caller): NextRequest
   return req;
 }
 
-function formFor({ field, fileName, extraFields = [] }: Route): FormData {
+function formFor({ field, fileName, extraFields = [], fileBytes = () => onePagePdf }: Route): FormData {
   const form = new FormData();
-  form.append(field, new File([onePagePdf as BlobPart], fileName));
+  form.append(field, new File([fileBytes() as BlobPart], fileName));
   for (const [key, value] of extraFields) form.append(key, value);
   return form;
 }
@@ -332,7 +350,7 @@ describe('the guests share of a pool', () => {
     },
   );
 
-  it.each(['pdf-worker', 'image'] as const)('is shared by every tool of the %s pool', async (pool) => {
+  it.each(['pdf-worker', 'image', 'browser'] as const)('is shared by every tool of the %s pool', async (pool) => {
     const [held, ...others] = routesIn(pool);
     const guestJob = await start(held, guest('203.0.113.1'));
 

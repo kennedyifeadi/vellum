@@ -2,9 +2,11 @@
 // output's format. With --heavy it then sends an Image to PDF and a Compress Image job at
 // the pixel cap, one after the other, to measure the server's memory under its heaviest
 // in-memory work. They cannot run at once: every request here is a guest, and guests may
-// run one job at a time between them and hold one slot of each pool (#106). Run from the
-// repository root (it uses the app's own dependencies to generate inputs):
-//   node scripts/container-smoke.mjs http://localhost:3000 [--heavy]
+// run one job at a time between them and hold one slot of each pool (#106). With
+// --heavy-render html or --heavy-render docx it sends only that one render, of an input
+// near the guest size cap, so the workflow can measure the memory one render takes. Run
+// from the repository root (it uses the app's own dependencies to generate inputs):
+//   node scripts/container-smoke.mjs http://localhost:3000 [--heavy | --heavy-render html|docx]
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -12,10 +14,11 @@ import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { Document, Packer, Paragraph } from 'docx';
+import { Document, ImageRun, Packer, Paragraph } from 'docx';
 
 const baseUrl = process.argv[2] ?? 'http://localhost:3000';
 const heavy = process.argv.includes('--heavy');
+const heavyRender = process.argv.includes('--heavy-render') ? process.argv[process.argv.indexOf('--heavy-render') + 1] : null;
 
 const SIGNATURES = {
   pdf: Buffer.from('%PDF-'),
@@ -30,6 +33,39 @@ async function jpeg() {
 // 7000 x 7000 is 49 MP, just under MAX_IMAGE_PIXELS; one flat colour keeps the file small.
 async function pngAtPixelCap() {
   return sharp({ create: { width: 7000, height: 7000, channels: 3, background: '#88aa44' } }).png().toBuffer();
+}
+
+// Random noise, so neither PNG compression nor a shared image cache makes it cheap.
+async function noisePng(size) {
+  return sharp({ create: { width: size, height: size, channels: 3, noise: { type: 'gaussian', mean: 128, sigma: 60 } } })
+    .png()
+    .toBuffer();
+}
+
+// About 23 MB, under the guest cap of 25 MB: a 5000-row table and three full-width images.
+async function heavyHtml() {
+  let rows = '';
+  for (let i = 0; i < 5000; i++) {
+    rows += `<tr><td>${i}</td><td>Row ${i} of the heavy smoke page</td><td style="background:#${(i * 40503).toString(16).slice(-6).padStart(6, '0')}">${(i * 7919) % 10007}</td></tr>`;
+  }
+  let html = `<!doctype html><html><body><h1>Heavy smoke page</h1><table border="1">${rows}</table>`;
+  for (let i = 0; i < 3; i++) {
+    html += `<img style="width:100%" src="data:image/png;base64,${(await noisePng(1400)).toString('base64')}">`;
+  }
+  return Buffer.from(`${html}</body></html>`);
+}
+
+// About 22 MB, under the guest cap: 3000 paragraphs and seven distinct images, which
+// mammoth inlines into the HTML it hands Chromium.
+async function largeDocx() {
+  const children = [];
+  for (let i = 0; i < 3000; i++) {
+    children.push(new Paragraph(`Paragraph ${i} of the large smoke document, lorem ipsum dolor sit amet.`));
+  }
+  for (let i = 0; i < 7; i++) {
+    children.push(new Paragraph({ children: [new ImageRun({ type: 'png', data: await noisePng(1000), transformation: { width: 600, height: 600 } })] }));
+  }
+  return Packer.toBuffer(new Document({ sections: [{ children }] }));
 }
 
 async function textPdf() {
@@ -137,16 +173,30 @@ async function heavyChecks() {
   ];
 }
 
-let failed = 0;
-for (const check of checks) {
-  if (!(await runCheck(check))) failed++;
+async function heavyRenderChecks(tool) {
+  if (tool === 'html') {
+    const html = await heavyHtml();
+    return [[`html-to-pdf of a ${(html.length / 1024 / 1024).toFixed(1)} MB page`, async () => fetch(`${baseUrl}/api/convert/html-to-pdf`, {
+      method: 'POST', body: form('html', [['heavy.html', html, 'text/html']]),
+    }), 'pdf']];
+  }
+  if (tool === 'docx') {
+    const docx = await largeDocx();
+    return [[`docx-to-pdf of a ${(docx.length / 1024 / 1024).toFixed(1)} MB document`, async () => fetch(`${baseUrl}/api/convert/docx-to-pdf`, {
+      method: 'POST',
+      body: form('docx', [['large.docx', docx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']]),
+    }), 'pdf']];
+  }
+  throw new Error(`--heavy-render takes html or docx, not ${tool}`);
 }
-const heavyJobs = heavy ? await heavyChecks() : [];
-for (const check of heavyJobs) {
+
+const selected = heavyRender ? await heavyRenderChecks(heavyRender) : [...checks, ...(heavy ? await heavyChecks() : [])];
+let failed = 0;
+for (const check of selected) {
   if (!(await runCheck(check))) failed++;
 }
 
-const total = checks.length + heavyJobs.length;
+const total = selected.length;
 if (failed) {
   console.log(`${failed} of ${total} smoke checks failed`);
   process.exit(1);

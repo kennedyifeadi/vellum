@@ -26,9 +26,11 @@ jobs:
           docker image ls vellum
           docker image inspect vellum --format 'Runtime image: {{.Size}} bytes'
 
-      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need.
+      # jest.setup.ts supplies the placeholder MONGODB_URI the tests need. The build stage
+      # runs as root, where Chromium refuses to start sandboxed, and
+      # tests/browser-render-limits.test.ts launches real browsers.
       - name: Run the test suite in the build stage
-        run: docker run --rm vellum-build npm test
+        run: docker run --rm --env CHROMIUM_DISABLE_SANDBOX=true vellum-build npm test
 
       # Reports whether Chromium starts with its sandbox in a container on this runner. It
       # does not here (the runner refuses the user namespaces it needs), which says nothing
@@ -83,6 +85,22 @@ jobs:
           peak=$(docker exec app cat /sys/fs/cgroup/memory.peak)
           echo "memory.peak after the heavy jobs: $peak bytes"
           docker stats --no-stream app
+
+      # One heavy HTML to PDF render, then one large DOCX to PDF render, each of an input
+      # near the guest size cap, with the container's memory sampled while it runs. The
+      # highest sample above the level before the render is what one render costs, which is
+      # what sizes MAX_CONCURRENT_RENDERS (#116).
+      - name: Memory of one heavy render of each PDF tool
+        run: |
+          for tool in html docx; do
+            before=$(docker exec app cat /sys/fs/cgroup/memory.current)
+            ( while true; do docker exec app cat /sys/fs/cgroup/memory.current; sleep 0.2; done ) > memory-$tool.txt &
+            sampler=$!
+            docker run --rm --network host vellum-build node scripts/container-smoke.mjs http://localhost:3000 --heavy-render $tool
+            kill $sampler
+            highest=$(sort -n memory-$tool.txt | tail -1)
+            echo "$tool: memory.current $before bytes before, $highest bytes at most during the render: $(( (highest - before) / 1048576 )) MiB more"
+          done
 
       # SIGTERM arrives while an HTML to PDF render that takes about 3 seconds is running;
       # that request must still complete before the server exits.

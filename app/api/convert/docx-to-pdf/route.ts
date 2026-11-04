@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { convertDocxToPdf } from '@/lib/doc/to-pdf';
-import { resolveCaller } from '@/lib/auth/caller';
+import { resolveCaller, type Caller } from '@/lib/auth/caller';
+import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob, type CallerJob } from '@/lib/convert/caller-jobs';
 import { saveConversionRecord } from '@/lib/conversions';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { resolvePlanLimit } from '@/lib/plan-limits';
 import { TOOL_LIMITS } from '@/lib/tool-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
+import { busyResponse } from '@/lib/convert/pdf-worker-limits';
+import { BrowserToolBusyError, DOCX_TO_PDF_BUSY_MESSAGE, runRenderJob } from '@/lib/puppeteer/render-jobs';
 import { readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { assertWithinRateLimit } from '@/lib/http/rate-limit';
@@ -32,67 +35,76 @@ function declaredUncompressedSize(zip: JSZip): number {
   return total;
 }
 
+async function convertUpload(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
+  const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['docx-to-pdf'].maxBytes);
+
+  const budget = uploadBudget(maxSize, `Your current plan allows DOCX files up to ${maxSize / (1024 * 1024)}MB.`);
+
+  const formData = await readMultipartForm(req, budget);
+  const file = (await resolveFiles(formData, 'docx', budget))[0] as File;
+
+  if (!file) {
+    return NextResponse.json({ error: 'No DOCX file provided.' }, { status: 400 });
+  }
+
+  if (file.size > maxSize) {
+    throw budget.tooLarge(file.size);
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const docxBuffer = Buffer.from(arrayBuffer);
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(docxBuffer);
+  } catch (error) {
+    throw new ClientError('The file is not a valid DOCX document.', 400, { cause: error });
+  }
+
+  const uncompressed = declaredUncompressedSize(zip);
+  if (
+    uncompressed > maxSize * 3 ||
+    uncompressed > docxBuffer.length * MAX_DECOMPRESSION_RATIO
+  ) {
+    throw new ClientError('This DOCX expands to too much content to process.');
+  }
+
+  const pdfBuffer = await job.inPools(['browser'], () => runRenderJob(() => convertDocxToPdf({ docxBuffer })));
+
+  // Built before anything is recorded, so a response that cannot be built leaves no
+  // history row behind.
+  const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
+    },
+  });
+
+  if (userId) {
+    try {
+      const originalFileName = file.name.replace(/\.[^/.]+$/, '') + '.pdf';
+      await saveConversionRecord(userId, 'DOCX to PDF', originalFileName, Buffer.from(pdfBuffer));
+    } catch (recordError) {
+      console.error('Failed to record DOCX to PDF conversion:', recordError);
+    }
+  }
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertWithinRateLimit(req);
 
-    const { userId, plan } = await resolveCaller(req);
-
-    const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['docx-to-pdf'].maxBytes);
-
-    const budget = uploadBudget(maxSize, `Your current plan allows DOCX files up to ${maxSize / (1024 * 1024)}MB.`);
-
-    const formData = await readMultipartForm(req, budget);
-    const file = (await resolveFiles(formData, 'docx', budget))[0] as File;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No DOCX file provided.' }, { status: 400 });
-    }
-
-    if (file.size > maxSize) {
-      throw budget.tooLarge(file.size);
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const docxBuffer = Buffer.from(arrayBuffer);
-
-    let zip: JSZip;
-    try {
-      zip = await JSZip.loadAsync(docxBuffer);
-    } catch (error) {
-      throw new ClientError('The file is not a valid DOCX document.', 400, { cause: error });
-    }
-
-    const uncompressed = declaredUncompressedSize(zip);
-    if (
-      uncompressed > maxSize * 3 ||
-      uncompressed > docxBuffer.length * MAX_DECOMPRESSION_RATIO
-    ) {
-      throw new ClientError('This DOCX expands to too much content to process.');
-    }
-
-    const pdfBuffer = await convertDocxToPdf({ docxBuffer });
-
-    // Built before anything is recorded, so a response that cannot be built leaves no
-    // history row behind.
-    const response = new NextResponse(pdfBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': attachmentDisposition(`${file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'converted.pdf'),
-      },
-    });
-
-    if (userId) {
-      try {
-        const originalFileName = file.name.replace(/\.[^/.]+$/, '') + '.pdf';
-        await saveConversionRecord(userId, 'DOCX to PDF', originalFileName, Buffer.from(pdfBuffer));
-      } catch (recordError) {
-        console.error('Failed to record DOCX to PDF conversion:', recordError);
-      }
-    }
-
-    return response;
+    const caller = await resolveCaller(req);
+    return await runCallerJob(req, caller, (job) => convertUpload(req, caller, job));
   } catch (error) {
+    if (error instanceof CallerJobRefusedError) {
+      return callerJobRefusedResponse(error, DOCX_TO_PDF_BUSY_MESSAGE);
+    }
+    if (error instanceof BrowserToolBusyError) {
+      return busyResponse(DOCX_TO_PDF_BUSY_MESSAGE);
+    }
     return handleConvertError(error, 'Failed to convert DOCX to PDF.');
   }
 }
