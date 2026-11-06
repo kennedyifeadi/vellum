@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import Conversion from '@/models/conversion';
 import User from '@/models/user';
+import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage, LocalDiskStorage } from '@/lib/storage';
 import { retentionExpiry } from '@/lib/storage-limits';
@@ -112,9 +113,21 @@ export async function recordConversionHistory(
   });
 }
 
+// The storage folders the sweep owns ('' is the root), each with the model whose
+// diskFileName keeps a file alive. Any other folder is left alone.
+const SWEPT_FOLDERS = [
+  { folder: '', model: Conversion },
+  { folder: 'docs', model: UserDocumentModel },
+];
+
+async function storedFileNames(model: typeof Conversion): Promise<Set<string>> {
+  const rows: { diskFileName?: string }[] = await model.find({ diskFileName: { $exists: true } }, 'diskFileName');
+  return new Set(rows.map(row => row.diskFileName).filter((name): name is string => Boolean(name)));
+}
+
 /**
- * Sweeps the local storage directory and deletes any physical files that no longer
- * exist in the MongoDB Conversion collection (due to TTL deletion or manual deletion).
+ * Deletes local files whose database rows are gone (expired by TTL or deleted), in the
+ * folders listed in SWEPT_FOLDERS.
  * Local-disk only: an S3-backed deployment relies on bucket lifecycle rules instead.
  */
 export async function cleanupStorage() {
@@ -123,8 +136,10 @@ export async function cleanupStorage() {
 
   await dbConnect();
 
-  const validConversions = await Conversion.find({ diskFileName: { $exists: true } }, 'diskFileName');
-  const validFileNames = new Set(validConversions.map(c => c.diskFileName).filter(Boolean));
+  const validNamesByFolder = new Map<string, Set<string>>();
+  for (const { folder, model } of SWEPT_FOLDERS) {
+    validNamesByFolder.set(folder, await storedFileNames(model));
+  }
 
-  await storage.sweepOrphaned(validFileNames);
+  await storage.sweepOrphaned(validNamesByFolder);
 }

@@ -179,6 +179,18 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    client, and `<NEXTAUTH_URL>` as an authorised JavaScript origin if the Drive picker is
    used.
 5. **Region.** Choose the region closest to the expected users.
+6. **R2 lifecycle rule (owner step).** The app never deletes expired files from R2: MongoDB
+   removes an expired conversion's or document's row, and the local-disk sweep
+   (`cleanupStorage` in `lib/conversions.ts`) does not run with `STORAGE_DRIVER=s3`.
+   **Without a lifecycle rule, expired files stay in the bucket forever and use up its
+   storage.** In the Cloudflare dashboard, open the bucket's Settings, Object lifecycle
+   rules, and add a rule that deletes objects 8 days after upload: the longest retention
+   (7 days on Enterprise, `lib/storage-limits.ts`) plus a day of margin. It must cover the
+   conversion outputs at the bucket root (`<uuid>.<ext>`) and the documents under `docs/`.
+   Root keys share no prefix, so the rule applies to the whole bucket (no prefix). Raise it
+   if the longest retention grows. Background video jobs (#115) add their own, shorter rule
+   for `video-jobs/`. On R2 this rule is also the only thing that removes the file of a
+   conversion saved with the `autoDelete` preference, or of a delete that failed part-way.
 
 ### Instance size
 
@@ -282,3 +294,4 @@ Watch the memory graph during the first weeks and adjust.
 8. Redeploy while a conversion is running and check that it completes (draining time).
 9. Check memory and CPU under real use against the sizing above.
 10. Confirm files land in, and are served from, the R2 bucket.
+11. Confirm the bucket's 8-day lifecycle rule exists (step 6 above).

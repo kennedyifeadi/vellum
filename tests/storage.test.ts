@@ -12,7 +12,7 @@ jest.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand: jest.fn().mockImplementation((input) => ({ input })),
 }));
 
-import { LocalDiskStorage } from '@/lib/storage/local';
+import { LocalDiskStorage, SWEEP_GRACE_MS } from '@/lib/storage/local';
 import { S3Storage } from '@/lib/storage/s3';
 
 describe('LocalDiskStorage', () => {
@@ -88,22 +88,37 @@ describe('LocalDiskStorage', () => {
   });
 
   describe('sweepOrphaned', () => {
-    it('removes files and subdirectories not present in the valid key set', async () => {
+    const pastGracePeriod = () => Date.now() + SWEEP_GRACE_MS + 60_000;
+
+    it('removes stale files not in the valid set, only in the folders it is given', async () => {
       await storage.put('active.pdf', Buffer.from('keep'));
       await storage.put('orphaned.pdf', Buffer.from('stale'));
       await storage.put('docs/nested.pdf', Buffer.from('nested'));
 
-      await storage.sweepOrphaned(new Set(['active.pdf']));
+      await storage.sweepOrphaned(new Map([['', new Set(['active.pdf'])]]), pastGracePeriod());
 
       expect(fs.existsSync(path.join(root, 'active.pdf'))).toBe(true);
       expect(fs.existsSync(path.join(root, 'orphaned.pdf'))).toBe(false);
-      expect(fs.existsSync(path.join(root, 'docs'))).toBe(false);
+      expect(fs.existsSync(path.join(root, 'docs', 'nested.pdf'))).toBe(true);
+    });
+
+    it('sweeps a subfolder against its own valid set', async () => {
+      await storage.put('docs/live.pdf', Buffer.from('keep'));
+      await storage.put('docs/expired.pdf', Buffer.from('stale'));
+
+      await storage.sweepOrphaned(new Map([['docs', new Set(['live.pdf'])]]), pastGracePeriod());
+
+      expect(fs.existsSync(path.join(root, 'docs', 'live.pdf'))).toBe(true);
+      expect(fs.existsSync(path.join(root, 'docs', 'expired.pdf'))).toBe(false);
     });
 
     it('does nothing if the storage root does not exist yet', async () => {
       const missingRoot = path.join(root, 'does-not-exist');
       const emptyStorage = new LocalDiskStorage(missingRoot);
-      await expect(emptyStorage.sweepOrphaned(new Set())).resolves.not.toThrow();
+      await expect(
+        emptyStorage.sweepOrphaned(new Map([['', new Set()], ['docs', new Set()]]), pastGracePeriod())
+      ).resolves.not.toThrow();
+      expect(fs.existsSync(missingRoot)).toBe(false);
     });
   });
 });
