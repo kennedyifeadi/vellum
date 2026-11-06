@@ -48,7 +48,7 @@ export async function DELETE(req: NextRequest) {
     const cookieStore = await cookies();
     cookieStore.delete('auth-token');
 
-    return NextResponse.json({ message: 'Account and all data successfully deleted' }, { status: 200 });
+    return NextResponse.json({ message: 'Account deleted, with its conversion history and stored documents' }, { status: 200 });
   } catch (error) {
     console.error('Error deleting account:', error);
     return NextResponse.json({ error: 'Failed to delete account' }, { status: 500 });

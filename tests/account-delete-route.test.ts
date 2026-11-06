@@ -92,6 +92,7 @@ describe('DELETE /api/user/delete', () => {
     const res = await deleteAccount(request());
 
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ message: 'Account deleted, with its conversion history and stored documents' });
     expect(stored('docs/my-doc.pdf')).toBe(false);
     expect(stored('mine.pdf')).toBe(false);
     expect(mockDocuments).toEqual([{ userId: OTHER_USER, diskFileName: 'their-doc.pdf' }]);
