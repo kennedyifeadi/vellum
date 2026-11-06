@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { LocalDiskStorage } from '@/lib/storage/local';
+import { LocalDiskStorage, SWEEP_GRACE_MS } from '@/lib/storage/local';
 
 let mockStorage: LocalDiskStorage;
 let mockConversionRows: { diskFileName?: string }[] = [];
@@ -103,6 +103,30 @@ describe('local storage sweep', () => {
 
     expect(stored('docs/uploading.pdf')).toBe(true);
     expect(stored('saving.pdf')).toBe(true);
+  });
+
+  it('keeps an orphaned file inside the grace period and deletes one just past it', async () => {
+    await putAged('docs/young.pdf', SWEEP_GRACE_MS - 60_000);
+    await putAged('docs/old.pdf', SWEEP_GRACE_MS + 60_000);
+    await putAged('young.pdf', SWEEP_GRACE_MS - 60_000);
+    await putAged('old.pdf', SWEEP_GRACE_MS + 60_000);
+
+    await cleanupStorage();
+
+    expect(stored('docs/young.pdf')).toBe(true);
+    expect(stored('docs/old.pdf')).toBe(false);
+    expect(stored('young.pdf')).toBe(true);
+    expect(stored('old.pdf')).toBe(false);
+  });
+
+  it('leaves a top-level folder it does not own alone', async () => {
+    await putAged('video-jobs/job-1/output.mp4', 2 * HOUR_MS);
+    await putAged('unknown/file.pdf', 2 * HOUR_MS);
+
+    await cleanupStorage();
+
+    expect(stored('video-jobs/job-1/output.mp4')).toBe(true);
+    expect(stored('unknown/file.pdf')).toBe(true);
   });
 
   it('does nothing when the storage root is empty or missing', async () => {

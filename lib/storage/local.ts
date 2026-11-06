@@ -3,6 +3,11 @@ import path from 'path';
 import { assertInsideDir } from '@/lib/paths';
 import type { StorageDriver } from './types';
 
+// A file is written before its database row is created, so a sweep running in that gap
+// would see it as orphaned. Files younger than this are never swept: it is far longer
+// than any put-then-create gap, and short next to the shortest retention (days).
+export const SWEEP_GRACE_MS = 15 * 60 * 1000;
+
 /**
  * Stores files on the local disk under tmp/storage, matching the layout the
  * app has always used. Only safe on a host with a persistent, single-instance
@@ -40,30 +45,31 @@ export class LocalDiskStorage implements StorageDriver {
   }
 
   /**
-   * Sweeps the storage root and deletes any physical entry not present in
-   * `validKeys`. Local-disk-only maintenance (S3 relies on bucket lifecycle
-   * rules instead), so it lives on this class rather than the shared
-   * StorageDriver interface.
+   * Deletes the files in each given folder ('' is the root) whose names are not in
+   * that folder's set, once they are older than SWEEP_GRACE_MS. Folders not given,
+   * and subfolders, are never touched. Local-disk-only maintenance (S3 relies on
+   * bucket lifecycle rules instead), so it lives on this class rather than the
+   * shared StorageDriver interface.
    */
-  async sweepOrphaned(validKeys: Set<string>): Promise<void> {
-    if (!fs.existsSync(this.root)) return;
+  async sweepOrphaned(validNamesByFolder: Map<string, Set<string>>, now = Date.now()): Promise<void> {
+    for (const [folder, validNames] of validNamesByFolder) {
+      const dir = folder ? this.resolve(folder) : this.root;
+      if (!fs.existsSync(dir)) continue;
 
-    const entries = fs.readdirSync(this.root);
-    for (const entry of entries) {
-      if (validKeys.has(entry)) continue;
-
-      const entryPath = path.join(this.root, entry);
-      try {
-        const stat = fs.statSync(entryPath);
-        if (stat.isDirectory()) {
-          // Subdirectories (e.g. tmp/storage/docs) must be removed recursively
-          fs.rmSync(entryPath, { recursive: true, force: true });
-        } else {
-          fs.unlinkSync(entryPath);
-        }
-      } catch (err) {
-        console.error(`Failed to delete expired entry ${entry}:`, err);
+      for (const entry of fs.readdirSync(dir)) {
+        if (validNames.has(entry)) continue;
+        this.deleteIfStale(path.join(dir, entry), now);
       }
+    }
+  }
+
+  private deleteIfStale(filePath: string, now: number): void {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isDirectory() || now - stat.mtimeMs < SWEEP_GRACE_MS) return;
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      console.error(`Failed to delete expired file ${filePath}:`, err);
     }
   }
 
