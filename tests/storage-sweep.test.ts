@@ -41,6 +41,7 @@ jest.mock('@/models/userDocument', () => ({
 }));
 
 import { cleanupStorage, saveConversionRecord } from '@/lib/conversions';
+import { videoJobInputKey, videoJobOutputKey } from '@/lib/video/video-job-worker';
 
 jest.setTimeout(30_000);
 
@@ -127,6 +128,18 @@ describe('local storage sweep', () => {
 
     expect(stored('video-jobs/job-1/output.mp4')).toBe(true);
     expect(stored('unknown/file.pdf')).toBe(true);
+  });
+
+  it("keeps Compress Video job files, however old: the job worker's own sweep deletes them", async () => {
+    const jobId = '6730a1b2c3d4e5f6a7b8c9d0';
+    await putAged(videoJobInputKey(jobId, '.mov'), 3 * 24 * HOUR_MS);
+    await putAged(videoJobOutputKey(jobId, 'mp4'), 3 * 24 * HOUR_MS);
+
+    await saveConversionRecord('507f1f77bcf86cd799439011', 'Merge PDF', 'merged.pdf', Buffer.from('%PDF-'));
+    await cleanupStorage();
+
+    expect(stored(`video-jobs/${jobId}/input.mov`)).toBe(true);
+    expect(stored(`video-jobs/${jobId}/output.mp4`)).toBe(true);
   });
 
   it('does nothing when the storage root is empty or missing', async () => {
