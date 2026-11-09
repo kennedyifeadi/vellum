@@ -19,16 +19,19 @@ import { assertInsideDir } from '@/lib/paths';
 import { FfmpegExitError, FfmpegStoppedError, runFfmpeg } from '@/lib/video/ffmpeg';
 import { probeVideo, type VideoProbe } from '@/lib/video/probe';
 
-interface CompressVideoOptions {
+interface VideoCheckOptions {
   inputBuffer: Buffer;
   fileName: string;
-  crf: number;
   resolution?: string;
   maxDurationSeconds: number;
   /** How long probing, encoding and reading back the output may take altogether. */
   timeBudgetMs: number;
   encodeCost?: EncodeCost;
   signal?: AbortSignal;
+}
+
+interface CompressVideoOptions extends VideoCheckOptions {
+  crf: number;
 }
 
 export interface VideoFormat {
@@ -87,7 +90,7 @@ const KNOWN_VIDEO_EXTENSIONS = new Set([
 // The extension is only a hint for ffmpeg's container probing; anything unrecognised
 // gets a neutral one so no client-supplied text ever lands in a path. It also keeps
 // ffmpeg's HLS demuxer from ever being chosen for an uploaded playlist.
-function inputExtension(fileName: string): string {
+export function inputExtension(fileName: string): string {
   const ext = path.extname(path.basename(fileName ?? '')).toLowerCase();
   return KNOWN_VIDEO_EXTENSIONS.has(ext) ? ext : '.tmp';
 }
@@ -250,6 +253,52 @@ async function removeTempFiles(...paths: string[]): Promise<void> {
   }
 }
 
+interface AcceptedVideo {
+  probe: VideoProbe;
+  video: NonNullable<VideoProbe['video']>;
+}
+
+/** Probes the upload at `inputPath` and refuses it as compressVideo would, before encoding. */
+async function probeAccepted(
+  inputPath: string,
+  { resolution, maxDurationSeconds, encodeCost = ENCODE_COST, signal }: VideoCheckOptions,
+  budgetLeftMs: () => number,
+): Promise<AcceptedVideo> {
+  const probe = await probeUpload(inputPath, budgetLeftMs(), signal);
+  const video = movingVideo(probe);
+  assertDurationWithinLimit(probe.durationSeconds, maxDurationSeconds);
+  assertEncodeFitsTimeBudget(probe, video, resolution, budgetLeftMs(), encodeCost);
+  return { probe, video };
+}
+
+function assertNotEmpty(inputBuffer: Buffer): void {
+  if (!inputBuffer || inputBuffer.length === 0) {
+    throw new ClientError('The video file is empty.');
+  }
+}
+
+function budgetClock(timeBudgetMs: number): () => number {
+  const budgetEndsAt = Date.now() + timeBudgetMs;
+  return () => budgetEndsAt - Date.now();
+}
+
+/**
+ * Refuses an upload that compressVideo would refuse before encoding, with the same
+ * messages: an empty or unreadable file, no moving video, a video longer than
+ * `maxDurationSeconds`, or one whose estimated encode would not fit in `timeBudgetMs`.
+ * Only probes, so an upload can be checked before it is queued.
+ */
+export async function checkVideoUpload(options: VideoCheckOptions): Promise<void> {
+  assertNotEmpty(options.inputBuffer);
+  const inputPath = tempPath(`input-${randomUUID()}${inputExtension(options.fileName)}`);
+  try {
+    await fs.writeFile(inputPath, options.inputBuffer);
+    await probeAccepted(inputPath, options, budgetClock(options.timeBudgetMs));
+  } finally {
+    await removeTempFiles(inputPath);
+  }
+}
+
 /**
  * Re-encodes an uploaded video as H.264/AAC MP4 for broad playback, or returns the
  * upload unchanged when the re-encode is not smaller. Inputs without moving video, videos
@@ -258,22 +307,10 @@ async function removeTempFiles(...paths: string[]): Promise<void> {
  * is encoded. ffmpeg is killed when `timeBudgetMs` runs out or `signal` aborts, and the
  * temp files are gone before this settles.
  */
-export async function compressVideo({
-  inputBuffer,
-  fileName,
-  crf,
-  resolution,
-  maxDurationSeconds,
-  timeBudgetMs,
-  encodeCost = ENCODE_COST,
-  signal,
-}: CompressVideoOptions): Promise<CompressedVideo> {
-  const budgetEndsAt = Date.now() + timeBudgetMs;
-  const budgetLeftMs = () => budgetEndsAt - Date.now();
-
-  if (!inputBuffer || inputBuffer.length === 0) {
-    throw new ClientError('The video file is empty.');
-  }
+export async function compressVideo(options: CompressVideoOptions): Promise<CompressedVideo> {
+  const { inputBuffer, fileName, crf, resolution, signal } = options;
+  const budgetLeftMs = budgetClock(options.timeBudgetMs);
+  assertNotEmpty(inputBuffer);
 
   const id = randomUUID();
   const inputPath = tempPath(`input-${id}${inputExtension(fileName)}`);
@@ -282,10 +319,7 @@ export async function compressVideo({
   try {
     await fs.writeFile(inputPath, inputBuffer);
 
-    const probe = await probeUpload(inputPath, budgetLeftMs(), signal);
-    const video = movingVideo(probe);
-    assertDurationWithinLimit(probe.durationSeconds, maxDurationSeconds);
-    assertEncodeFitsTimeBudget(probe, video, resolution, budgetLeftMs(), encodeCost);
+    const { probe, video } = await probeAccepted(inputPath, options, budgetLeftMs);
 
     try {
       await runFfmpeg({
