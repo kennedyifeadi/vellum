@@ -1,9 +1,11 @@
 import fs from 'fs';
+import path from 'path';
 import { ALL_TOOLS } from '../lib/tools';
 
 let mockFindByIdResult: any = { plan: 'Basic', preferences: { autoDelete: false } };
 let mockValidConversions: any[] = [];
 let mockReaddirResult: string[] = [];
+let mockDocsReaddirResult: string[] = [];
 let mockStatIsDirectory = false;
 
 jest.mock('@/lib/db/mongoose', () => ({
@@ -26,6 +28,11 @@ jest.mock('@/models/conversion', () => ({
   },
 }));
 
+jest.mock('@/models/userDocument', () => ({
+  __esModule: true,
+  default: { find: jest.fn().mockImplementation(() => Promise.resolve([])) },
+}));
+
 import Conversion from '@/models/conversion';
 import { saveConversionRecord, recordConversionHistory, cleanupStorage } from '../lib/conversions';
 
@@ -35,6 +42,7 @@ describe('Features & Conversion Lifecycle System Tests', () => {
     mockFindByIdResult = { plan: 'Basic', preferences: { autoDelete: false } };
     mockValidConversions = [];
     mockReaddirResult = [];
+    mockDocsReaddirResult = [];
     mockStatIsDirectory = false;
 
     jest.spyOn(fs, 'existsSync').mockImplementation(() => true);
@@ -42,9 +50,12 @@ describe('Features & Conversion Lifecycle System Tests', () => {
     jest.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined as any);
     jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined as any);
     jest.spyOn(fs, 'rmSync').mockImplementation(() => undefined as any);
-    jest.spyOn(fs, 'readdirSync').mockImplementation(() => mockReaddirResult as any);
+    jest.spyOn(fs, 'readdirSync').mockImplementation((dir: any) =>
+      (path.basename(String(dir)) === 'docs' ? mockDocsReaddirResult : mockReaddirResult) as any
+    );
     jest.spyOn(fs, 'statSync').mockImplementation(() => ({
       isDirectory: () => mockStatIsDirectory,
+      mtimeMs: 0,
     } as any));
   });
 
@@ -259,15 +270,24 @@ describe('Features & Conversion Lifecycle System Tests', () => {
       expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('expired.pdf'));
     });
 
-    it('should remove orphaned subdirectories cleanly using rmSync', async () => {
-      mockReaddirResult = ['temp_orphaned_dir'];
+    it('deletes a stored document whose row has expired', async () => {
+      mockDocsReaddirResult = ['expired-doc.pdf'];
+
+      await cleanupStorage();
+
+      expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+      expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining(path.join('docs', 'expired-doc.pdf')));
+    });
+
+    it('leaves a folder it does not own alone', async () => {
+      mockReaddirResult = ['video-jobs'];
       mockValidConversions = [];
       mockStatIsDirectory = true;
 
       await cleanupStorage();
 
-      expect(fs.rmSync).toHaveBeenCalledTimes(1);
-      expect(fs.rmSync).toHaveBeenCalledWith(expect.stringContaining('temp_orphaned_dir'), { recursive: true, force: true });
+      expect(fs.rmSync).not.toHaveBeenCalled();
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
     });
 
     it('should do nothing if all physical disk files match valid active database records', async () => {
