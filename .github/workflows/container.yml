@@ -63,11 +63,13 @@ jobs:
 
       # Placeholder values, not secrets: guest conversions never use them, but the proxy
       # reads NEXTAUTH_SECRET on every request. The sandbox is turned off explicitly because
-      # of the check above, so the PDF routes can be tested.
+      # of the check above, so the PDF routes can be tested. Production refuses to store files
+      # without a storage driver, and Compress Video stores the guest's upload for its job.
       - name: Start the runtime image
         run: |
           docker run --detach --name app --network vellum --publish 3000:3000 \
             --env MONGODB_URI=mongodb://mongo:27017/vellum_ci \
+            --env STORAGE_DRIVER=local \
             --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
             --env JWT_SECRET=ci-placeholder-not-a-secret \
             --env CHROMIUM_DISABLE_SANDBOX=true \
