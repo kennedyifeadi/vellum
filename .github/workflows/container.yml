@@ -44,12 +44,20 @@ jobs:
                 (error.message.split("\n").find((line) => line.includes("sandbox")) || error.message)));
           '
 
+      # Compress Video keeps its jobs in MongoDB (#115). Nothing else the smoke tests send
+      # touches the database: they are all guests.
+      - name: Start MongoDB
+        run: |
+          docker network create vellum
+          docker run --detach --name mongo --network vellum mongo:8.0
+
       # Placeholder values, not secrets: guest conversions never use them, but the proxy
-      # reads NEXTAUTH_SECRET on every request. No database is configured. The sandbox is
-      # turned off explicitly because of the check above, so the PDF routes can be tested.
+      # reads NEXTAUTH_SECRET on every request. The sandbox is turned off explicitly because
+      # of the check above, so the PDF routes can be tested.
       - name: Start the runtime image
         run: |
-          docker run --detach --name app --publish 3000:3000 \
+          docker run --detach --name app --network vellum --publish 3000:3000 \
+            --env MONGODB_URI=mongodb://mongo:27017/vellum_ci \
             --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
             --env JWT_SECRET=ci-placeholder-not-a-secret \
             --env CHROMIUM_DISABLE_SANDBOX=true \

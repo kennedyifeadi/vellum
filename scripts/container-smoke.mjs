@@ -115,6 +115,27 @@ function mp4() {
   }
 }
 
+// Compress Video answers 202 with a job; the worker encodes it in the background. Polls the
+// job until it ends and answers with the download, or with the job's status if it failed.
+async function compressVideoJob() {
+  const accepted = await fetch(`${baseUrl}/api/convert/video-compress`, {
+    method: 'POST', body: form('video', [['clip.mp4', mp4(), 'video/mp4']]),
+  });
+  if (accepted.status !== 202) return accepted;
+  const { jobId, token } = await accepted.json();
+  const headers = { 'X-Job-Token': token };
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const status = await fetch(`${baseUrl}/api/convert/video-compress/jobs/${jobId}`, { headers });
+    const job = await status.json();
+    if (job.status === 'done') break;
+    if (job.status !== 'queued' && job.status !== 'running') return new Response(JSON.stringify(job), { status: 500 });
+    if (Date.now() > deadline) return new Response(`job still ${job.status} after 120 s`, { status: 504 });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return fetch(`${baseUrl}/api/convert/video-compress/jobs/${jobId}/download`, { headers });
+}
+
 function form(field, files) {
   const body = new FormData();
   for (const [name, bytes, type] of files) {
@@ -141,9 +162,7 @@ const checks = [
   ['image-to-pdf with BMP (ffmpeg)', async () => fetch(`${baseUrl}/api/convert/image-to-pdf`, {
     method: 'POST', body: form('images', [['image.bmp', bmp(), 'image/bmp']]),
   }), 'pdf'],
-  ['video-compress (ffmpeg)', async () => fetch(`${baseUrl}/api/convert/video-compress`, {
-    method: 'POST', body: form('video', [['clip.mp4', mp4(), 'video/mp4']]),
-  }), (bytes) => bytes.subarray(4, 8).toString('latin1') === 'ftyp'],
+  ['video-compress job (MongoDB, worker, ffmpeg)', compressVideoJob, (bytes) => bytes.subarray(4, 8).toString('latin1') === 'ftyp'],
 ];
 
 async function runCheck([name, send, expected]) {
