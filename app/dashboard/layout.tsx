@@ -127,6 +127,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   };
 
+  // Server-side work such as Compress Video's background jobs adds notifications too.
+  const loadNotifications = async () => {
+    const notifRes = await fetch('/api/user/notifications');
+    if (notifRes.ok) {
+      const notifData = await notifRes.json();
+      setNotifications(notifData.notifications ?? []);
+    }
+  };
+
   useEffect(() => {
     async function initDashboard() {
       try {
@@ -136,12 +145,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           setUser(data.user);
           refreshData('all');
 
-          // Load notifications from the database
-          const notifRes = await fetch('/api/user/notifications');
-          if (notifRes.ok) {
-            const notifData = await notifRes.json();
-            setNotifications(notifData.notifications ?? []);
-          }
+          await loadNotifications();
         } else {
           router.push('/login');
         }
@@ -153,7 +157,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     initDashboard();
 
-    const handleUpdate = () => refreshData();
+    const handleUpdate = () => {
+      refreshData();
+      loadNotifications().catch((error) => console.error('Failed to refresh notifications:', error));
+    };
     window.addEventListener('activityUpdated', handleUpdate);
     
     return () => {
