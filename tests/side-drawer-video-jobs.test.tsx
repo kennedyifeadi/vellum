@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { VIDEO_JOB_POLL_INTERVAL_MS } from '@/lib/video-job-client';
+import { VIDEO_JOB_POLL_INTERVAL_MS, VIDEO_JOB_RETRY } from '@/lib/video-job-client';
 
 const mockShowToast = jest.fn();
 const mockAddNotification = jest.fn();
@@ -64,7 +64,12 @@ beforeEach(() => {
   fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/convert/video-compress') return answer(202, { jobId: JOB_ID, status: 'queued', ...(mockUser ? {} : { token: 'guest-token' }) });
     if (url === JOB_PATH && init?.method === 'DELETE') return answer(200, { status: 'cancelled' });
-    if (url === JOB_PATH) return answer(200, statuses.length > 1 ? statuses.shift() : statuses[0]);
+    if (url === JOB_PATH) {
+      const next = statuses.length > 1 ? statuses.shift()! : statuses[0];
+      if (next.fail === 'network') throw new TypeError('Failed to fetch');
+      if (typeof next.fail === 'number') return answer(next.fail);
+      return answer(200, next);
+    }
     if (url === `${JOB_PATH}/download`) return answer(200);
     return answer(404);
   });
@@ -174,5 +179,61 @@ describe('Compress Video in the drawer', () => {
 
     expect(requests('GET', JOB_PATH)).toHaveLength(1);
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('rides out failed polls mid-job and still downloads the result', async () => {
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    statuses = [
+      statusOf('running'),
+      { fail: 'network' },
+      { fail: 502 },
+      statusOf('running'),
+      statusOf('done', { savedPercent: 40, compressedSize: 6 * 1024 * 1024 }),
+    ];
+    renderDrawer();
+
+    fireEvent.click(processButton());
+    expect(await screen.findByText('Compressing…')).toBeTruthy();
+    for (let i = 0; i < 6; i++) await poll();
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Reduced by 40% — 4.0 MB saved!', 'success'));
+    expect(requests('GET', `${JOB_PATH}/download`)).toHaveLength(1);
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+
+  async function loseContact() {
+    statuses = [statusOf('running'), { fail: 503 }];
+    const view = renderDrawer();
+    fireEvent.click(processButton());
+    expect(await screen.findByText('Compressing…')).toBeTruthy();
+    await act(async () => {
+      // Past the two minutes, plus the last pause before the poll that gives up.
+      await jest.advanceTimersByTimeAsync(VIDEO_JOB_RETRY.giveUpAfterMs + 2 * VIDEO_JOB_RETRY.maxDelayMs);
+    });
+    return view;
+  }
+
+  it('tells a signed-in user who lost contact that they will be notified, not that the video failed', async () => {
+    await loseContact();
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith("Lost contact with the server. We'll notify you when your video is ready.", 'info'),
+    );
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(requests('DELETE', JOB_PATH)).toHaveLength(0);
+    expect(screen.getByText('Process File')).toBeTruthy();
+  });
+
+  it('tells a guest who lost contact plainly that the result cannot be fetched', async () => {
+    mockUser = null;
+    await loseContact();
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Lost contact with the server, so the compressed video can no longer be fetched. Please upload it again.',
+        'error',
+      ),
+    );
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 });

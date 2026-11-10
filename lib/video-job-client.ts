@@ -39,38 +39,94 @@ export function videoJobLabel(status: Pick<VideoJobStatus, 'status' | 'position'
   return 'Compressing…';
 }
 
+// A job can run for an hour, so its status is polled hundreds of times, and some polls will
+// fail: a dropped mobile connection, or the 5xx Railway answers while a deployment swaps.
+// Those are retried with a growing pause. The wait gives up only after failures have gone on
+// for two minutes without one successful poll: longer than a deployment swap, and longer
+// than the minute a job takes to be requeued when its server dies.
+export const VIDEO_JOB_RETRY = {
+  firstDelayMs: 2_000,
+  maxDelayMs: 15_000,
+  giveUpAfterMs: 120_000,
+};
+
+/** The status could not be read for too long. The job itself may still be running. */
+export class VideoJobUnreachableError extends Error {
+  constructor() {
+    super('Lost contact with the server.');
+    this.name = 'VideoJobUnreachableError';
+  }
+}
+
 interface WaitOptions {
   signal?: AbortSignal;
   onStatus?: (status: VideoJobStatus) => void;
   fetchImpl?: typeof fetch;
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  now?: () => number;
+}
+
+type Poll = { status: VideoJobStatus } | { retryAfterMs: number | null };
+
+function retryAfterMs(response: Response): number | null {
+  const header = response.headers?.get('Retry-After')?.trim();
+  return header && /^\d+$/.test(header) ? Number(header) * 1000 : null;
 }
 
 /**
- * Polls the job's status until it ends and returns its last status. Rejects with the
- * server's message when a status request fails, and with RetryCancelledError when `signal`
- * aborts, during a poll or between two.
+ * One status request: the status, a transient failure worth retrying (a network error, 429,
+ * 5xx or a body that is not JSON), or a thrown Error for a definite answer such as 404.
+ */
+async function pollOnce(job: VideoJobHandle, fetchImpl: typeof fetch, signal?: AbortSignal): Promise<Poll> {
+  let response: Response;
+  try {
+    response = await fetchImpl(videoJobPath(job), { headers: videoJobHeaders(job), cache: 'no-store', signal });
+  } catch {
+    if (signal?.aborted) throw new RetryCancelledError();
+    return { retryAfterMs: null };
+  }
+
+  const body = await response.json().catch(() => null);
+  if (response.status === 429 || response.status >= 500) {
+    return { retryAfterMs: retryAfterMs(response) };
+  }
+  if (!response.ok) {
+    throw new Error(response.status === 404 ? 'This video job is no longer available.' : body?.error || 'Could not check on the video.');
+  }
+  return body && typeof body.status === 'string' ? { status: body as VideoJobStatus } : { retryAfterMs: null };
+}
+
+/**
+ * Polls the job's status until it ends and returns its last status. Transient failures are
+ * retried (see VIDEO_JOB_RETRY); once they have lasted too long it rejects with
+ * VideoJobUnreachableError. A definite refusal such as 404 rejects at once with its message,
+ * and an abort, during a poll or between two, rejects with RetryCancelledError.
  */
 export async function waitForVideoJob(
   job: VideoJobHandle,
-  { signal, onStatus, fetchImpl = fetch, wait = sleep }: WaitOptions = {},
+  { signal, onStatus, fetchImpl = fetch, wait = sleep, now = Date.now }: WaitOptions = {},
 ): Promise<VideoJobStatus> {
+  let failingSince: number | null = null;
+  let backoffMs = VIDEO_JOB_RETRY.firstDelayMs;
+
   for (;;) {
-    let response: Response;
-    try {
-      response = await fetchImpl(videoJobPath(job), { headers: videoJobHeaders(job), cache: 'no-store', signal });
-    } catch (error) {
-      if (signal?.aborted) throw new RetryCancelledError();
-      throw error;
+    const poll = await pollOnce(job, fetchImpl, signal);
+    if ('status' in poll) {
+      failingSince = null;
+      backoffMs = VIDEO_JOB_RETRY.firstDelayMs;
+      onStatus?.(poll.status);
+      if (ENDED.has(poll.status.status)) return poll.status;
+      await wait(VIDEO_JOB_POLL_INTERVAL_MS, signal);
+      continue;
     }
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(body.error || 'Could not check on the video.');
+
+    failingSince ??= now();
+    if (now() - failingSince >= VIDEO_JOB_RETRY.giveUpAfterMs) {
+      throw new VideoJobUnreachableError();
     }
-    const status = body as VideoJobStatus;
-    onStatus?.(status);
-    if (ENDED.has(status.status)) return status;
-    await wait(VIDEO_JOB_POLL_INTERVAL_MS, signal);
+    const delayMs = Math.min(poll.retryAfterMs ?? backoffMs, VIDEO_JOB_RETRY.giveUpAfterMs);
+    backoffMs = Math.min(backoffMs * 2, VIDEO_JOB_RETRY.maxDelayMs);
+    await wait(delayMs, signal);
   }
 }
 

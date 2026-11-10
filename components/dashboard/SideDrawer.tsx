@@ -13,6 +13,7 @@ import {
   videoJobLabel,
   videoJobPath,
   videoResultMessage,
+  VideoJobUnreachableError,
   waitForVideoJob,
   type VideoJobHandle,
 } from '@/lib/video-job-client';
@@ -270,6 +271,22 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     document.body.removeChild(a);
   };
 
+  // The job's last status, or null once its status has been unreachable for too long. The job
+  // may still be running then, so the message must not say it failed.
+  const followVideoJob = async (job: VideoJobHandle, signal: AbortSignal) => {
+    try {
+      return await waitForVideoJob(job, { signal, onStatus: (status) => setVideoJobProgress(videoJobLabel(status)) });
+    } catch (error) {
+      if (!(error instanceof VideoJobUnreachableError)) throw error;
+      if (user) {
+        showToast("Lost contact with the server. We'll notify you when your video is ready.", 'info');
+      } else {
+        showToast('Lost contact with the server, so the compressed video can no longer be fetched. Please upload it again.', 'error');
+      }
+      return null;
+    }
+  };
+
   // Uploads the video once, then follows its job: the result is downloaded when it is done.
   const compressVideoInBackground = async (formData: FormData) => {
     const response = await sendWithBusyRetry(() => fetch('/api/convert/video-compress', { method: 'POST', body: formData }));
@@ -283,11 +300,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     videoJobRef.current = videoJob;
     setVideoJobProgress(videoJobLabel(accepted));
     try {
-      const last = await waitForVideoJob(job, {
-        signal: videoJob.controller.signal,
-        onStatus: (status) => setVideoJobProgress(videoJobLabel(status)),
-      });
-      if (last.status === 'cancelled') return;
+      const last = await followVideoJob(job, videoJob.controller.signal);
+      if (!last || last.status === 'cancelled') return;
       window.dispatchEvent(new Event('activityUpdated'));
       if (last.status === 'failed') {
         throw new Error(last.error || 'This video could not be compressed. Please try again.');
