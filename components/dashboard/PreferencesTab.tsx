@@ -146,7 +146,7 @@ export default function PreferencesTab() {
               <div>
                 <p className="text-[13px] font-bold text-[#111827] dark:text-white">Auto-delete processed files</p>
                 <p className="text-[12px] text-[#6b7280] dark:text-gray-400 mt-0.5">
-                  Immediately delete original files from Vellum servers after successful compression or conversion (bypasses the standard 3-day retention policy).
+                  Don&apos;t keep converted files: each one is only downloaded once, straight after conversion, and never stored on Vellum&apos;s servers. Recent Activity still lists it, without a download button.
                 </p>
               </div>
             </label>
