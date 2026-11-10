@@ -45,12 +45,13 @@ jobs:
           '
 
       # Compress Video keeps its jobs in MongoDB (#115). Nothing else the smoke tests send
-      # touches the database: they are all guests.
+      # touches the database: they are all guests. MongoDB 7.0, because 8.0 and later refuse
+      # to start on this runner's Linux kernel (6.19 or newer, SERVER-121912).
       - name: Start MongoDB
         run: |
           docker network create vellum
           docker run --detach --name mongo --network vellum \
-            mongo:8.0@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
+            mongo:7.0@sha256:8bb4442761a63a8dda452744082cdac9644b429807eb977b42324a63cef59ca4
           for i in $(seq 1 60); do
             if docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' 2>/dev/null | grep -q 1; then exit 0; fi
             sleep 1
