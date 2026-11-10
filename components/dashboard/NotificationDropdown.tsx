@@ -108,8 +108,12 @@ export default function NotificationDropdown({ isOpen, onClose }: NotificationDr
               </div>
             ) : (
               <div className="divide-y divide-[#f1f4f8]">
-                {notifications.map((n) => (
-                  <Link 
+                {notifications.map((n) => {
+                  // A link to an API route is a file download, such as a compressed video. Next's
+                  // Link would prefetch it whenever the list opens and fetch it again on click.
+                  const ItemLink = n.link?.startsWith('/api/') ? 'a' : Link;
+                  return (
+                  <ItemLink
                     key={n.id} 
                     href={n.link || '#'} 
                     onClick={() => { if(n.link) onClose(); }}
@@ -126,8 +130,9 @@ export default function NotificationDropdown({ isOpen, onClose }: NotificationDr
                       </div>
                       <p className="text-[11px] text-[#6b7280] leading-relaxed line-clamp-2">{n.message}</p>
                     </div>
-                  </Link>
-                ))}
+                  </ItemLink>
+                  );
+                })}
               </div>
             )}
           </div>
