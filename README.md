@@ -101,7 +101,10 @@ These limits live in the process's memory, like the slot counts themselves
 
 An encode can take up to an hour, far longer than a request may stay open on Railway, so
 Compress Video runs as a background job (#115). Its state is in MongoDB (the `VideoJob`
-model) and its files in the configured storage, so Compress Video needs `MONGODB_URI`.
+model) and its files in the configured storage, so Compress Video needs `MONGODB_URI` and a
+working storage driver. Without either, the server still starts and every other tool works:
+the log says "Compress Video jobs will not run: <reason>", and a video upload is refused with
+503 and the storage error, before it is read.
 
 - **Upload.** `POST /api/convert/video-compress` checks the size cap, then probes the video
   in the request and refuses at once, with the same messages as before, a file that is not

@@ -3,7 +3,8 @@ import { resolveCaller, type Caller } from '@/lib/auth/caller';
 import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { checkVideoUpload } from '@/lib/video/compress';
-import { enqueueVideoJob, newGuestToken, videoJobCallerKey, videoJobStore } from '@/lib/video/video-job-service';
+import { getStorage, type StorageDriver } from '@/lib/storage';
+import { enqueueVideoJob, newGuestToken, reasonOf, videoJobCallerKey, videoJobStore } from '@/lib/video/video-job-service';
 import { handleConvertError } from '@/lib/convert/errors';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import {
@@ -25,7 +26,18 @@ function crfForQuality(quality: string | null): number {
 
 class QueueFullError extends Error {}
 
-// Both checks run before the upload is read, so a refused caller costs nothing.
+/** The storage the upload would go to cannot be used, e.g. no driver is configured. */
+class StorageUnavailableError extends Error {}
+
+function jobStorage(): StorageDriver {
+  try {
+    return getStorage();
+  } catch (error) {
+    throw new StorageUnavailableError(`Compress Video is unavailable: ${reasonOf(error)}`, { cause: error });
+  }
+}
+
+// These checks run before the upload is read, so a refused caller costs nothing.
 async function assertMayEnqueue(callerKey: string): Promise<void> {
   const store = videoJobStore();
   if (await store.findActiveByCaller(callerKey)) {
@@ -44,6 +56,7 @@ async function assertMayEnqueue(callerKey: string): Promise<void> {
 async function enqueueUpload(req: NextRequest, caller: Caller): Promise<NextResponse> {
   const callerKey = videoJobCallerKey(req.headers, caller);
   await assertMayEnqueue(callerKey);
+  const storage = jobStorage();
 
   const budget = uploadBudgetForPlan(caller.plan);
   const formData = await readMultipartForm(req, budget);
@@ -74,7 +87,7 @@ async function enqueueUpload(req: NextRequest, caller: Caller): Promise<NextResp
     fileName: video.name,
     options: { crf, resolution },
     input,
-  });
+  }, storage);
 
   return NextResponse.json(
     { jobId: job.id, status: job.status, ...(guestToken ? { token: guestToken.token } : {}) },
@@ -94,6 +107,11 @@ export async function POST(req: NextRequest) {
     }
     if (error instanceof QueueFullError) {
       return busyResponse(COMPRESS_VIDEO_BUSY_MESSAGE);
+    }
+    // No Retry-After: the server has to be configured before an upload can succeed.
+    if (error instanceof StorageUnavailableError) {
+      console.error(`[convert] ${error.message}`);
+      return NextResponse.json({ error: error.message }, { status: 503 });
     }
     return handleConvertError(error, 'Failed to compress video');
   }

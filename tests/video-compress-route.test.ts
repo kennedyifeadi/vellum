@@ -31,8 +31,9 @@ jest.mock('@/models/conversion', () => ({
 }));
 
 let mockStorage: ReturnType<typeof createMemoryStorage>;
+const mockGetStorage = jest.fn(() => mockStorage);
 jest.mock('@/lib/storage', () => ({
-  getStorage: () => mockStorage,
+  getStorage: () => mockGetStorage(),
   LocalDiskStorage: class {},
 }));
 
@@ -254,6 +255,23 @@ describe('video-compress upload', () => {
 
     expect(res.status).toBe(500);
     expect(file.arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it('refuses the upload with the storage error, before reading it, when no storage is configured', async () => {
+    mockGetStorage.mockImplementationOnce(() => {
+      throw new Error('No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.');
+    });
+    const file = fakeFile(Buffer.from('raw-input'));
+
+    const { res, body } = await upload({}, file);
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBeNull();
+    expect(body).toEqual({
+      error: 'Compress Video is unavailable: No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.',
+    });
+    expect(file.arrayBuffer).not.toHaveBeenCalled();
+    expect(mockStore.all()).toEqual([]);
   });
 
   it('answers 400 when no video was sent', async () => {

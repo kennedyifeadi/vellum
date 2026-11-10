@@ -15,6 +15,12 @@ jest.mock('@/models/user', () => ({
 
 jest.mock('@/lib/db/mongoose', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(true) }));
 
+const mockGetStorage = jest.fn();
+jest.mock('@/lib/storage', () => ({
+  ...jest.requireActual('@/lib/storage'),
+  getStorage: (...args: unknown[]) => mockGetStorage(...args),
+}));
+
 let mockStore: ReturnType<typeof createMemoryVideoJobStore>;
 jest.mock('@/lib/video/video-job-store', () => {
   const actual = jest.requireActual('@/lib/video/video-job-store');
@@ -137,6 +143,20 @@ describe('starting the worker', () => {
 
     expect(startVideoJobWorker({ storage: createMemoryStorage(), encode: holdForever, processEvents: fakeProcess() })).toBeNull();
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('MONGODB_URI'));
+  });
+
+  it('does not start, and does not throw, when the storage cannot be set up', () => {
+    const events = fakeProcess();
+    mockGetStorage.mockImplementationOnce(() => {
+      throw new Error('No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.');
+    });
+
+    expect(startVideoJobWorker({ encode: holdForever, processEvents: events })).toBeNull();
+    expect(console.error).toHaveBeenCalledWith(
+      'Compress Video jobs will not run: No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.',
+    );
+    expect(events.listenerCount('SIGTERM')).toBe(0);
+    expect((globalThis as { vellumVideoJobs?: { worker: unknown } }).vellumVideoJobs?.worker).toBeNull();
   });
 
   it('starts once per process', () => {

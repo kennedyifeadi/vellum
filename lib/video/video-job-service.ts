@@ -140,12 +140,18 @@ interface WorkerDeps {
   processEvents?: ProcessEvents;
 }
 
+export function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
- * Starts this process's worker, once. Without a database there is nothing to run. On
- * SIGTERM it stops claiming jobs and leaves shutdown to Next; when the process exits, any
- * encode still running is killed, and its job is requeued once its lease runs out.
+ * Starts this process's worker, once. It runs during server startup, so it never throws:
+ * without a database, or when the storage or anything else it needs cannot be set up, it
+ * logs why Compress Video jobs will not run and returns null, and the rest of the app serves
+ * as usual. On SIGTERM it stops claiming jobs and leaves shutdown to Next; when the process
+ * exits, any encode still running is killed, and its job is requeued once its lease runs out.
  */
-export function startVideoJobWorker({ storage = getStorage(), encode = encodeWithFfmpeg, processEvents = process }: WorkerDeps = {}): VideoJobWorker | null {
+export function startVideoJobWorker({ storage, encode = encodeWithFfmpeg, processEvents = process }: WorkerDeps = {}): VideoJobWorker | null {
   const state = runtime();
   if (state.worker) return state.worker;
   if (!process.env.MONGODB_URI) {
@@ -153,24 +159,32 @@ export function startVideoJobWorker({ storage = getStorage(), encode = encodeWit
     return null;
   }
 
-  const worker = new VideoJobWorker({
-    store: state.store,
-    storage,
-    encode,
-    onJobEnded: reportToOwner,
-    slots: MAX_CONCURRENT_VIDEO_ENCODES,
-    guestSlots: GUEST_SLOTS_PER_POOL,
-  });
-  state.worker = worker;
-  worker.start();
+  try {
+    const worker = new VideoJobWorker({
+      store: state.store,
+      storage: storage ?? getStorage(),
+      encode,
+      onJobEnded: reportToOwner,
+      slots: MAX_CONCURRENT_VIDEO_ENCODES,
+      guestSlots: GUEST_SLOTS_PER_POOL,
+    });
+    worker.start();
+    state.worker = worker;
+    stopOnShutdown(worker, processEvents);
+    return worker;
+  } catch (error) {
+    console.error(`Compress Video jobs will not run: ${reasonOf(error)}`);
+    return null;
+  }
+}
 
+function stopOnShutdown(worker: VideoJobWorker, processEvents: ProcessEvents): void {
   processEvents.once('SIGTERM', () => {
     worker.stop();
     // A listener of our own would otherwise stop SIGTERM ending a process nothing else handles it for.
     if (processEvents.listenerCount('SIGTERM') === 0) processEvents.kill(processEvents.pid, 'SIGTERM');
   });
   processEvents.once('exit', () => worker.abortAll());
-  return worker;
 }
 
 export interface UploadedVideo {
