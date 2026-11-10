@@ -48,8 +48,8 @@ Every environment variable the app reads is listed and explained in
 need a missing one fail with an error that names it. For production you need at least
 `MONGODB_URI`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, the Google sign-in pair,
 `BREVO_API_KEY` and `EMAIL_USER`, the storage settings (`STORAGE_DRIVER=s3` and the `S3_*`
-variables for the R2 bucket; the local-disk default loses files on every redeploy) and
-`CLIENT_IP_HEADER`.
+variables for the R2 bucket) and `CLIENT_IP_HEADER`. Without `STORAGE_DRIVER`, production
+refuses to store files (`STORAGE_DRIVER=local` is allowed, but a redeploy deletes them).
 
 ### Client IP (`CLIENT_IP_HEADER`)
 

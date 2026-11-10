@@ -244,4 +244,127 @@ describe('getStorage', () => {
       expect(getStorage()).toBeInstanceOf(FreshS3Storage);
     });
   });
+
+  describe('driver guard', () => {
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    function setNodeEnv(value: string) {
+      (process.env as Record<string, string | undefined>).NODE_ENV = value;
+    }
+
+    function setS3Env() {
+      process.env.S3_BUCKET = 'test-bucket';
+      process.env.S3_REGION = 'auto';
+      process.env.S3_ACCESS_KEY_ID = 'key';
+      process.env.S3_SECRET_ACCESS_KEY = 'secret';
+    }
+
+    function freshStorage() {
+      let result: { storage?: unknown; error?: Error; LocalDiskStorage?: unknown; S3Storage?: unknown } = {};
+      jest.isolateModules(() => {
+        const { getStorage } = require('@/lib/storage');
+        result = {
+          LocalDiskStorage: require('@/lib/storage/local').LocalDiskStorage,
+          S3Storage: require('@/lib/storage/s3').S3Storage,
+        };
+        try {
+          result.storage = getStorage();
+        } catch (error) {
+          result.error = error as Error;
+        }
+      });
+      return result;
+    }
+
+    it.each(['development', 'test', 'production'])('rejects an unknown STORAGE_DRIVER in %s', (nodeEnv) => {
+      setNodeEnv(nodeEnv);
+      process.env.STORAGE_DRIVER = 'r2';
+
+      const { storage, error } = freshStorage();
+
+      expect(storage).toBeUndefined();
+      expect(error?.message).toContain('STORAGE_DRIVER');
+      expect(error?.message).toContain('"r2"');
+      expect(error?.message).toMatch(/s3.*local/);
+    });
+
+    it('refuses to store in production when STORAGE_DRIVER is unset', () => {
+      setNodeEnv('production');
+      delete process.env.STORAGE_DRIVER;
+
+      const { storage, error } = freshStorage();
+
+      expect(storage).toBeUndefined();
+      expect(error?.message).toContain('Set STORAGE_DRIVER=s3');
+      expect(error?.message).toContain('STORAGE_DRIVER=local');
+    });
+
+    it('treats an empty STORAGE_DRIVER in production as unset', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_DRIVER = '';
+
+      const { error } = freshStorage();
+
+      expect(error?.message).toContain('Set STORAGE_DRIVER=s3');
+    });
+
+    it('allows an explicit local driver in production with one warning', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_DRIVER = 'local';
+
+      let first: unknown;
+      let second: unknown;
+      let LocalCtor: unknown;
+      jest.isolateModules(() => {
+        const { getStorage } = require('@/lib/storage');
+        LocalCtor = require('@/lib/storage/local').LocalDiskStorage;
+        first = getStorage();
+        second = getStorage();
+      });
+
+      expect(first).toBeInstanceOf(LocalCtor as never);
+      expect(second).toBe(first);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('STORAGE_DRIVER=local');
+    });
+
+    it('uses S3Storage in production with STORAGE_DRIVER=s3 and no warning', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_DRIVER = 's3';
+      setS3Env();
+
+      const { storage, S3Storage: S3Ctor } = freshStorage();
+
+      expect(storage).toBeInstanceOf(S3Ctor as never);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it.each(['development', 'test'])('keeps the local default in %s without a warning', (nodeEnv) => {
+      setNodeEnv(nodeEnv);
+      delete process.env.STORAGE_DRIVER;
+
+      const { storage, LocalDiskStorage: LocalCtor } = freshStorage();
+
+      expect(storage).toBeInstanceOf(LocalCtor as never);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('uses S3Storage in development with STORAGE_DRIVER=s3', () => {
+      setNodeEnv('development');
+      process.env.STORAGE_DRIVER = 's3';
+      setS3Env();
+
+      const { storage, S3Storage: S3Ctor } = freshStorage();
+
+      expect(storage).toBeInstanceOf(S3Ctor as never);
+    });
+  });
 });
