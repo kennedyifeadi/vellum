@@ -38,8 +38,9 @@ placeholder secrets and a placeholder `MONGODB_URI`.
 
 CI (`.github/workflows/container.yml`) builds the Docker image on every push and pull
 request, runs the test suite inside it, starts the image and sends one request to each tool
-family (`scripts/container-smoke.mjs`), measures the container's memory, and checks that
-the server shuts down cleanly on SIGTERM.
+family (`scripts/container-smoke.mjs`; Compress Video's job goes through a MongoDB
+container), measures the container's memory, and checks that the server shuts down cleanly
+on SIGTERM.
 
 ## Configuration
 
@@ -80,6 +81,8 @@ share a browser process. So that one caller cannot keep those tools busy for eve
   tools. A second request while one runs is refused at once, before its upload is read, with
   429, `Retry-After` and "You already have a conversion in progress. Please wait for it to
   finish." Image to PDF, which uses an image slot and then a PDF worker slot, is one job.
+  A Compress Video request counts only while its upload is read and probed: its encode then
+  runs as a background job (see below), which has its own one-per-caller rule.
   A request refused because a pool is full gets the tool's 503 "busy" answer with
   `Retry-After`.
 - **Who is a caller.** A signed-in user is one caller by user id. A guest is one caller by
@@ -93,6 +96,39 @@ share a browser process. So that one caller cannot keep those tools busy for eve
 
 These limits live in the process's memory, like the slot counts themselves
 (`lib/convert/caller-jobs.ts`).
+
+### Compress Video background jobs
+
+An encode can take up to an hour, far longer than a request may stay open on Railway, so
+Compress Video runs as a background job (#115). Its state is in MongoDB (the `VideoJob`
+model) and its files in the configured storage, so Compress Video needs `MONGODB_URI`.
+
+- **Upload.** `POST /api/convert/video-compress` checks the size cap, then probes the video
+  in the request and refuses at once, with the same messages as before, a file that is not
+  a video, one over the plan's length cap, or one whose estimated encode would not fit in
+  the plan's encode budget (see Limits). An accepted upload is stored under
+  `video-jobs/<jobId>/`, its job is queued, and the answer is `202 {jobId, status}`. A guest
+  also gets a `token`, sent back as `X-Job-Token`; only its SHA-256 is stored.
+- **Following it.** `GET /api/convert/video-compress/jobs/<id>` gives the status (with
+  the position in the queue while queued), `.../download` the result, and `DELETE` cancels
+  the job, killing its ffmpeg if it is running. A signed-in owner is known by their session,
+  so the link in their notification works; anyone else gets 404, as for a job that does not
+  exist. The upload drawer polls every 2 seconds and downloads the result when it is done.
+- **Limits.** One active (queued or running) job per caller, refused with the 429 above.
+  At most 20 jobs wait in the queue (`MAX_QUEUED_VIDEO_JOBS`); with a full queue the upload
+  is refused with 503 "busy" and `Retry-After`, before it is read. A running job does not
+  stop its caller from using the other tools.
+- **The worker.** Each server process starts one from `instrumentation.ts`. It runs at most
+  two encodes at once, of which guests may hold one, and claims the oldest queued job first.
+  A running job holds a 60-second lease, renewed every 20 seconds. A job whose lease runs
+  out (its process died) is queued again; one that has been started twice is failed with
+  a message saying the server restarted. On SIGTERM the worker stops claiming and leaves
+  the shutdown to Next; encodes still running when the process exits are requeued that way.
+- **Results.** A compressed video is kept for 24 hours, then the worker's sweep deletes it
+  and the download answers 410. It does not count towards the storage quota. The input is
+  deleted as soon as the job ends, however it ends. Signed-in users get a Recent Activity
+  row (not re-downloadable, as before) and a notification: done, with a download link, or
+  failed, with the reason. Guests get neither, and a guest who closes the page loses the job.
 
 ### Chromium sandbox (`CHROMIUM_DISABLE_SANDBOX`)
 
@@ -162,17 +198,19 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    - `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=300`. Railway's default is 0: the old deployment
      is killed as soon as it gets SIGTERM, which cuts off conversions in progress
      ([Deployments reference](https://docs.railway.com/deployments/reference)). 300
-     seconds covers Compress Video's 4-minute time budget (see Limits), the longest of any
-     job, once its upload has arrived.
+     seconds lets the synchronous tools' requests finish. It does not keep Compress Video
+     encodes alive: the old process exits once its requests are done, and an encode still
+     running there starts again from the beginning on the new deployment, about a minute
+     later (its lease runs out; see Compress Video background jobs).
    - Do not set `CHROMIUM_DISABLE_SANDBOX` unless the first deployment shows it is needed.
 2. **Healthcheck.** Set the service's healthcheck path to `/api/health`. Railway calls it
    only while starting a deployment, from the hostname `healthcheck.railway.app`
    ([Healthchecks](https://docs.railway.com/reference/healthchecks)).
 3. **One replica.** Keep the service at a single instance. The rate limiter (`proxy.ts`),
-   the worker slot counter (`lib/convert/worker-job.ts`), the image, video and render job
-   counters (`lib/image/image-jobs.ts`, `lib/video/video-jobs.ts`,
-   `lib/puppeteer/render-jobs.ts`) and the per-caller job
-   claims (`lib/convert/caller-jobs.ts`) live in the process's memory. With more than one instance each instance would apply its own limits, so the
+   the worker slot counter (`lib/convert/worker-job.ts`), the image and render job
+   counters (`lib/image/image-jobs.ts`, `lib/puppeteer/render-jobs.ts`), Compress Video's
+   encode slots (`lib/video/video-job-worker.ts`; its queue is in MongoDB) and the
+   per-caller job claims (`lib/convert/caller-jobs.ts`) live in the process's memory. With more than one instance each instance would apply its own limits, so the
    real limits would multiply.
 4. **Google OAuth.** In Google Cloud Console, add
    `<NEXTAUTH_URL>/api/auth/callback/google` as an authorised redirect URI of the OAuth
@@ -188,9 +226,15 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    (7 days on Enterprise, `lib/storage-limits.ts`) plus a day of margin. It must cover the
    conversion outputs at the bucket root (`<uuid>.<ext>`) and the documents under `docs/`.
    Root keys share no prefix, so the rule applies to the whole bucket (no prefix). Raise it
-   if the longest retention grows. Background video jobs (#115) add their own, shorter rule
-   for `video-jobs/`. On R2 this rule is also the only thing that removes the file of a
-   conversion saved with the `autoDelete` preference, or of a delete that failed part-way.
+   if the longest retention grows. On R2 this rule is also the only thing that removes the
+   file of a conversion saved with the `autoDelete` preference, or of a delete that failed
+   part-way.
+7. **R2 lifecycle rule for video jobs (owner step).** Add a second rule, for the prefix
+   `video-jobs/`, that deletes objects 2 days after upload. The worker deletes each job's
+   input when the job ends and its result after 24 hours, so this only catches files a
+   failed delete or a crash left behind; 2 days is the 24-hour result plus a day of margin.
+   Both rules match these keys. S3 applies the earlier of two matching expirations; check
+   that R2 does too (checklist item 12).
 
 ### Instance size
 
@@ -242,36 +286,40 @@ Watch the memory graph during the first weeks and adjust.
   500 / 500 MB) are unchanged, so on a slower connection a large Pro or Enterprise upload
   can be cut off before the app sees it.
 - **Request duration.** Railway closes a request after 5 minutes without data transferred,
-  and after 15 minutes in any case (same page). Compress Video returns nothing until the
-  encode finishes, so until it runs as a background job (#115) every accepted video must
-  be probed, encoded and ready within a **4-minute time budget**, for every plan
-  (`VIDEO_TIME_BUDGET_MS` in `lib/convert/video-compress-limits.ts`):
+  and after 15 minutes in any case (same page). Compress Video's request only uploads and
+  probes the video; the encode runs in the background, so no request waits on it.
+- **Compress Video encode time.** Each job may spend, by plan, **5 / 15 / 30 / 60 minutes**
+  probing and encoding (guest / Basic / Pro / Enterprise; `VIDEO_ENCODE_BUDGET_MS` in
+  `lib/convert/video-compress-limits.ts`):
   - It encodes with x264's `veryfast` preset, 2-2.7x as fast as the default at 1080p, with
     files of about the same size or smaller.
-  - Before encoding, it estimates the encode time from the probe (frames, pixels decoded,
-    pixels encoded at the chosen resolution) and the measured cost in `ENCODE_COST`, and
-    refuses the video with a 400 if 1.5 times the estimate does not fit. The message says
-    roughly how long a video at that resolution and frame rate can be, and suggests 720p or
-    480p when that helps. Nothing is encoded for a refused video.
-  - The plan length caps (5 / 15 / 30 / 60 minutes) still apply, but only bind for small
-    videos, such as 480p30 for a guest.
-  - If an estimate is wrong, the encode is killed when the budget runs out and the user is
-    told the video could not be compressed in time.
+  - At upload, it estimates the encode time from the probe (frames, pixels decoded, pixels
+    encoded at the chosen resolution) and the measured cost in `ENCODE_COST`, and refuses
+    the video with a 400 if 1.5 times the estimate does not fit. The message says roughly
+    how long a video at that resolution and frame rate can be, and suggests 720p or 480p
+    when that helps. Nothing is queued for a refused video.
+  - The plan length caps (5 / 15 / 30 / 60 minutes of video) still apply on top.
+  - If an estimate is wrong, the encode is killed when the budget runs out and the job fails
+    with "This video could not be compressed in time."
 
-  With the cost measured on a 4-core laptop, the longest video accepted is:
+  With the cost measured on a 4-core laptop, the longest video accepted at Original
+  resolution is (720p and 480p allow up to about twice as long):
 
-  | Source | fps | Original | 720p | 480p |
-  | --- | --- | --- | --- | --- |
-  | 4K | 30 | 16 s | 40 s | 45 s |
-  | 1440p | 30 | 37 s | 1.2 min | 1.5 min |
-  | 1080p | 30 | 1.1 min | 1.7 min | 2.4 min |
-  | 1080p | 60 | 33 s | 52 s | 1.2 min |
-  | 720p | 30 | 2.5 min | 2.5 min | 3.9 min |
-  | 720p | 60 | 1.2 min | 1.2 min | 2.0 min |
-  | 480p | 30 | 5.6 min (guests: 5) | same | same |
+  | Source | fps | Guest | Basic | Pro | Enterprise |
+  | --- | --- | --- | --- | --- | --- |
+  | 4K | 30 | 21 s | 1.0 min | 2.1 min | 4.1 min |
+  | 1440p | 30 | 46 s | 2.3 min | 4.6 min | 9.3 min |
+  | 1080p | 30 | 1.4 min | 4.1 min | 8.2 min | 16.5 min |
+  | 1080p | 60 | 41 s | 2.1 min | 4.1 min | 8.2 min |
+  | 720p | 30 | 3.1 min | 9.3 min | 18.5 min | 37.1 min |
+  | 720p | 60 | 1.5 min | 4.6 min | 9.3 min | 18.5 min |
+  | 480p | 30 | 5 min (cap) | 15 min (cap) | 30 min (cap) | 60 min (cap) |
 
   These scale with the server's speed: **re-measure `ENCODE_COST` on Railway** (see the
   checklist).
+- **Compress Video results.** Kept 24 hours under `video-jobs/` (see step 7 above), outside
+  the storage quota. With at most 20 queued jobs, waiting uploads take at most 10 GB of
+  storage (20 at the 500 MB cap), and in practice far less.
 
 ### First deployment checklist
 
@@ -289,9 +337,14 @@ Watch the memory graph during the first weeks and adjust.
 7. Re-measure Compress Video's cost on Railway's CPU and update `ENCODE_COST` in
    `lib/convert/video-compress-limits.ts`: as a guest, time two 1080p30 uploads at once
    (Original, High quality) and divide each encode's seconds by its megapixel-frames. Then
-   check that a clip just under the new limit finishes within 4 minutes while a second
-   encode runs, and that one just over it is refused at once.
+   check that a guest's clip just under the new limit finishes within 5 minutes while a
+   second encode runs, and that one just over it is refused at once.
 8. Redeploy while a conversion is running and check that it completes (draining time).
+   Redeploy while a video is being compressed and check that the job starts again on the
+   new deployment and completes, and that its owner is notified.
 9. Check memory and CPU under real use against the sizing above.
 10. Confirm files land in, and are served from, the R2 bucket.
 11. Confirm the bucket's 8-day lifecycle rule exists (step 6 above).
+12. Confirm the 2-day lifecycle rule for the `video-jobs/` prefix exists (step 7 above),
+    that a `video-jobs/` object left behind is gone after 2 days rather than 8, and that a
+    compressed video can be downloaded from R2 through its job.
