@@ -24,10 +24,15 @@ export function storedContentType(fileName: string): string | null {
   return extension ? STORED_CONTENT_TYPES[extension] : null;
 }
 
+interface Retention {
+  expiresAt: Date;
+  autoDelete: boolean;
+}
+
 /**
- * Resolves when a user's history row expires, or null when the user no longer exists.
+ * Resolves how long a user's history row is kept, or null when the user no longer exists.
  */
-async function resolveExpiry(userId: string): Promise<Date | null> {
+async function resolveRetention(userId: string): Promise<Retention | null> {
   await dbConnect();
 
   const user = await User.findById(userId);
@@ -37,16 +42,35 @@ async function resolveExpiry(userId: string): Promise<Date | null> {
   }
 
   const autoDelete = user.preferences?.autoDelete === true;
+  return {
+    autoDelete,
+    expiresAt: autoDelete ? new Date(Date.now() + 1000) : retentionExpiry(user.plan),
+  };
+}
 
-  // If autoDelete is true, set expiresAt to basically immediately so cleanupStorage picks it up instantly.
-  return autoDelete
-    ? new Date(Date.now() + 1000) // Expires in 1 second
-    : retentionExpiry(user.plan);
+function createHistoryRow(
+  userId: string,
+  toolUsed: string,
+  fileName: string,
+  fileSize: number,
+  expiresAt: Date,
+  metadata?: Record<string, unknown>
+) {
+  return Conversion.create({
+    userId,
+    toolUsed,
+    fileName,
+    fileSize,
+    status: 'Completed',
+    metadata,
+    expiresAt,
+  });
 }
 
 /**
  * Saves a generated file buffer to storage and logs it to the database for Recent Activity.
  * `outputFileName` is the name the file is re-downloaded under; its extension decides the stored type.
+ * A user with the autoDelete preference gets the history row only: the file is never stored.
  */
 export async function saveConversionRecord(
   userId: string,
@@ -60,8 +84,13 @@ export async function saveConversionRecord(
     throw new Error(`Cannot store "${outputFileName}": unsupported output type.`);
   }
 
-  const expiresAt = await resolveExpiry(userId);
-  if (!expiresAt) return null;
+  const retention = await resolveRetention(userId);
+  if (!retention) return null;
+
+  const { expiresAt, autoDelete } = retention;
+  if (autoDelete) {
+    return createHistoryRow(userId, toolUsed, outputFileName, fileBuffer.length, expiresAt, metadata);
+  }
 
   const fileId = crypto.randomUUID();
   const diskFileName = `${fileId}${extension}`;
@@ -99,18 +128,10 @@ export async function recordConversionHistory(
   fileSize: number,
   metadata?: Record<string, unknown>
 ) {
-  const expiresAt = await resolveExpiry(userId);
-  if (!expiresAt) return null;
+  const retention = await resolveRetention(userId);
+  if (!retention) return null;
 
-  return Conversion.create({
-    userId,
-    toolUsed,
-    fileName,
-    fileSize,
-    status: 'Completed',
-    metadata,
-    expiresAt,
-  });
+  return createHistoryRow(userId, toolUsed, fileName, fileSize, retention.expiresAt, metadata);
 }
 
 // The storage folders the sweep owns ('' is the root), each with the model whose
