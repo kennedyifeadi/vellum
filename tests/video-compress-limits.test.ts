@@ -6,8 +6,8 @@ import {
   encodeLimitsForPlan,
   estimateEncodeSeconds,
   longestEncodableSeconds,
+  MAX_QUEUED_VIDEO_JOBS,
   tooMuchWorkMessage,
-  VIDEO_TIME_BUDGET_MS,
 } from '../lib/convert/video-compress-limits';
 
 const MB = 1024 * 1024;
@@ -16,17 +16,25 @@ const COST = { encodeSecondsPerMegapixelFrame: 0.02, decodeSecondsPerMegapixelFr
 const FULL_HD = 1920 * 1080;
 const SD = 854 * 480;
 
-describe('the Compress Video time budget', () => {
-  it('is four minutes, so an encode ends well inside a five-minute silent request', () => {
-    expect(VIDEO_TIME_BUDGET_MS).toBe(4 * 60_000);
+const MINUTE_MS = 60_000;
+const GUEST_BUDGET_MS = encodeLimitsForPlan('Free').timeBudgetMs;
+
+describe('the Compress Video encode budget', () => {
+  it.each([
+    ['Free', 5],
+    ['Basic', 15],
+    ['Pro', 30],
+    ['Enterprise', 60],
+  ])('gives %s %i minutes of encoding per job', (plan, minutes) => {
+    expect(encodeLimitsForPlan(plan).timeBudgetMs).toBe(minutes * MINUTE_MS);
   });
 
-  it.each(PLANS)('is the same for %s', (plan) => {
-    expect(encodeLimitsForPlan(plan).timeBudgetMs).toBe(VIDEO_TIME_BUDGET_MS);
+  it('gives an unknown plan the guest budget and the guest length cap', () => {
+    expect(encodeLimitsForPlan('Platinum')).toEqual({ maxDurationSeconds: 5 * 60, timeBudgetMs: 5 * MINUTE_MS });
   });
 
-  it('gives an unknown plan the same budget and the guest length cap', () => {
-    expect(encodeLimitsForPlan('Platinum')).toEqual({ maxDurationSeconds: 5 * 60, timeBudgetMs: VIDEO_TIME_BUDGET_MS });
+  it('queues at most twenty jobs', () => {
+    expect(MAX_QUEUED_VIDEO_JOBS).toBe(20);
   });
 
   it('still gives each plan its own length cap and size cap', () => {
@@ -82,28 +90,38 @@ describe('encodeFitsTimeBudget', () => {
 describe('longestEncodableSeconds', () => {
   it('is the length whose estimate exactly fills the budget', () => {
     const shape = { frameRate: 30, inputPixels: FULL_HD, outputPixels: FULL_HD };
-    const longest = longestEncodableSeconds(shape, VIDEO_TIME_BUDGET_MS, COST);
+    const longest = longestEncodableSeconds(shape, GUEST_BUDGET_MS, COST);
 
     const frames = Math.floor(longest * 30);
-    expect(encodeFitsTimeBudget({ frames, ...shape }, VIDEO_TIME_BUDGET_MS, COST)).toBe(true);
-    expect(encodeFitsTimeBudget({ frames: frames + 1, ...shape }, VIDEO_TIME_BUDGET_MS, COST)).toBe(false);
+    expect(encodeFitsTimeBudget({ frames, ...shape }, GUEST_BUDGET_MS, COST)).toBe(true);
+    expect(encodeFitsTimeBudget({ frames: frames + 1, ...shape }, GUEST_BUDGET_MS, COST)).toBe(false);
   });
 
   it('halves at twice the frame rate', () => {
-    const thirty = longestEncodableSeconds({ frameRate: 30, inputPixels: FULL_HD, outputPixels: FULL_HD }, VIDEO_TIME_BUDGET_MS, COST);
-    const sixty = longestEncodableSeconds({ frameRate: 60, inputPixels: FULL_HD, outputPixels: FULL_HD }, VIDEO_TIME_BUDGET_MS, COST);
+    const thirty = longestEncodableSeconds({ frameRate: 30, inputPixels: FULL_HD, outputPixels: FULL_HD }, GUEST_BUDGET_MS, COST);
+    const sixty = longestEncodableSeconds({ frameRate: 60, inputPixels: FULL_HD, outputPixels: FULL_HD }, GUEST_BUDGET_MS, COST);
 
     expect(sixty).toBeCloseTo(thirty / 2, 9);
   });
 });
 
 describe('the measured cost', () => {
-  const longestAt = (inputPixels: number, outputPixels: number, frameRate = 30) =>
-    longestEncodableSeconds({ frameRate, inputPixels, outputPixels }, VIDEO_TIME_BUDGET_MS, ENCODE_COST);
+  const longestAt = (inputPixels: number, outputPixels: number, plan = 'Free', frameRate = 30) =>
+    longestEncodableSeconds({ frameRate, inputPixels, outputPixels }, encodeLimitsForPlan(plan).timeBudgetMs, ENCODE_COST);
 
-  // The failure behind #115: a guest's longest video at 1080p30 could not finish in time.
+  // The failure behind #115: a guest's longest video at 1080p30 cannot finish in time.
   it('refuses a 1080p30 video as long as the guest length cap', () => {
     expect(longestAt(FULL_HD, FULL_HD)).toBeLessThan(5 * 60);
+  });
+
+  // The owner's estimate on the laptop's numbers: about 1.4 / 4 / 8 / 16 minutes.
+  it.each([
+    ['Free', 1.4],
+    ['Basic', 4.1],
+    ['Pro', 8.2],
+    ['Enterprise', 16.4],
+  ])('lets %s encode about %s minutes of 1080p30 at Original', (plan, minutes) => {
+    expect(longestAt(FULL_HD, FULL_HD, plan) / 60).toBeCloseTo(minutes, 0);
   });
 
   it('allows a longer video when the same 1080p input is encoded at 480p', () => {

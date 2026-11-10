@@ -9,6 +9,7 @@ import {
   type HeldJob,
 } from './helpers/heldJobs';
 import { MB, streamedUpload } from './helpers/uploadRequests';
+import { finishOldestVideoJob } from './helpers/videoJobMocks';
 
 jest.setTimeout(60_000);
 
@@ -57,14 +58,15 @@ jest.mock('@/lib/image/to-png', () => ({
   convertJpegToPng: () => require('./helpers/heldJobs').holdInProcess('jpg-to-png', Buffer.from('png')),
 }));
 
+// Compress Video's request ends once its upload is probed and queued, so the probe is the
+// part of its job that the caller's claim covers. The encode runs later, in the worker.
 jest.mock('@/lib/video/compress', () => ({
-  compressVideo: ({ signal }: { signal?: AbortSignal }) =>
-    require('./helpers/heldJobs').holdInProcess(
-      'video-compress',
-      { bytes: Buffer.from('mp4'), compressed: true, format: { extension: 'mp4', contentType: 'video/mp4' } },
-      signal,
-    ),
+  ...jest.requireActual('@/lib/video/compress'),
+  checkVideoUpload: ({ signal }: { signal?: AbortSignal }) =>
+    require('./helpers/heldJobs').holdInProcess('video-compress:probe', undefined, signal),
 }));
+
+jest.mock('@/lib/video/video-job-store', () => require('./helpers/videoJobMocks').memoryVideoJobStoreModule());
 
 jest.mock('@/lib/html/to-pdf', () => ({
   convertHtmlToPdf: () => require('./helpers/heldJobs').holdInProcess('html-to-pdf', Buffer.from('%PDF-held')),
@@ -93,14 +95,17 @@ import { DOCX_TO_PDF_BUSY_MESSAGE, HTML_TO_PDF_BUSY_MESSAGE } from '@/lib/puppet
 const JOB_IN_PROGRESS = 'You already have a conversion in progress. Please wait for it to finish.';
 
 type Handler = (req: NextRequest) => Promise<Response>;
-type Pool = 'pdf-worker' | 'image' | 'video' | 'browser';
+type Pool = 'pdf-worker' | 'image' | 'browser';
 
 interface Route {
   name: string;
   handler: Handler;
   field: string;
   fileName: string;
-  pool: Pool;
+  /** The slot pool its request works in; none for a route that only queues the work. */
+  pool: Pool | null;
+  /** What a request answers once its held job finishes. */
+  okStatus: number;
   /** The held job the request starts first. */
   heldTool: string;
   busyMessage: string;
@@ -110,18 +115,19 @@ interface Route {
 }
 
 const ROUTES: Route[] = [
-  { name: 'pdf-to-docx', handler: pdfToDocx, field: 'pdf', fileName: 'a.pdf', pool: 'pdf-worker', heldTool: 'pdf-to-docx', busyMessage: CONVERTER_BUSY_MESSAGE },
-  { name: 'find-pdf', handler: findPdf, field: 'pdf', fileName: 'a.pdf', pool: 'pdf-worker', heldTool: 'find-pdf', busyMessage: FIND_PDF_BUSY_MESSAGE, extraFields: [['searchTerm', 'held']] },
-  { name: 'image-to-pdf', handler: imageToPdf, field: 'images', fileName: 'a.png', pool: 'image', heldTool: 'image-to-pdf:images', busyMessage: IMAGE_TO_PDF_BUSY_MESSAGE },
-  { name: 'image-compress', handler: imageCompress, field: 'images', fileName: 'a.jpg', pool: 'image', heldTool: 'image-compress', busyMessage: COMPRESS_IMAGE_BUSY_MESSAGE },
-  { name: 'jpg-to-png', handler: jpgToPng, field: 'images', fileName: 'a.jpg', pool: 'image', heldTool: 'jpg-to-png', busyMessage: JPEG_TO_PNG_BUSY_MESSAGE },
-  { name: 'video-compress', handler: videoCompress, field: 'video', fileName: 'a.mp4', pool: 'video', heldTool: 'video-compress', busyMessage: COMPRESS_VIDEO_BUSY_MESSAGE },
-  { name: 'html-to-pdf', handler: htmlToPdf, field: 'html', fileName: 'a.html', pool: 'browser', heldTool: 'html-to-pdf', busyMessage: HTML_TO_PDF_BUSY_MESSAGE },
-  { name: 'docx-to-pdf', handler: docxToPdf, field: 'docx', fileName: 'a.docx', pool: 'browser', heldTool: 'docx-to-pdf', busyMessage: DOCX_TO_PDF_BUSY_MESSAGE, fileBytes: () => zipFile },
+  { name: 'pdf-to-docx', handler: pdfToDocx, field: 'pdf', fileName: 'a.pdf', pool: 'pdf-worker', okStatus: 200, heldTool: 'pdf-to-docx', busyMessage: CONVERTER_BUSY_MESSAGE },
+  { name: 'find-pdf', handler: findPdf, field: 'pdf', fileName: 'a.pdf', pool: 'pdf-worker', okStatus: 200, heldTool: 'find-pdf', busyMessage: FIND_PDF_BUSY_MESSAGE, extraFields: [['searchTerm', 'held']] },
+  { name: 'image-to-pdf', handler: imageToPdf, field: 'images', fileName: 'a.png', pool: 'image', okStatus: 200, heldTool: 'image-to-pdf:images', busyMessage: IMAGE_TO_PDF_BUSY_MESSAGE },
+  { name: 'image-compress', handler: imageCompress, field: 'images', fileName: 'a.jpg', pool: 'image', okStatus: 200, heldTool: 'image-compress', busyMessage: COMPRESS_IMAGE_BUSY_MESSAGE },
+  { name: 'jpg-to-png', handler: jpgToPng, field: 'images', fileName: 'a.jpg', pool: 'image', okStatus: 200, heldTool: 'jpg-to-png', busyMessage: JPEG_TO_PNG_BUSY_MESSAGE },
+  { name: 'video-compress', handler: videoCompress, field: 'video', fileName: 'a.mp4', pool: null, okStatus: 202, heldTool: 'video-compress:probe', busyMessage: COMPRESS_VIDEO_BUSY_MESSAGE },
+  { name: 'html-to-pdf', handler: htmlToPdf, field: 'html', fileName: 'a.html', pool: 'browser', okStatus: 200, heldTool: 'html-to-pdf', busyMessage: HTML_TO_PDF_BUSY_MESSAGE },
+  { name: 'docx-to-pdf', handler: docxToPdf, field: 'docx', fileName: 'a.docx', pool: 'browser', okStatus: 200, heldTool: 'docx-to-pdf', busyMessage: DOCX_TO_PDF_BUSY_MESSAGE, fileBytes: () => zipFile },
 ];
 
 const route = (name: string) => ROUTES.find((candidate) => candidate.name === name)!;
 const routesIn = (pool: Pool) => ROUTES.filter((candidate) => candidate.pool === pool);
+const POOLED_ROUTES = ROUTES.filter((candidate) => candidate.pool !== null);
 
 interface Caller {
   user?: string;
@@ -225,13 +231,25 @@ async function start(target: Route, caller: Caller) {
   }
 }
 
-/** Ends a started request's job, passing Image to PDF through its second step. */
+/**
+ * Ends a started request's job, passing Image to PDF through its second step, and ends
+ * the encode a Compress Video request queued, as the worker would, so its caller may
+ * start another.
+ */
 async function finish({ response, job }: { response: Promise<Response>; job: HeldJob }) {
   job.finish();
   if (job.tool === 'image-to-pdf:images') {
     (await nextHeldJob('image-to-pdf:pdf')).finish();
   }
-  return response;
+  const res = await response;
+  if (job.tool === 'video-compress:probe' && res.status === 202) {
+    await finishOldestVideoJob();
+  }
+  return res;
+}
+
+function expectDone(res: Response, target: Route) {
+  expect(res.status).toBe(target.okStatus);
 }
 
 async function expectJobInProgress(res: Response) {
@@ -247,7 +265,7 @@ async function expectBusy(res: Response, message: string) {
 }
 
 async function expectRunsToCompletion(target: Route, caller: Caller) {
-  expect((await finish(await start(target, caller))).status).toBe(200);
+  expectDone(await finish(await start(target, caller)), target);
 }
 
 describe.each([
@@ -270,14 +288,14 @@ describe.each([
         expect(refused.bytesRead()).toBe(0);
       }
 
-      expect((await finish(first)).status).toBe(200);
+      expectDone(await finish(first), running);
       await expectRunsToCompletion(running, caller);
     },
   );
 });
 
 describe('callers running at once', () => {
-  it.each(ROUTES.map((target) => [target.name, target] as const))(
+  it.each(POOLED_ROUTES.map((target) => [target.name, target] as const))(
     'in %s are each given a slot until the pool is full',
     async (_name, target) => {
       const first = await start(target, user('user-1'));
@@ -285,14 +303,14 @@ describe('callers running at once', () => {
 
       await expectBusy(await send(target, user('user-3')), target.busyMessage);
 
-      expect((await finish(first)).status).toBe(200);
-      expect((await finish(second)).status).toBe(200);
+      expectDone(await finish(first), target);
+      expectDone(await finish(second), target);
     },
   );
 });
 
 describe('the guests share of a pool', () => {
-  it.each(ROUTES.map((target) => [target.name, target] as const))(
+  it.each(POOLED_ROUTES.map((target) => [target.name, target] as const))(
     'in %s is one slot: a second guest is busy once its upload is read, a signed-in user is not',
     async (_name, target) => {
       const guestJob = await start(target, guest('203.0.113.1'));
@@ -300,28 +318,28 @@ describe('the guests share of a pool', () => {
       await expectBusy(await send(target, guest('203.0.113.2')), target.busyMessage);
 
       const userJob = await start(target, user('user-1'));
-      expect((await finish(userJob)).status).toBe(200);
-      expect((await finish(guestJob)).status).toBe(200);
+      expectDone(await finish(userJob), target);
+      expectDone(await finish(guestJob), target);
       await expectRunsToCompletion(target, guest('203.0.113.2'));
     },
   );
 
-  it.each(ROUTES.map((target) => [target.name, target] as const))(
+  it.each(POOLED_ROUTES.map((target) => [target.name, target] as const))(
     'in %s is not held by a guest whose upload is still arriving',
     async (_name, target) => {
       const uploading = await sendWithHeldBody(target, guest('203.0.113.1'));
 
       await expectRunsToCompletion(target, guest('203.0.113.2'));
       const userJob = await start(target, user('user-1'));
-      expect((await finish(userJob)).status).toBe(200);
+      expectDone(await finish(userJob), target);
 
       uploading.finishUpload();
       const job = await nextHeldJob(target.heldTool);
-      expect((await finish({ response: uploading.response, job })).status).toBe(200);
+      expectDone(await finish({ response: uploading.response, job }), target);
     },
   );
 
-  it.each(ROUTES.map((target) => [target.name, target] as const))(
+  it.each(POOLED_ROUTES.map((target) => [target.name, target] as const))(
     'in %s still refuses the uploading guest a second job before reading it',
     async (_name, target) => {
       const uploading = await sendWithHeldBody(target, guest('203.0.113.1'));
@@ -332,20 +350,20 @@ describe('the guests share of a pool', () => {
 
       uploading.finishUpload();
       const job = await nextHeldJob(target.heldTool);
-      expect((await finish({ response: uploading.response, job })).status).toBe(200);
+      expectDone(await finish({ response: uploading.response, job }), target);
     },
   );
 
-  it.each(ROUTES.map((target) => [target.name, target] as const))(
+  it.each(POOLED_ROUTES.map((target) => [target.name, target] as const))(
     'in %s frees a guest refused it, who may start another job at once',
     async (_name, target) => {
       const guestJob = await start(target, guest('203.0.113.1'));
 
       await expectBusy(await send(target, guest('203.0.113.2')), target.busyMessage);
-      const otherPool = route(target.pool === 'video' ? 'pdf-to-docx' : 'video-compress');
-      await expectRunsToCompletion(otherPool, guest('203.0.113.2'));
+      // Compress Video's upload takes no pool slot, so it runs while the guests' share is held.
+      await expectRunsToCompletion(route('video-compress'), guest('203.0.113.2'));
 
-      expect((await finish(guestJob)).status).toBe(200);
+      expectDone(await finish(guestJob), target);
       await expectRunsToCompletion(target, guest('203.0.113.2'));
     },
   );
@@ -458,7 +476,7 @@ describe('a finished job frees its caller', () => {
   it('in video-compress when the client aborts', async () => {
     const abort = new AbortController();
     const response = send(route('video-compress'), caller, abort.signal);
-    await nextHeldJob('video-compress');
+    await nextHeldJob('video-compress:probe');
 
     abort.abort();
     const res = await response;

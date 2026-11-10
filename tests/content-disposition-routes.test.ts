@@ -57,15 +57,12 @@ jest.mock('@/lib/doc/to-pdf', () => ({
   convertDocxToPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.7 docx')),
 }));
 
-jest.mock('@/lib/video/compress', () => ({
-  compressVideo: jest.fn().mockResolvedValue({
-    bytes: Buffer.from('encoded video'),
-    compressed: true,
-    format: { extension: 'mp4', contentType: 'video/mp4' },
-  }),
-}));
+jest.mock('@/lib/video/compress', () => require('./helpers/videoJobMocks').passingVideoProbeModule());
+jest.mock('@/lib/video/video-job-store', () => require('./helpers/videoJobMocks').memoryVideoJobStoreModule());
 
 import JSZip from 'jszip';
+import { finishOldestVideoJob } from './helpers/videoJobMocks';
+
 import { POST as compressPdf } from '../app/api/convert/compress-pdf/route';
 import { POST as pdfToDocx } from '../app/api/convert/pdf-to-docx/route';
 import { POST as htmlToPdf } from '../app/api/convert/html-to-pdf/route';
@@ -73,6 +70,7 @@ import { POST as docxToPdf } from '../app/api/convert/docx-to-pdf/route';
 import { POST as imageCompress } from '../app/api/convert/image-compress/route';
 import { POST as jpgToPng } from '../app/api/convert/jpg-to-png/route';
 import { POST as videoCompress } from '../app/api/convert/video-compress/route';
+import { GET as downloadVideoJob } from '../app/api/convert/video-compress/jobs/[id]/download/route';
 import { GET as downloadConversion } from '../app/api/download/[id]/route';
 import { GET as downloadDocument } from '../app/api/documents/download/[id]/route';
 
@@ -150,6 +148,15 @@ interface UploadTool {
   call: () => Promise<Response>;
 }
 
+// Compress Video's result is downloaded from its job once the job is done.
+async function compressVideoAndDownload(): Promise<Response> {
+  await videoCompress(post('/api/convert/video-compress'));
+  const jobId = await finishOldestVideoJob();
+  return downloadVideoJob(new NextRequest(`http://localhost:3000/api/convert/video-compress/jobs/${jobId}/download`), {
+    params: Promise.resolve({ id: jobId }),
+  });
+}
+
 const TOOLS: UploadTool[] = [
   { route: 'compress-pdf', extension: '.pdf', type: 'application/pdf', bytes: tinyPdf, call: () => compressPdf(post('/api/convert/compress-pdf')) },
   { route: 'pdf-to-docx', extension: '.pdf', type: 'application/pdf', bytes: tinyPdf, call: () => pdfToDocx(post('/api/convert/pdf-to-docx')) },
@@ -157,7 +164,7 @@ const TOOLS: UploadTool[] = [
   { route: 'docx-to-pdf', extension: '.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: tinyDocx, call: () => docxToPdf(post('/api/convert/docx-to-pdf')) },
   { route: 'image-compress', extension: '.jpg', type: 'image/jpeg', bytes: tinyJpeg, call: () => imageCompress(post('/api/convert/image-compress')) },
   { route: 'jpg-to-png', extension: '.jpg', type: 'image/jpeg', bytes: tinyJpeg, call: () => jpgToPng(post('/api/convert/jpg-to-png')) },
-  { route: 'video-compress', extension: '.mp4', type: 'video/mp4', bytes: async () => Buffer.from('video bytes'), call: () => videoCompress(post('/api/convert/video-compress')) },
+  { route: 'video-compress', extension: '.mp4', type: 'video/mp4', bytes: async () => Buffer.from('video bytes'), call: compressVideoAndDownload },
 ];
 
 beforeEach(() => {

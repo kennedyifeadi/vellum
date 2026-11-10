@@ -10,8 +10,8 @@ const { maxBytes: MAX_FILE_SIZE, maxVideoMinutes } = TOOL_LIMITS['video-compress
 
 // An encode's time follows the video's length, not its size: a 16x16 clip an hour long
 // is a few kilobytes. Read by the probe, so it refuses a video before anything is encoded.
-// The time budget below now limits most videos to less than these; they still bound
-// videos small enough to encode faster than that, such as 480p30 for a guest.
+// The plan's encode budget below limits most videos to less than these; they still bound
+// videos small enough to encode faster than that.
 const MAX_DURATION_SECONDS: PlanTierValues<number> = {
   guest: maxVideoMinutes.guest * SECONDS_PER_MINUTE,
   Basic: maxVideoMinutes.Basic * SECONDS_PER_MINUTE,
@@ -19,14 +19,22 @@ const MAX_DURATION_SECONDS: PlanTierValues<number> = {
   Enterprise: maxVideoMinutes.Enterprise * SECONDS_PER_MINUTE,
 };
 
-// Railway ends a request that has sent nothing for 5 minutes (#115), and this route sends
-// nothing until its output is ready. So an accepted video must be probed, encoded and read
-// back within this, counted from when the upload has been received, whatever the plan; the
-// minute left over is margin for sending the response. Background jobs would lift it.
-export const VIDEO_TIME_BUDGET_MS = 4 * MS_PER_MINUTE;
+// How long one job may spend probing, encoding and reading back its output, by plan. The
+// encode runs in a background job (lib/video/video-job-worker.ts), so no request waits on it.
+const VIDEO_ENCODE_BUDGET_MS: PlanTierValues<number> = {
+  guest: 5 * MS_PER_MINUTE,
+  Basic: 15 * MS_PER_MINUTE,
+  Pro: 30 * MS_PER_MINUTE,
+  Enterprise: 60 * MS_PER_MINUTE,
+};
 
-// The probe reads a 500 MB upload in under 2s. It runs inside VIDEO_TIME_BUDGET_MS.
+// The probe reads a 500 MB upload in under 2s. It runs inside the plan's encode budget.
 export const PROBE_DEADLINE_MS = 30_000;
+
+// Jobs waiting for an encode slot, across every caller. Each holds its upload in storage
+// (500 MB at most, so 10 GB at worst) and each caller has at most one, so a full queue
+// means twenty different callers are waiting behind two encodes.
+export const MAX_QUEUED_VIDEO_JOBS = 20;
 
 export const MAX_CONCURRENT_VIDEO_ENCODES = 2;
 
@@ -124,7 +132,7 @@ export interface VideoEncodeLimits {
 export function encodeLimitsForPlan(plan: string | null | undefined): VideoEncodeLimits {
   return {
     maxDurationSeconds: resolvePlanLimit(plan, MAX_DURATION_SECONDS),
-    timeBudgetMs: VIDEO_TIME_BUDGET_MS,
+    timeBudgetMs: resolvePlanLimit(plan, VIDEO_ENCODE_BUDGET_MS),
   };
 }
 

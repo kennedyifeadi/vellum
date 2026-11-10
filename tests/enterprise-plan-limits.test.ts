@@ -68,13 +68,8 @@ jest.mock('@/lib/image/to-pdf', () => ({
   convertImagesToPdf: jest.fn().mockResolvedValue(Buffer.from('image-pdf')),
 }));
 
-jest.mock('@/lib/video/compress', () => ({
-  compressVideo: jest.fn().mockResolvedValue({
-    bytes: Buffer.from('compressed-video'),
-    compressed: true,
-    format: { extension: 'mp4', contentType: 'video/mp4' },
-  }),
-}));
+jest.mock('@/lib/video/compress', () => require('./helpers/videoJobMocks').passingVideoProbeModule());
+jest.mock('@/lib/video/video-job-store', () => require('./helpers/videoJobMocks').memoryVideoJobStoreModule());
 
 // Stands in for the extraction worker, which refuses a PDF over the page cap it is given.
 jest.mock('@/lib/convert/find-pdf-extraction', () => ({
@@ -283,8 +278,7 @@ describe('Enterprise plan limits — video size (video-compress)', () => {
   it('allows an Enterprise user a video at the 500MB cap', async () => {
     mockResolvedFiles = [fakeFile(500 * MB, 'clip.mp4')];
     const res = await handleVideoCompress(postReq('/api/convert/video-compress'));
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toBe('video/mp4');
+    expect(res.status).toBe(202);
   });
 
   it('rejects an Enterprise user past the 500MB cap', async () => {

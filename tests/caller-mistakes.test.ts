@@ -35,6 +35,8 @@ jest.mock('@/lib/conversions', () => ({
   recordConversionHistory: jest.fn(),
 }));
 
+jest.mock('@/lib/video/video-job-store', () => require('./helpers/videoJobMocks').memoryVideoJobStoreModule());
+
 import { POST as compressPdf } from '../app/api/convert/compress-pdf/route';
 import { POST as docxToPdf } from '../app/api/convert/docx-to-pdf/route';
 import { POST as findPdf } from '../app/api/convert/find-pdf/route';
