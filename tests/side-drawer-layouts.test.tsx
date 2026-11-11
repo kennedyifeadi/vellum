@@ -96,7 +96,7 @@ async function pdfWithPages(pages: number, name = 'pages.pdf') {
   return new File([new Uint8Array(await doc.save())], name, { type: 'application/pdf' });
 }
 
-function renderDrawer(toolId: string) {
+function renderDrawer(toolId: string | null) {
   return render(<SideDrawer isOpen onClose={jest.fn()} file={null} toolId={toolId} />);
 }
 
@@ -361,5 +361,78 @@ describe.each(['mobile', 'desktop'] as const)('Split PDF page range at %s width'
     await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('PDF split successfully!', 'success'));
     expect(sentForm().get('startPage')).toBe('5');
     expect(sentForm().get('endPage')).toBe('7');
+  });
+});
+
+const ENABLED_COLOUR = 'bg-[#6366f1]';
+const DISABLED_COLOUR = 'bg-[#f3f4f6]';
+
+function expectLook(button: HTMLElement, expected: 'enabled' | 'disabled') {
+  expect((button as HTMLButtonElement).disabled).toBe(expected === 'disabled');
+  expect(button.className.includes(ENABLED_COLOUR)).toBe(expected === 'enabled');
+  expect(button.className.includes(DISABLED_COLOUR)).toBe(expected === 'disabled');
+}
+
+describe.each(['mobile', 'desktop'] as const)('Process button look at %s width', (layout) => {
+  beforeEach(() => useLayout(layout));
+
+  it('looks disabled before a tool is chosen', () => {
+    const { container } = renderDrawer(null);
+    chooseFiles(container, [pdf()]);
+
+    expectLook(processButton(), 'disabled');
+  });
+
+  it('looks disabled until a file is chosen', () => {
+    const { container } = renderDrawer('compress-pdf');
+    expectLook(processButton(), 'disabled');
+
+    chooseFiles(container, [pdf()]);
+    expectLook(processButton(), 'enabled');
+  });
+
+  it('looks disabled while the Lock PDF password is invalid or unconfirmed', () => {
+    const { container } = renderDrawer('lock-pdf');
+    chooseFiles(container, [pdf()]);
+    const password = screen.getByPlaceholderText(/At least \d+ characters/);
+    const confirm = screen.getByPlaceholderText('Repeat password');
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(password, { target: { value: 'short' } });
+    fireEvent.change(confirm, { target: { value: 'short' } });
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(password, { target: { value: 'long enough secret' } });
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(confirm, { target: { value: 'long enough secret' } });
+    expectLook(processButton(), 'enabled');
+  });
+
+  it('looks disabled while a file is processing', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { container } = renderDrawer('compress-pdf');
+    chooseFiles(container, [pdf()]);
+
+    fireEvent.click(processButton());
+
+    expect(await screen.findByText('Processing...')).toBeTruthy();
+    expectLook(processButton(), 'disabled');
+  });
+
+  it('looks disabled while a video job waits in the queue', async () => {
+    jest.useFakeTimers();
+    fetchMock.mockImplementation(async (url: string) =>
+      url === '/api/convert/video-compress'
+        ? answer({ status: 202, json: { jobId: 'job-1', status: 'queued' } })
+        : answer({ json: { status: 'queued', position: 2, fileName: 'clip.mp4', originalSize: 1 } }),
+    );
+    const { container } = renderDrawer('video-compress');
+    chooseFiles(container, [new File(['raw video'], 'clip.mp4', { type: 'video/mp4' })]);
+    expectLook(processButton(), 'enabled');
+
+    fireEvent.click(processButton());
+
+    expectLook(await screen.findByRole('button', { name: 'Queued (2 ahead)…' }), 'disabled');
   });
 });

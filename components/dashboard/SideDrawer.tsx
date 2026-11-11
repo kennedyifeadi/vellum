@@ -1193,15 +1193,17 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     </motion.div>
   );
 
+  const isProcessDisabled = isActionDisabled() || isProcessing;
+
   const renderProcessControls = (layout: 'mobile' | 'desktop') => (
     <>
       <button
-        disabled={isActionDisabled() || isProcessing}
+        disabled={isProcessDisabled}
         onClick={handleProcess}
         className={`w-full rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
           layout === 'mobile' ? 'h-11 text-sm' : 'h-10 text-xs'
         } ${
-          selectedTool && !isProcessing
+          !isProcessDisabled
             ? layout === 'mobile'
               ? 'bg-[#6366f1] text-white hover:bg-[#4f46e5]'
               : 'bg-[#6366f1] text-white hover:bg-[#4f46e5] shadow-sm shadow-[#6366f1]/20'
