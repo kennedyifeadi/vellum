@@ -154,6 +154,10 @@ export function createMemoryStorage(): StorageDriver & { keys(): string[]; failD
     async get(key) {
       return files.get(key) ?? null;
     },
+    async openRead(key) {
+      const bytes = files.get(key);
+      return bytes ? { stream: new Blob([new Uint8Array(bytes)]).stream(), size: bytes.length } : null;
+    },
     async delete(key) {
       if (this.failDeletes) throw new Error(`delete of ${key} failed`);
       files.delete(key);

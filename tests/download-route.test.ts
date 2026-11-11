@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import type { TrackedFile } from './helpers/storedFileStreams';
 
 const OWNER_ID = '507f1f77bcf86cd799439011';
 const OTHER_USER_ID = '507f1f77bcf86cd799439022';
@@ -36,8 +37,18 @@ jest.mock('@/models/conversion', () => ({
   },
 }));
 
+let mockOpened: TrackedFile[] = [];
+let mockFailAfterChunks: number | undefined;
 jest.mock('@/lib/storage', () => ({
-  getStorage: () => ({ get: async (key: string) => mockStored.get(key) ?? null }),
+  getStorage: () => ({
+    openRead: async (key: string) => {
+      const bytes = mockStored.get(key);
+      if (!bytes) return null;
+      const file = require('./helpers/storedFileStreams').trackedFile(bytes, { failAfterChunks: mockFailAfterChunks });
+      mockOpened.push(file);
+      return file;
+    },
+  }),
   LocalDiskStorage: class {},
 }));
 
@@ -49,8 +60,8 @@ function storeRecord(extension: string, fileName: string, bytes: Buffer) {
   mockStored.set(diskFileName, bytes);
 }
 
-function download(id = FILE_ID) {
-  return handleDownload(new NextRequest(`http://localhost:3000/api/download/${id}`), {
+function download(id = FILE_ID, signal?: AbortSignal) {
+  return handleDownload(new NextRequest(`http://localhost:3000/api/download/${id}`, { signal }), {
     params: Promise.resolve({ id }),
   });
 }
@@ -60,6 +71,8 @@ beforeEach(() => {
   mockUserId = OWNER_ID;
   mockRecords = [];
   mockStored.clear();
+  mockOpened = [];
+  mockFailAfterChunks = undefined;
 });
 
 describe('download route', () => {
@@ -77,7 +90,45 @@ describe('download route', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe(contentType);
     expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="${fileName}"; filename*=UTF-8''${fileName}`);
+    expect(res.headers.get('Content-Length')).toBe(String(bytes.length));
     expect(Buffer.from(await res.arrayBuffer()).equals(bytes)).toBe(true);
+  });
+
+  it('streams the stored file instead of handing over a buffer', async () => {
+    storeRecord('.pdf', 'report.pdf', Buffer.from('a stored file several chunks long'));
+
+    const res = await download();
+
+    expect(res.body).toBeInstanceOf(ReadableStream);
+    expect(mockOpened).toHaveLength(1);
+  });
+
+  it('releases the stored file when the client disconnects mid-download', async () => {
+    storeRecord('.pdf', 'report.pdf', Buffer.from('a stored file several chunks long'));
+    const client = new AbortController();
+
+    const res = await download(FILE_ID, client.signal);
+    await res.body!.getReader().read();
+    client.abort();
+
+    await expect(mockOpened[0].cancelled).resolves.toBeUndefined();
+  });
+
+  it('ends the body without throwing when storage fails mid-download', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    storeRecord('.pdf', 'report.pdf', Buffer.from('a stored file several chunks long'));
+    mockFailAfterChunks = 2;
+
+    const res = await download();
+    const failure = await res.arrayBuffer().then(
+      () => null,
+      (error: Error) => error,
+    );
+
+    expect(res.status).toBe(200);
+    expect(failure?.name).toBe('AbortError');
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 
   it('returns 401 without authentication', async () => {
@@ -96,6 +147,7 @@ describe('download route', () => {
     const res = await download();
 
     expect(res.status).toBe(404);
+    expect(mockOpened).toHaveLength(0);
   });
 
   it('returns 404 when the stored file is gone', async () => {
@@ -105,5 +157,6 @@ describe('download route', () => {
     const res = await download();
 
     expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('File has expired and was removed');
   });
 });

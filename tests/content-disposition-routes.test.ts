@@ -40,7 +40,7 @@ jest.mock('@/models/userDocument', () => ({
 jest.mock('@/lib/storage', () => ({
   getStorage: () => ({
     put: jest.fn().mockResolvedValue(undefined),
-    get: jest.fn().mockResolvedValue(Buffer.from('stored bytes')),
+    openRead: jest.fn(async () => require('./helpers/storedFileStreams').trackedFile(Buffer.from('stored bytes'))),
   }),
   LocalDiskStorage: class {},
 }));

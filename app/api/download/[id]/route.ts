@@ -5,6 +5,7 @@ import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import { storedContentType } from '@/lib/conversions';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { storedFileResponse } from '@/lib/http/stored-file-response';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,17 +27,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const storage = getStorage();
-    const fileBuffer = await storage.get(conversion.diskFileName);
-    if (!fileBuffer) {
+    const file = await storage.openRead(conversion.diskFileName);
+    if (!file) {
       return NextResponse.json({ error: 'File has expired and was removed' }, { status: 404 });
     }
 
-    return new NextResponse(fileBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': storedContentType(conversion.diskFileName) ?? 'application/octet-stream',
-        'Content-Disposition': attachmentDisposition(conversion.fileName, 'download'),
-      },
-    });
+    return storedFileResponse(req, file, {
+      'Content-Type': storedContentType(conversion.diskFileName) ?? 'application/octet-stream',
+      'Content-Disposition': attachmentDisposition(conversion.fileName, 'download'),
+    }, `conversion download ${conversion.diskFileName}`);
 
   } catch (error) {
     console.error('Download error:', error);

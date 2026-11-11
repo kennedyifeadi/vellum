@@ -2,7 +2,7 @@ import { LocalDiskStorage } from './local';
 import { S3Storage } from './s3';
 import type { StorageDriver } from './types';
 
-export type { StorageDriver } from './types';
+export type { StorageDriver, StoredFileStream } from './types';
 export { LocalDiskStorage } from './local';
 export { S3Storage } from './s3';
 

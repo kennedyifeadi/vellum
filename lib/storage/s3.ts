@@ -5,7 +5,7 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
-import type { StorageDriver } from './types';
+import type { StorageDriver, StoredFileStream } from './types';
 
 function isNotFoundError(error: unknown): boolean {
   const name = (error as { name?: string })?.name;
@@ -51,7 +51,23 @@ export class S3Storage implements StorageDriver {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       if (!response.Body) return null;
       const bytes = await response.Body.transformToByteArray();
-      return Buffer.from(bytes);
+      return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      throw error;
+    }
+  }
+
+  async openRead(key: string): Promise<StoredFileStream | null> {
+    try {
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (!response.Body) return null;
+      const stream = response.Body.transformToWebStream();
+      if (response.ContentLength === undefined) {
+        await stream.cancel();
+        throw new Error(`GetObject for ${key} did not report a ContentLength`);
+      }
+      return { stream, size: response.ContentLength };
     } catch (error) {
       if (isNotFoundError(error)) return null;
       throw error;

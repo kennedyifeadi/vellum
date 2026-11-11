@@ -4,6 +4,7 @@ import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { storedFileResponse } from '@/lib/http/stored-file-response';
 
 // A stored document's type is whatever its uploader claimed, so it is only passed on for
 // types a browser will not run as a page or script; anything else is served as bytes.
@@ -42,18 +43,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!doc) return NextResponse.json({ error: 'Document not found' }, { status: 404 });
 
     const storage = getStorage();
-    const fileBuffer = await storage.get(`docs/${doc.diskFileName}`);
-    if (!fileBuffer) {
+    const file = await storage.openRead(`docs/${doc.diskFileName}`);
+    if (!file) {
       return NextResponse.json({ error: 'File removed from storage' }, { status: 404 });
     }
 
-    return new NextResponse(fileBuffer as unknown as BodyInit, {
-      headers: {
-        'Content-Type': servedContentType(doc.mimeType),
-        'Content-Disposition': attachmentDisposition(doc.fileName, 'download'),
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
+    return storedFileResponse(req, file, {
+      'Content-Type': servedContentType(doc.mimeType),
+      'Content-Disposition': attachmentDisposition(doc.fileName, 'download'),
+      'X-Content-Type-Options': 'nosniff',
+    }, `Library document ${doc.diskFileName}`);
 
   } catch (error) {
     console.error('[API/Documents/Download] Error:', error);

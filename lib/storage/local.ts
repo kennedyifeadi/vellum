@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { assertInsideDir } from '@/lib/paths';
-import type { StorageDriver } from './types';
+import type { StorageDriver, StoredFileStream } from './types';
 
 // A file is written before its database row is created, so a sweep running in that gap
 // would see it as orphaned. Files younger than this are never swept: it is far longer
@@ -31,6 +32,25 @@ export class LocalDiskStorage implements StorageDriver {
     const filePath = this.resolve(key);
     if (!fs.existsSync(filePath)) return null;
     return fs.readFileSync(filePath);
+  }
+
+  async openRead(key: string): Promise<StoredFileStream | null> {
+    const filePath = this.resolve(key);
+    let handle: fs.promises.FileHandle;
+    try {
+      handle = await fs.promises.open(filePath, 'r');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    try {
+      const { size } = await handle.stat();
+      const stream = Readable.toWeb(fs.createReadStream('', { fd: handle })) as ReadableStream<Uint8Array>;
+      return { stream, size };
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
   }
 
   async delete(key: string): Promise<void> {
