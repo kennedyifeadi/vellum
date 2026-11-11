@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { ClientError } from '@/lib/convert/errors';
 import { createMemoryStorage, createMemoryVideoJobStore } from './helpers/memoryVideoJobStore';
 import { newJob } from './helpers/videoJobStoreContract';
+import { trackedFile } from './helpers/storedFileStreams';
 
 let mockUserId: string | null = null;
 let mockPlan = 'Free';
@@ -470,6 +471,36 @@ describe('video-compress job download', () => {
     expect(res.headers.get('X-Original-Size')).toBe('1000');
     expect(res.headers.get('X-Compressed-Size')).toBe('16');
     expect(res.headers.get('X-Saved-Percent')).toBe('98');
+    expect(res.headers.get('Content-Length')).toBe('16');
+  });
+
+  it('streams the result from storage without reading the whole file first', async () => {
+    const { body } = await as(USER_A, () => upload({}, fakeFile(Buffer.alloc(1000), 'holiday.mp4')));
+    await finishJob(body.jobId, Buffer.from('fake-mp4-payload'));
+    jest.spyOn(mockStorage, 'get').mockRejectedValue(new Error('a download must not read the whole file'));
+
+    const res = await as(USER_A, () => download(body.jobId));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toBeInstanceOf(ReadableStream);
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('fake-mp4-payload');
+  });
+
+  it('releases the stored result when the client disconnects mid-download', async () => {
+    const { body } = await as(USER_A, () => upload());
+    await finishJob(body.jobId, Buffer.from('fake-mp4-payload'));
+    const file = trackedFile(Buffer.from('fake-mp4-payload'));
+    jest.spyOn(mockStorage, 'openRead').mockResolvedValue(file);
+    const client = new AbortController();
+    const request = new NextRequest(`http://localhost:3000/api/convert/video-compress/jobs/${body.jobId}/download`, {
+      signal: client.signal,
+    });
+
+    const res = await as(USER_A, () => downloadJob(request, params(body.jobId)));
+    await res.body!.getReader().read();
+    client.abort();
+
+    await expect(file.cancelled).resolves.toBeUndefined();
   });
 
   it('sends an original that was not made smaller with its own type, name and a 0% saving', async () => {
