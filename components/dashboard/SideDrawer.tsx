@@ -215,7 +215,25 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   // Tool-specific options states
   const [splitOptions, setSplitOptions] = useState({ startPage: 1, endPage: 1, splitEvery: false });
-  const [pdfPageCount, setPdfPageCount] = useState<number>(0);
+  const splitSource = selectedTool === 'split-pdf' && fileList[0] && !('isDriveFile' in fileList[0]) ? fileList[0] : null;
+  const [pageCount, setPageCount] = useState<{ file: File; pages: number } | null>(null);
+  // 0 while the chosen PDF's page count is unknown: not yet read, or unreadable.
+  const pdfPageCount = splitSource && pageCount?.file === splitSource ? pageCount.pages : 0;
+
+  useEffect(() => {
+    if (!splitSource) return;
+    let current = true;
+    import('./pdfjs')
+      .then(({ countPdfPages }) => countPdfPages(splitSource))
+      .then((pages) => {
+        if (current) setPageCount({ file: splitSource, pages });
+      })
+      .catch((error) => console.error('Could not count the PDF pages:', error));
+    return () => {
+      current = false;
+    };
+  }, [splitSource]);
+
   const [lockOptions, setLockOptions] = useState({ password: '', confirmPassword: '' });
   const lockPasswordError = lockOptions.password ? validateLockPassword(lockOptions.password) : null;
   const [findOptions, setFindOptions] = useState({ searchTerm: '' });
@@ -490,7 +508,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 <input 
                   type="number" 
                   min="1"
-                  max={pdfPageCount || 1}
+                  max={pdfPageCount || undefined}
                   value={splitOptions.startPage}
                   onChange={(e) => {
                     let val = parseInt(e.target.value) || 1;
@@ -509,7 +527,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                 <input 
                   type="number" 
                   min={splitOptions.startPage}
-                  max={pdfPageCount || 1}
+                  max={pdfPageCount || undefined}
                   value={splitOptions.endPage}
                   onChange={(e) => {
                     let val = parseInt(e.target.value) || 1;
@@ -1426,7 +1444,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                               <PdfThumbnail 
                                 file={f as File} 
                                 pageNumber={splitOptions.startPage} 
-                                onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} 
                               />
                               {splitOptions.startPage !== splitOptions.endPage && (
                                 <>
@@ -1441,7 +1458,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                               )}
                             </div>
                           ) : (
-                            <PdfThumbnail file={f as File} onLoadSuccess={({numPages}) => setPdfPageCount(numPages)} />
+                            <PdfThumbnail file={f as File} />
                           )
                         ) : f.type.includes('image') && !('isDriveFile' in f) ? (
                           <ImageThumbnail file={f as File} />

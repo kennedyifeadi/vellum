@@ -1,19 +1,16 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
-
-// Set up the worker for pdf.js using a stable CDN
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+import './pdfjs';
 
 interface PdfThumbnailProps {
   file: File;
   pageNumber?: number;
-  onLoadSuccess?: (pdf: { numPages: number }) => void;
 }
 
-export default function PdfThumbnail({ file, pageNumber = 1, onLoadSuccess }: PdfThumbnailProps) {
+export default function PdfThumbnail({ file, pageNumber = 1 }: PdfThumbnailProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,7 +34,6 @@ export default function PdfThumbnail({ file, pageNumber = 1, onLoadSuccess }: Pd
         {fileUrl ? (
           <Document
             file={fileUrl}
-            onLoadSuccess={onLoadSuccess}
             className="flex justify-center w-full"
             loading={
               <div className="w-full aspect-square flex items-center justify-center text-xs text-[#94a3b8] font-medium bg-[#f8fafc]">
