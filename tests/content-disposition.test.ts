@@ -1,4 +1,4 @@
-import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { attachmentDisposition, fileNameFromDisposition } from '@/lib/http/content-disposition';
 
 describe('attachmentDisposition', () => {
   it.each([
@@ -55,5 +55,43 @@ describe('attachmentDisposition', () => {
     for (const name of ['报告.pdf', '😀', 'a"b', 'a\r\nb', '\u0000', 'é'.repeat(1000)]) {
       expect(() => new Headers({ 'content-disposition': attachmentDisposition(name, 'download') })).not.toThrow();
     }
+  });
+});
+
+describe('fileNameFromDisposition', () => {
+  it.each([
+    ['an ASCII name', 'report.pdf'],
+    ['spaces', 'my report.pdf'],
+    ['accents', 'résumé.pdf'],
+    ['CJK', '报告.pdf'],
+    ['emoji', '😀.pdf'],
+    ["RFC 5987's reserved characters", "it's (1)*.pdf"],
+  ])('reads back the name attachmentDisposition wrote, with %s', (_label, name) => {
+    expect(fileNameFromDisposition(attachmentDisposition(name, 'download'))).toBe(name);
+  });
+
+  it('prefers filename* to filename, wherever each appears', () => {
+    expect(fileNameFromDisposition(`attachment; filename*=UTF-8''%E6%97%85.mp4; filename="_.mp4"`)).toBe('旅.mp4');
+    expect(fileNameFromDisposition(`ATTACHMENT; FILENAME="_.mp4"; FILENAME*=utf-8'en'%E6%97%85.mp4`)).toBe('旅.mp4');
+  });
+
+  it.each([
+    ['a quoted filename', 'attachment; filename="clip.mp4"', 'clip.mp4'],
+    ['an unquoted filename', 'attachment; filename=clip.mp4', 'clip.mp4'],
+    ['escapes in a quoted filename', 'attachment; filename="a\\"b.mp4"', 'a"b.mp4'],
+    ['filename* that is not percent-encoded UTF-8', `attachment; filename*=UTF-8''%E6%97; filename="x.mp4"`, 'x.mp4'],
+    ['filename* in another charset', `attachment; filename*=ISO-8859-1''caf%E9.mp4; filename="cafe.mp4"`, 'cafe.mp4'],
+  ])('falls back to filename for %s', (_label, header, expected) => {
+    expect(fileNameFromDisposition(header)).toBe(expected);
+  });
+
+  it.each([
+    ['no header', null],
+    ['an empty header', ''],
+    ['no file name', 'attachment'],
+    ['an empty file name', 'attachment; filename=""'],
+    ['only an unreadable filename*', `attachment; filename*=UTF-8''%ZZ`],
+  ])('gives null for %s', (_label, header) => {
+    expect(fileNameFromDisposition(header)).toBeNull();
   });
 });

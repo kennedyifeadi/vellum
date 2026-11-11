@@ -25,23 +25,24 @@ jest.setTimeout(30_000);
 const JOB_ID = '6730a1b2c3d4e5f6a7b8c9d0';
 const JOB_PATH = `/api/convert/video-compress/jobs/${JOB_ID}`;
 
-function answer(status: number, json: unknown = {}) {
-  return { ok: status >= 200 && status < 300, status, headers: new Headers(), json: async () => json, blob: async () => new Blob(['mp4']) };
+function answer(status: number, json: unknown = {}, headers: Record<string, string> = {}) {
+  return { ok: status >= 200 && status < 300, status, headers: new Headers(headers), json: async () => json, blob: async () => new Blob(['mp4']) };
 }
 
 const statusOf = (status: string, extra: Record<string, unknown> = {}) => ({ status, fileName: 'clip.mp4', originalSize: 10 * 1024 * 1024, ...extra });
 
 let fetchMock: jest.Mock;
 let statuses: Record<string, unknown>[];
+let downloadHeaders: Record<string, string>;
 
 function requests(method: string, path: string) {
   return fetchMock.mock.calls.filter(([url, init]) => url === path && (init?.method ?? 'GET') === method);
 }
 
-function renderDrawer(onClose = jest.fn()) {
+function renderDrawer(onClose = jest.fn(), video = new File(['raw video'], 'clip.mp4', { type: 'video/mp4' })) {
   const view = render(<SideDrawer isOpen onClose={onClose} file={null} toolId="video-compress" />);
   const input = view.container.ownerDocument.querySelector<HTMLInputElement>('input[type="file"]')!;
-  fireEvent.change(input, { target: { files: [new File(['raw video'], 'clip.mp4', { type: 'video/mp4' })] } });
+  fireEvent.change(input, { target: { files: [video] } });
   return { ...view, onClose };
 }
 
@@ -61,6 +62,7 @@ beforeEach(() => {
   mockAddNotification.mockReset();
   mockUser = { plan: 'Basic' };
   statuses = [statusOf('queued', { position: 1 }), statusOf('running'), statusOf('done', { savedPercent: 40, compressedSize: 6 * 1024 * 1024 })];
+  downloadHeaders = {};
   fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/convert/video-compress') return answer(202, { jobId: JOB_ID, status: 'queued', ...(mockUser ? {} : { token: 'guest-token' }) });
     if (url === JOB_PATH && init?.method === 'DELETE') return answer(200, { status: 'cancelled' });
@@ -70,7 +72,7 @@ beforeEach(() => {
       if (typeof next.fail === 'number') return answer(next.fail);
       return answer(200, next);
     }
-    if (url === `${JOB_PATH}/download`) return answer(200);
+    if (url === `${JOB_PATH}/download`) return answer(200, {}, downloadHeaders);
     return answer(404);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -236,4 +238,50 @@ describe('Compress Video in the drawer', () => {
     );
     expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
+
+  function savedNames() {
+    const saved: string[] = [];
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+    return saved;
+  }
+
+  async function compressToTheEnd(video: File) {
+    renderDrawer(jest.fn(), video);
+    fireEvent.click(processButton());
+    expect(await screen.findByText('Queued (1 ahead)…')).toBeTruthy();
+    await poll();
+    await poll();
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Reduced by 40% — 4.0 MB saved!', 'success'));
+  }
+
+  it("saves the result under the download's Content-Disposition name", async () => {
+    downloadHeaders = { 'Content-Disposition': `attachment; filename="compressed_holiday.mp4"; filename*=UTF-8''compressed_holiday.mp4` };
+    const saved = savedNames();
+
+    await compressToTheEnd(new File(['raw video'], 'holiday.mov', { type: 'video/quicktime' }));
+
+    expect(saved).toEqual(['compressed_holiday.mp4']);
+  });
+
+  it("takes a non-ASCII name from the header's filename*", async () => {
+    downloadHeaders = {
+      'Content-Disposition': `attachment; filename="compressed___.mp4"; filename*=UTF-8''compressed_%E6%97%85%E8%A1%8C.mp4`,
+    };
+    const saved = savedNames();
+
+    await compressToTheEnd(new File(['raw video'], '旅行.mov', { type: 'video/quicktime' }));
+
+    expect(saved).toEqual(['compressed_旅行.mp4']);
+  });
+
+  it('names a .mov result .mp4 when the download has no Content-Disposition', async () => {
+    const saved = savedNames();
+
+    await compressToTheEnd(new File(['raw video'], 'holiday.mov', { type: 'video/quicktime' }));
+
+    expect(saved).toEqual(['compressed_holiday.mp4']);
+  });
+
 });

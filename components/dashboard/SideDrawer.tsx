@@ -12,6 +12,7 @@ import {
   videoJobHeaders,
   videoJobLabel,
   videoJobPath,
+  videoResultFileName,
   videoResultMessage,
   VideoJobUnreachableError,
   waitForVideoJob,
@@ -316,7 +317,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         const err = await download.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to download the compressed video.');
       }
-      saveDownload(await download.blob(), `compressed_${fileList[0].name}`);
+      saveDownload(await download.blob(), videoResultFileName(download, fileList[0].name));
       showToast(videoResultMessage(last), 'success');
       onClose();
       setFileList([]);
