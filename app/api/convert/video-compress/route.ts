@@ -29,6 +29,9 @@ class QueueFullError extends Error {}
 /** The storage the upload would go to cannot be used, e.g. no driver is configured. */
 class StorageUnavailableError extends Error {}
 
+// The reason names server settings, so it goes to the log, not to the user.
+const STORAGE_UNAVAILABLE_MESSAGE = 'Compress Video is temporarily unavailable. Please try again later.';
+
 function jobStorage(): StorageDriver {
   try {
     return getStorage();
@@ -111,7 +114,7 @@ export async function POST(req: NextRequest) {
     // No Retry-After: the server has to be configured before an upload can succeed.
     if (error instanceof StorageUnavailableError) {
       console.error(`[convert] ${error.message}`);
-      return NextResponse.json({ error: error.message }, { status: 503 });
+      return NextResponse.json({ error: STORAGE_UNAVAILABLE_MESSAGE }, { status: 503 });
     }
     return handleConvertError(error, 'Failed to compress video');
   }

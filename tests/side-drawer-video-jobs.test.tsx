@@ -284,4 +284,17 @@ describe('Compress Video in the drawer', () => {
     expect(saved).toEqual(['compressed_holiday.mp4']);
   });
 
+  it("shows the upload's storage 503 message once, without retrying it", async () => {
+    fetchMock.mockImplementationOnce(async () => answer(503, { error: 'Compress Video is temporarily unavailable. Please try again later.' }));
+    renderDrawer();
+
+    fireEvent.click(processButton());
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith('Compress Video is temporarily unavailable. Please try again later.', 'error'),
+    );
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(requests('POST', '/api/convert/video-compress')).toHaveLength(1);
+    expect(requests('GET', JOB_PATH)).toHaveLength(0);
+  });
 });
