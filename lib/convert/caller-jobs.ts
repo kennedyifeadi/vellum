@@ -3,12 +3,13 @@ import type { Caller } from '@/lib/auth/caller';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { clientAddressKey } from '@/lib/http/rate-limit';
 
-/** The slot pools a heavy job can take slots from; see runWorkerJob, runImageJob, runVideoJob and runRenderJob. */
-export type JobPool = 'pdf-worker' | 'image' | 'video' | 'browser';
+/** The slot pools a heavy job can take slots from; see runWorkerJob, runImageJob and runRenderJob. */
+export type JobPool = 'pdf-worker' | 'image' | 'browser';
 
 // Each pool has two slots. Guests together may hold one of them, so a signed-in user can
-// always find a slot that no guest can take.
-const GUEST_SLOTS_PER_POOL = 1;
+// always find a slot that no guest can take. Compress Video's worker keeps the same rule
+// for its encode slots (lib/video/video-job-service.ts).
+export const GUEST_SLOTS_PER_POOL = 1;
 
 const JOB_IN_PROGRESS_RETRY_AFTER_SECONDS = 5;
 
@@ -53,7 +54,7 @@ const runningJobs = (globalForCallerJobs.vellumCallerJobs ??= new Map<symbol, Ru
 
 // A guest without a trusted address is counted under the rate limiter's shared key, so
 // without CLIENT_IP_HEADER every guest shares one running job.
-function callerKeyOf(headers: Headers, { userId }: Caller): string {
+export function callerKeyOf(headers: Headers, { userId }: Caller): string {
   return userId ? `user:${userId}` : `guest:${clientAddressKey(headers)}`;
 }
 

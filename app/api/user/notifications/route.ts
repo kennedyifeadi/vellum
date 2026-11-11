@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
+import { pushNotification } from '@/lib/notifications';
 
 // GET — return the user's notifications (newest first)
 export async function GET(req: NextRequest) {
@@ -31,25 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'type, title, and message are required' }, { status: 400 });
     }
 
-    const newNotification = {
-      id: Math.random().toString(36).substring(7),
-      type,
-      title,
-      message,
-      timestamp: new Date().toISOString(),
-      isRead: false,
-      ...(link ? { link } : {}),
-    };
-
-    // Push to DB and keep only the last 50 entries
-    await User.findByIdAndUpdate(userId, {
-      $push: {
-        notifications: {
-          $each: [newNotification],
-          $slice: -50, // keep only the 50 most recent
-        },
-      },
-    });
+    const newNotification = await pushNotification(userId, { type, title, message, link });
 
     return NextResponse.json({ notification: newNotification }, { status: 201 });
   } catch (error) {

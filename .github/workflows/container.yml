@@ -44,12 +44,32 @@ jobs:
                 (error.message.split("\n").find((line) => line.includes("sandbox")) || error.message)));
           '
 
+      # Compress Video keeps its jobs in MongoDB (#115). Nothing else the smoke tests send
+      # touches the database: they are all guests. MongoDB 7.0, because 8.0 and later refuse
+      # to start on this runner's Linux kernel (6.19 or newer, SERVER-121912).
+      - name: Start MongoDB
+        run: |
+          docker network create vellum
+          docker run --detach --name mongo --network vellum \
+            mongo:7.0@sha256:8bb4442761a63a8dda452744082cdac9644b429807eb977b42324a63cef59ca4
+          for i in $(seq 1 60); do
+            if docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' 2>/dev/null | grep -q 1; then exit 0; fi
+            sleep 1
+          done
+          echo "MongoDB did not answer a ping within 60 seconds"
+          docker ps --all --filter name=mongo
+          docker logs mongo
+          exit 1
+
       # Placeholder values, not secrets: guest conversions never use them, but the proxy
-      # reads NEXTAUTH_SECRET on every request. No database is configured. The sandbox is
-      # turned off explicitly because of the check above, so the PDF routes can be tested.
+      # reads NEXTAUTH_SECRET on every request. The sandbox is turned off explicitly because
+      # of the check above, so the PDF routes can be tested. Production refuses to store files
+      # without a storage driver, and Compress Video stores the guest's upload for its job.
       - name: Start the runtime image
         run: |
-          docker run --detach --name app --publish 3000:3000 \
+          docker run --detach --name app --network vellum --publish 3000:3000 \
+            --env MONGODB_URI=mongodb://mongo:27017/vellum_ci \
+            --env STORAGE_DRIVER=local \
             --env NEXTAUTH_SECRET=ci-placeholder-not-a-secret \
             --env JWT_SECRET=ci-placeholder-not-a-secret \
             --env CHROMIUM_DISABLE_SANDBOX=true \
@@ -122,4 +142,6 @@ jobs:
 
       - name: Server log
         if: always()
-        run: docker logs app || true
+        run: |
+          docker logs app || true
+          docker logs --tail 50 mongo || true

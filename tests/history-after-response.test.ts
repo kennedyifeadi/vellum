@@ -56,14 +56,6 @@ jest.mock('@/lib/doc/to-pdf', () => ({
   convertDocxToPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.7 docx')),
 }));
 
-jest.mock('@/lib/video/compress', () => ({
-  compressVideo: jest.fn().mockResolvedValue({
-    bytes: Buffer.from('encoded video'),
-    compressed: true,
-    format: { extension: 'mp4', contentType: 'video/mp4' },
-  }),
-}));
-
 import { recordConversionHistory, saveConversionRecord } from '@/lib/conversions';
 import { POST as compressPdf } from '../app/api/convert/compress-pdf/route';
 import { POST as mergePdf } from '../app/api/convert/merge-pdf/route';
@@ -76,7 +68,6 @@ import { POST as docxToPdf } from '../app/api/convert/docx-to-pdf/route';
 import { POST as imageToPdf } from '../app/api/convert/image-to-pdf/route';
 import { POST as imageCompress } from '../app/api/convert/image-compress/route';
 import { POST as jpgToPng } from '../app/api/convert/jpg-to-png/route';
-import { POST as videoCompress } from '../app/api/convert/video-compress/route';
 
 jest.setTimeout(60_000);
 
@@ -116,7 +107,6 @@ const ROUTES: [string, () => Promise<File[]>, () => Promise<Response>][] = [
   ['image-to-pdf', async () => [file(await jpeg(), 'a.jpg', 'image/jpeg')], () => imageToPdf(post('/api/convert/image-to-pdf'))],
   ['image-compress', async () => [file(await jpeg(), 'a.jpg', 'image/jpeg')], () => imageCompress(post('/api/convert/image-compress'))],
   ['jpg-to-png', async () => [file(await jpeg(), 'a.jpg', 'image/jpeg')], () => jpgToPng(post('/api/convert/jpg-to-png'))],
-  ['video-compress', async () => [file(Buffer.from('video'), 'a.mp4', 'video/mp4')], () => videoCompress(post('/api/convert/video-compress'))],
 ];
 
 function historyWrites(): number {

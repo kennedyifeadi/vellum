@@ -42,7 +42,19 @@ jest.mock('@/lib/drive/resolveFiles', () => ({
   resolveFiles: jest.fn().mockImplementation(() => Promise.resolve(mockResolvedFiles)),
 }));
 
+let mockStorage: ReturnType<typeof createMemoryStorage>;
+jest.mock('@/lib/storage', () => ({
+  getStorage: () => mockStorage,
+  LocalDiskStorage: class {},
+}));
+
+jest.mock('@/lib/video/video-job-store', () => require('./helpers/videoJobMocks').memoryVideoJobStoreModule());
+
 import { POST as handleVideoCompress } from '../app/api/convert/video-compress/route';
+import { GET as downloadJob } from '../app/api/convert/video-compress/jobs/[id]/download/route';
+import { encodeWithFfmpeg, videoJobStore } from '@/lib/video/video-job-service';
+import { VideoJobWorker } from '@/lib/video/video-job-worker';
+import { createMemoryStorage } from './helpers/memoryVideoJobStore';
 
 jest.setTimeout(120_000);
 
@@ -55,12 +67,39 @@ function uploadedFile(bytes: Buffer, name: string, type = 'video/mp4') {
   };
 }
 
+/** Runs the queued job with the real encoder, as the worker does, until it has ended. */
+async function runQueuedJob(): Promise<void> {
+  const worker = new VideoJobWorker({ store: videoJobStore(), storage: mockStorage, encode: encodeWithFfmpeg, slots: 1, guestSlots: 1 });
+  await worker.wake();
+  await worker.idle();
+}
+
+/**
+ * Uploads a video and, once it is accepted, runs its job and downloads the result: the
+ * upload's own answer when it is refused, the download's otherwise.
+ */
 async function compress(bytes: Buffer, name: string, fields: Record<string, string> = {}) {
   mockResolvedFiles = [uploadedFile(bytes, name)];
   const formData = new FormData();
   for (const [key, value] of Object.entries(fields)) formData.append(key, value);
-  const res = await handleVideoCompress(
+  const accepted = await handleVideoCompress(
     new NextRequest('http://localhost:3000/api/convert/video-compress', { method: 'POST', body: formData }),
+  );
+  if (accepted.status !== 202) {
+    return { res: accepted, body: Buffer.from(await accepted.arrayBuffer()) };
+  }
+
+  const { jobId, token } = await accepted.json();
+  await runQueuedJob();
+  const job = await videoJobStore().get(jobId);
+  if (job?.status !== 'done') {
+    throw new Error(`job ${jobId} ended ${job?.status}: ${job?.error}`);
+  }
+  const res = await downloadJob(
+    new NextRequest(`http://localhost:3000/api/convert/video-compress/jobs/${jobId}/download`, {
+      headers: token ? { 'X-Job-Token': token } : {},
+    }),
+    { params: Promise.resolve({ id: jobId }) },
   );
   return { res, body: Buffer.from(await res.arrayBuffer()) };
 }
@@ -79,6 +118,7 @@ beforeEach(() => {
   mockUserId = null;
   mockPlan = 'Free';
   mockResolvedFiles = [];
+  mockStorage = createMemoryStorage();
   processes = trackSpawnedProcesses();
 });
 

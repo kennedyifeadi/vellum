@@ -8,6 +8,15 @@ import Script from 'next/script';
 import Image from 'next/image';
 import { admitFiles, selectionError, uploadLimitLabel } from '@/lib/upload-limits';
 import { RetryCancelledError, fetchWithBusyRetry } from '@/lib/busy-retry';
+import {
+  videoJobHeaders,
+  videoJobLabel,
+  videoJobPath,
+  videoResultMessage,
+  VideoJobUnreachableError,
+  waitForVideoJob,
+  type VideoJobHandle,
+} from '@/lib/video-job-client';
 import { MIN_LOCK_PASSWORD_LENGTH, validateLockPassword } from '@/lib/pdf/lock-password';
 
 export interface DriveFile {
@@ -122,6 +131,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const [isProcessing, setIsProcessing] = useState(false);
   const [isWaitingForSlot, setIsWaitingForSlot] = useState(false);
   const retryControllerRef = useRef<AbortController | null>(null);
+  // A Compress Video job runs on the server after its upload; the drawer follows it until it
+  // ends. `inBackground` is set when a signed-in user closes the drawer: the job goes on and
+  // the server notifies them, so its result is not downloaded here.
+  const videoJobRef = useRef<{ job: VideoJobHandle; controller: AbortController; inBackground: boolean } | null>(null);
+  const [videoJobProgress, setVideoJobProgress] = useState<string | null>(null);
 
   // Resizable drawer state (desktop)
   const [drawerWidth, setDrawerWidth] = useState(400);
@@ -220,8 +234,20 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   };
 
   useEffect(() => {
-    if (!isOpen) retryControllerRef.current?.abort();
-  }, [isOpen]);
+    const videoJob = videoJobRef.current;
+    if (isOpen) {
+      if (videoJob) videoJob.inBackground = false;
+      return;
+    }
+    retryControllerRef.current?.abort();
+    if (!videoJob || videoJob.inBackground) return;
+    if (user) {
+      videoJob.inBackground = true;
+      showToast("Your video is still being compressed. We'll notify you when it's ready.", 'info');
+    } else {
+      videoJob.controller.abort();
+    }
+  }, [isOpen, user, showToast]);
 
   const sendWithBusyRetry = async (send: () => Promise<Response>) => {
     const controller = new AbortController();
@@ -231,6 +257,85 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     } finally {
       retryControllerRef.current = null;
       setIsWaitingForSlot(false);
+    }
+  };
+
+  const saveDownload = (blob: Blob, fileName: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
+  // The job's last status, or null once its status has been unreachable for too long. The job
+  // may still be running then, so the message must not say it failed.
+  const followVideoJob = async (job: VideoJobHandle, signal: AbortSignal) => {
+    try {
+      return await waitForVideoJob(job, { signal, onStatus: (status) => setVideoJobProgress(videoJobLabel(status)) });
+    } catch (error) {
+      if (!(error instanceof VideoJobUnreachableError)) throw error;
+      if (user) {
+        showToast("Lost contact with the server. We'll notify you when your video is ready.", 'info');
+      } else {
+        showToast('Lost contact with the server, so the compressed video can no longer be fetched. Please upload it again.', 'error');
+      }
+      return null;
+    }
+  };
+
+  // Uploads the video once, then follows its job: the result is downloaded when it is done.
+  const compressVideoInBackground = async (formData: FormData) => {
+    const response = await sendWithBusyRetry(() => fetch('/api/convert/video-compress', { method: 'POST', body: formData }));
+    const accepted = await response.json().catch(() => ({}));
+    if (response.status !== 202) {
+      throw new Error(accepted.error || 'Failed to process: video-compress');
+    }
+
+    const job: VideoJobHandle = { jobId: accepted.jobId, token: accepted.token };
+    const videoJob = { job, controller: new AbortController(), inBackground: false };
+    videoJobRef.current = videoJob;
+    setVideoJobProgress(videoJobLabel(accepted));
+    try {
+      const last = await followVideoJob(job, videoJob.controller.signal);
+      if (!last || last.status === 'cancelled') return;
+      window.dispatchEvent(new Event('activityUpdated'));
+      if (last.status === 'failed') {
+        throw new Error(last.error || 'This video could not be compressed. Please try again.');
+      }
+      if (videoJob.inBackground) {
+        showToast(`"${last.fileName}" is compressed. Download it from your notifications.`, 'success');
+        return;
+      }
+
+      const download = await fetch(videoJobPath(job, '/download'), { headers: videoJobHeaders(job) });
+      if (!download.ok) {
+        const err = await download.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to download the compressed video.');
+      }
+      saveDownload(await download.blob(), `compressed_${fileList[0].name}`);
+      showToast(videoResultMessage(last), 'success');
+      onClose();
+      setFileList([]);
+    } finally {
+      videoJobRef.current = null;
+      setVideoJobProgress(null);
+    }
+  };
+
+  const cancelVideoJob = async () => {
+    const videoJob = videoJobRef.current;
+    if (!videoJob) return;
+    videoJob.controller.abort();
+    try {
+      await fetch(videoJobPath(videoJob.job), { method: 'DELETE', headers: videoJobHeaders(videoJob.job) });
+      showToast('Video compression cancelled.', 'info');
+    } catch (error) {
+      console.error('Failed to cancel the video job:', error);
+      showToast('Could not cancel the video. Please try again.', 'error');
     }
   };
 
@@ -366,7 +471,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   const currentToolInfo = availableTools.find(t => t.id === selectedTool);
   const toolName = currentToolInfo?.name ?? 'This tool';
   const limitLabel = uploadLimitLabel(selectedTool, plan);
-  const processLabel = isWaitingForSlot ? 'Waiting for a free slot…' : isProcessing ? 'Processing...' : 'Process File';
+  const processLabel = isWaitingForSlot
+    ? 'Waiting for a free slot…'
+    : videoJobProgress ?? (isProcessing ? 'Processing...' : 'Process File');
 
   const renderToolInputs = () => {
     if (!selectedTool) return null;
@@ -699,6 +806,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           formData.append('resolution', videoCompressOptions.resolution);
         }
         
+        if (selectedTool === 'video-compress') {
+          await compressVideoInBackground(formData);
+          return;
+        }
+
         const apiUrl = `/api/convert/${selectedTool}`;
         const response = await sendWithBusyRetry(() => fetch(apiUrl, {
           method: 'POST',
@@ -732,7 +844,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           const a = document.createElement('a');
           a.href = url;
           const baseName = fileList[0].name.replace(/\.[^/.]+$/, "");
-          const downloadName = selectedTool === 'compress-pdf' || selectedTool === 'video-compress' || (selectedTool === 'image-compress' && fileList.length === 1) ? `compressed_${fileList[0].name}` : 
+          const downloadName = selectedTool === 'compress-pdf' || (selectedTool === 'image-compress' && fileList.length === 1) ? `compressed_${fileList[0].name}` : 
                              selectedTool === 'docx-to-pdf' || selectedTool === 'image-to-pdf' ? `${baseName}.pdf` :
                              selectedTool === 'pdf-to-docx' ? `${baseName}.docx` :
                              (selectedTool === 'jpg-to-png' || selectedTool === 'image-compress') && fileList.length > 1 ? 'images.zip' :
@@ -1096,6 +1208,21 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         >
           Cancel
         </button>
+      )}
+      {videoJobProgress && (
+        <>
+          <button
+            onClick={cancelVideoJob}
+            className="w-full h-9 rounded-xl text-xs font-semibold text-[#4b5563] border border-[#eaedf3] hover:bg-[#f9fafb] transition-colors"
+          >
+            Cancel
+          </button>
+          <p className="text-[10px] text-[#6b7280] text-center px-1">
+            {user
+              ? "You can close this panel. We'll notify you when your video is ready."
+              : 'Keep this panel open: as a guest, closing it loses your compressed video.'}
+          </p>
+        </>
       )}
     </>
   );
