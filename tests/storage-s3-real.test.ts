@@ -189,9 +189,61 @@ describeReal('S3Storage against a real R2 bucket (VELLUM_TEST_R2=1)', () => {
     expect(get.result).not.toBeNull();
     expect(get.result!.length).toBe(LARGE_SIZE);
     expect(crypto.createHash('sha256').update(get.result!).digest('hex')).toBe(digest);
+    get.result = null;
+
+    const streamed = await measurePeakRss(async () => {
+      const file = await storage.openRead(key('large.bin'));
+      const hash = crypto.createHash('sha256');
+      let length = 0;
+      const reader = file!.stream.getReader();
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+        hash.update(chunk.value);
+        length += chunk.value.byteLength;
+      }
+      return { size: file!.size, length, digest: hash.digest('hex') };
+    });
+    report(`100 MB openRead: ${(streamed.ms / 1000).toFixed(1)} s, ${(LARGE_SIZE / MB / (streamed.ms / 1000)).toFixed(1)} MB/s; RSS ${Math.round(streamed.rssBefore / MB)} MB before, ${Math.round(streamed.peakRss / MB)} MB peak`);
+
+    expect(streamed.result).toEqual({ size: LARGE_SIZE, length: LARGE_SIZE, digest });
 
     await storage.delete(key('large.bin'));
-  }, 600_000);
+  }, 1_800_000);
+
+  it('returns null from openRead for a missing key', async () => {
+    await expect(storage.openRead(key('never-written.bin'))).resolves.toBeNull();
+  });
+
+  it('closes the connection when a stream is cancelled part way', async () => {
+    await storage.put(key('cancel.bin'), crypto.randomBytes(8 * MB));
+    // A driver of its own has no pooled connection, so the read opens one that only the
+    // cancel can close.
+    const reading = new S3Storage();
+    const resources = () => process.getActiveResourcesInfo();
+    const openSockets = () => resources().filter((name) => name === 'TCPSocketWrap').length;
+    const waitFor = async (done: () => boolean) => {
+      const deadline = Date.now() + 30_000;
+      while (!done() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    // R2 closes the put's connection soon after it, and that must not be counted either way.
+    await waitFor(() => !resources().includes('SimpleShutdownWrap'));
+    const before = openSockets();
+
+    const file = await reading.openRead(key('cancel.bin'));
+    const reader = file!.stream.getReader();
+    const first = await reader.read();
+    const during = openSockets();
+    await reader.cancel();
+
+    await waitFor(() => openSockets() <= before);
+    report(`cancelled openRead after ${first.value!.byteLength} bytes: TCP sockets ${before} before, ${during} while reading, ${openSockets()} after`);
+
+    expect(first.done).toBe(false);
+    expect(during).toBeGreaterThan(before);
+    expect(openSockets()).toBeLessThanOrEqual(before);
+    await expect(storage.exists(key('cancel.bin'))).resolves.toBe(true);
+  });
 
   it('fails clearly with a wrong secret instead of reporting a missing file', async () => {
     await storage.put(key('auth.txt'), Buffer.from('auth'));

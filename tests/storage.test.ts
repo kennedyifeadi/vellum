@@ -1,3 +1,4 @@
+import type { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -14,6 +15,20 @@ jest.mock('@aws-sdk/client-s3', () => ({
 
 import { LocalDiskStorage, SWEEP_GRACE_MS } from '@/lib/storage/local';
 import { S3Storage } from '@/lib/storage/s3';
+
+async function readAll(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
+  return Buffer.from(await new Response(stream).arrayBuffer());
+}
+
+function webStreamOf(bytes: Uint8Array, onCancel = () => {}): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+    cancel: onCancel,
+  });
+}
 
 describe('LocalDiskStorage', () => {
   let root: string;
@@ -39,6 +54,84 @@ describe('LocalDiskStorage', () => {
   it('returns null from get() and false from exists() for a missing key', async () => {
     expect(await storage.get('missing.pdf')).toBeNull();
     expect(await storage.exists('missing.pdf')).toBe(false);
+  });
+
+  describe('openRead', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    function captureOpenedHandles(): fs.promises.FileHandle[] {
+      const handles: fs.promises.FileHandle[] = [];
+      const open = fs.promises.open;
+      jest.spyOn(fs.promises, 'open').mockImplementation(async (...args: Parameters<typeof open>) => {
+        const handle = await open(...args);
+        handles.push(handle);
+        return handle;
+      });
+      return handles;
+    }
+
+    // FileHandle is an EventEmitter at runtime, though @types/node 20 does not declare it.
+    const closed = (handle: fs.promises.FileHandle) =>
+      new Promise<void>((resolve) => (handle as unknown as EventEmitter).once('close', () => resolve()));
+
+    it('streams a stored file with its size', async () => {
+      const data = Buffer.alloc(3 * 1024 * 1024 + 17, 7);
+      data.write('start', 0);
+      data.write('end', data.length - 3);
+      await storage.put('docs/large.bin', data);
+
+      const file = await storage.openRead('docs/large.bin');
+
+      expect(file!.size).toBe(data.length);
+      expect((await readAll(file!.stream)).equals(data)).toBe(true);
+    });
+
+    it('streams an empty file', async () => {
+      await storage.put('empty.bin', Buffer.alloc(0));
+
+      const file = await storage.openRead('empty.bin');
+
+      expect(file!.size).toBe(0);
+      expect((await readAll(file!.stream)).length).toBe(0);
+    });
+
+    it('returns null for a missing key', async () => {
+      await expect(storage.openRead('missing.pdf')).resolves.toBeNull();
+      await expect(storage.openRead('docs/missing.pdf')).resolves.toBeNull();
+    });
+
+    it('closes the file once it has been read to the end', async () => {
+      const handles = captureOpenedHandles();
+      await storage.put('file.bin', Buffer.from('data'));
+
+      const file = await storage.openRead('file.bin');
+      const wasClosed = closed(handles[0]);
+      await readAll(file!.stream);
+
+      await expect(wasClosed).resolves.toBeUndefined();
+    });
+
+    it('closes the file when the reader cancels part way', async () => {
+      const handles = captureOpenedHandles();
+      await storage.put('file.bin', Buffer.alloc(4 * 1024 * 1024));
+
+      const file = await storage.openRead('file.bin');
+      const wasClosed = closed(handles[0]);
+      const reader = file!.stream.getReader();
+      await reader.read();
+      await reader.cancel();
+
+      await expect(wasClosed).resolves.toBeUndefined();
+    });
+
+    it('rethrows a failure other than a missing file', async () => {
+      const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+      jest.spyOn(fs.promises, 'open').mockRejectedValue(denied);
+
+      await expect(storage.openRead('file.bin')).rejects.toThrow('permission denied');
+    });
   });
 
   it('deletes a file, and is a no-op deleting a key that does not exist', async () => {
@@ -72,6 +165,7 @@ describe('LocalDiskStorage', () => {
 
       await expect(storage.put(key, Buffer.from('x'))).rejects.toThrow(/outside/);
       await expect(storage.get(key)).rejects.toThrow(/outside/);
+      await expect(storage.openRead(key)).rejects.toThrow(/outside/);
       await expect(storage.delete(key)).rejects.toThrow(/outside/);
       await expect(storage.exists(key)).rejects.toThrow(/outside/);
 
@@ -162,6 +256,57 @@ describe('S3Storage', () => {
     const storage = new S3Storage();
 
     expect(await storage.get('file.pdf')).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('returns exactly the body bytes from get() when they are a view into a larger buffer', async () => {
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 9]);
+    sendMock.mockResolvedValueOnce({
+      Body: { transformToByteArray: async () => backing.subarray(2, 5) },
+    });
+    const storage = new S3Storage();
+
+    expect(await storage.get('file.pdf')).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  describe('openRead', () => {
+    it('streams the object body with its ContentLength as the size', async () => {
+      sendMock.mockResolvedValueOnce({
+        ContentLength: 3,
+        Body: { transformToWebStream: () => webStreamOf(new Uint8Array([1, 2, 3])) },
+      });
+      const storage = new S3Storage();
+
+      const file = await storage.openRead('docs/file.pdf');
+
+      expect(sendMock.mock.calls[0][0].input).toMatchObject({ Bucket: 'test-bucket', Key: 'docs/file.pdf' });
+      expect(file!.size).toBe(3);
+      expect(await readAll(file!.stream)).toEqual(Buffer.from([1, 2, 3]));
+    });
+
+    it.each(['NoSuchKey', 'NotFound'])('returns null when GetObject reports %s', async (name) => {
+      sendMock.mockRejectedValueOnce({ name });
+      const storage = new S3Storage();
+
+      await expect(storage.openRead('missing.pdf')).resolves.toBeNull();
+    });
+
+    it('propagates other client failures', async () => {
+      sendMock.mockRejectedValueOnce(Object.assign(new Error('Access Denied'), { name: 'AccessDenied' }));
+      const storage = new S3Storage();
+
+      await expect(storage.openRead('file.pdf')).rejects.toThrow('Access Denied');
+    });
+
+    it('releases the body and fails when the response has no ContentLength', async () => {
+      const cancelled = jest.fn();
+      sendMock.mockResolvedValueOnce({
+        Body: { transformToWebStream: () => webStreamOf(new Uint8Array([1]), cancelled) },
+      });
+      const storage = new S3Storage();
+
+      await expect(storage.openRead('file.pdf')).rejects.toThrow(/ContentLength/);
+      expect(cancelled).toHaveBeenCalled();
+    });
   });
 
   it('returns null from get() when the object does not exist', async () => {
