@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
 import { startEgressProxy, type EgressProxy } from '@/lib/puppeteer/egress-proxy';
 
@@ -13,7 +16,19 @@ const NO_SANDBOX_ARGS = ['--no-sandbox', '--disable-setuid-sandbox'];
  */
 export type RendererNetwork = 'public' | 'none';
 
-const proxies = new WeakMap<Browser, EgressProxy>();
+/**
+ * WebRTC sends UDP (STUN, TURN, media) straight from the browser, around any HTTP proxy;
+ * this policy allows it no UDP at all. Chromium takes it only from the profile's preferences:
+ * the --force-webrtc-ip-handling-policy switch leaves UDP candidates in place.
+ */
+const PROFILE_PREFERENCES = { webrtc: { ip_handling_policy: 'disable_non_proxied_udp' } };
+
+interface LaunchResources {
+  proxy: EgressProxy;
+  profileDir: string;
+}
+
+const launches = new WeakMap<Browser, LaunchResources>();
 
 /**
  * The sandbox stays on unless CHROMIUM_DISABLE_SANDBOX is set to "true". It is what confines
@@ -29,14 +44,36 @@ function proxyArgs(proxy: EgressProxy): string[] {
     `--proxy-server=${proxy.url}`,
     // Without it Chromium sends localhost, 127.0.0.1 and [::1] direct, around the proxy.
     '--proxy-bypass-list=<-loopback>',
-    // WebRTC would otherwise send UDP (STUN, media) straight from the browser.
-    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
   ];
 }
 
+async function createProfile(): Promise<string> {
+  const profileDir = await mkdtemp(path.join(os.tmpdir(), 'vellum-render-profile-'));
+  await mkdir(path.join(profileDir, 'Default'));
+  await writeFile(path.join(profileDir, 'Default', 'Preferences'), JSON.stringify(PROFILE_PREFERENCES));
+  return profileDir;
+}
+
+// Windows can hold a profile's files for a moment after Chromium exits, so removal retries.
+async function removeProfile(profileDir: string): Promise<void> {
+  try {
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`[render] could not remove the browser profile ${profileDir}:`, error);
+  }
+}
+
+async function release({ proxy, profileDir }: LaunchResources): Promise<void> {
+  await proxy.close();
+  await removeProfile(profileDir);
+}
+
 export async function launchBrowser(network: RendererNetwork): Promise<Browser> {
-  const proxy = await startEgressProxy({ refuseAll: network === 'none' });
-  const args = [...BASE_ARGS, ...(isChromiumSandboxDisabled() ? NO_SANDBOX_ARGS : []), ...proxyArgs(proxy)];
+  const resources: LaunchResources = {
+    proxy: await startEgressProxy({ refuseAll: network === 'none' }),
+    profileDir: await createProfile(),
+  };
+  const args = [...BASE_ARGS, ...(isChromiumSandboxDisabled() ? NO_SANDBOX_ARGS : []), ...proxyArgs(resources.proxy)];
 
   let browser: Browser;
   try {
@@ -48,14 +85,15 @@ export async function launchBrowser(network: RendererNetwork): Promise<Browser> 
       handleSIGTERM: false,
       handleSIGINT: false,
       handleSIGHUP: false,
+      userDataDir: resources.profileDir,
       args,
     });
   } catch (error) {
-    await proxy.close();
+    await release(resources);
     throw error;
   }
 
-  proxies.set(browser, proxy);
+  launches.set(browser, resources);
   return browser;
 }
 
@@ -67,7 +105,7 @@ export async function launchBrowser(network: RendererNetwork): Promise<Browser> 
  */
 export async function openRenderPage(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
-  const proxy = proxies.get(browser);
+  const proxy = launches.get(browser)?.proxy;
   if (proxy) {
     await page.authenticate(proxy.credentials);
     await page.goto(proxy.primeUrl);
@@ -78,7 +116,7 @@ export async function openRenderPage(browser: Browser): Promise<Page> {
 
 /** Whether the browser's egress proxy refused a connection to the host and port of `url`. */
 export function wasDestinationRefused(browser: Browser, url: string): boolean {
-  const proxy = proxies.get(browser);
+  const proxy = launches.get(browser)?.proxy;
   if (!proxy) return false;
   try {
     const { hostname, port, protocol } = new URL(url);
@@ -89,9 +127,9 @@ export function wasDestinationRefused(browser: Browser, url: string): boolean {
   }
 }
 
-/** Closes the browser's egress proxy, if it has one. */
-export async function closeEgressProxy(browser: Browser): Promise<void> {
-  const proxy = proxies.get(browser);
-  proxies.delete(browser);
-  await proxy?.close();
+/** Closes the browser's egress proxy and removes its profile. Called once the browser is gone. */
+export async function releaseLaunchResources(browser: Browser): Promise<void> {
+  const resources = launches.get(browser);
+  launches.delete(browser);
+  if (resources) await release(resources);
 }

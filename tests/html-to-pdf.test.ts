@@ -128,13 +128,17 @@ describe('convertHtmlToPdf (lib/html/to-pdf.ts)', () => {
   });
 
   it('force-kills the process when a graceful close hangs after a failed render', async () => {
-    jest.useFakeTimers();
+    // The launch creates and removes a real profile on disk, which needs real ticks.
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     try {
       mockPage.pdf.mockRejectedValueOnce(new Error('boom'));
       mockBrowser.close.mockImplementationOnce(() => new Promise(() => {}));
 
       const call = convertHtmlToPdf({ htmlContent: '<p>x</p>', timeoutMs: 50 });
       const assertion = expect(call).rejects.toThrow('boom');
+      while (mockBrowser.close.mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
       await jest.advanceTimersByTimeAsync(10_000);
       await assertion;
 

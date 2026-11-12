@@ -12,7 +12,9 @@ jest.mock('puppeteer', () => ({
   launch: jest.fn().mockResolvedValue(mockBrowser),
 }));
 
+import fs from 'fs';
 import net from 'net';
+import path from 'path';
 import puppeteer from 'puppeteer';
 import { launchBrowser, openRenderPage, type RendererNetwork } from '@/lib/puppeteer/launch';
 import { closeBrowser } from '@/lib/puppeteer/lifecycle';
@@ -29,6 +31,10 @@ function proxyPort(): number {
   const proxyServer = launchArgs().find((arg) => arg.startsWith('--proxy-server='));
   if (!proxyServer) throw new Error('Chromium was launched without a proxy');
   return Number(new URL(proxyServer.slice('--proxy-server='.length)).port);
+}
+
+function profileDir(): string {
+  return launch.mock.calls[launch.mock.calls.length - 1][0].userDataDir;
 }
 
 function isListening(port: number): Promise<boolean> {
@@ -92,7 +98,6 @@ describe('launchBrowser', () => {
           expect.arrayContaining([
             `--proxy-server=http://127.0.0.1:${proxyPort()}`,
             '--proxy-bypass-list=<-loopback>',
-            '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
           ]),
         );
         expect(await isListening(proxyPort())).toBe(true);
@@ -117,29 +122,43 @@ describe('launchBrowser', () => {
       }
     });
 
-    it('closes the proxy with the browser', async () => {
+    it('gives it its own profile, whose preferences allow WebRTC no UDP', async () => {
+      const browser = await launchBrowser(network);
+      try {
+        const preferences = JSON.parse(fs.readFileSync(path.join(profileDir(), 'Default', 'Preferences'), 'utf8'));
+        expect(preferences.webrtc.ip_handling_policy).toBe('disable_non_proxied_udp');
+      } finally {
+        await closeBrowser(browser);
+      }
+    });
+
+    it('closes the proxy and removes the profile with the browser', async () => {
       const browser = await launchBrowser(network);
       const port = proxyPort();
+      const profile = profileDir();
 
       await closeBrowser(browser);
 
       expect(await isListening(port)).toBe(false);
+      expect(fs.existsSync(profile)).toBe(false);
     });
 
-    it('closes the proxy when Chromium fails to launch', async () => {
+    it('closes the proxy and removes the profile when Chromium fails to launch', async () => {
       launch.mockRejectedValueOnce(new Error('no chromium'));
 
       await expect(launchBrowser(network)).rejects.toThrow('no chromium');
 
       expect(await isListening(proxyPort())).toBe(false);
+      expect(fs.existsSync(profileDir())).toBe(false);
     });
   });
 
-  it('gives each browser its own proxy', async () => {
+  it('gives each browser its own proxy and profile', async () => {
     await argsOfLaunch('public');
-    const first = proxyPort();
+    const [firstPort, firstProfile] = [proxyPort(), profileDir()];
     await argsOfLaunch('public');
-    expect(proxyPort()).not.toBe(first);
+    expect(proxyPort()).not.toBe(firstPort);
+    expect(profileDir()).not.toBe(firstProfile);
   });
 
   async function docxBuffer(): Promise<Buffer> {
