@@ -1,5 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/db/mongodb', () => ({
   __esModule: true,
@@ -23,10 +24,12 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-import { authOptions } from '../app/api/auth/[...nextauth]/route';
+import { authOptionsFor } from '../app/api/auth/[...nextauth]/route';
 import LoginPage from '../app/(auth)/login/page';
 
 describe('configured sign-in providers', () => {
+  const authOptions = authOptionsFor(new NextRequest('http://localhost:3000/api/auth/providers'));
+
   it('are exactly Google and the email OTP credentials provider', () => {
     const providers = authOptions.providers.map((provider) => ({
       id: provider.options?.id ?? provider.id,
