@@ -2,6 +2,7 @@
 import React from 'react';
 import { TextEncoder } from 'util';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { PDFDocument } from 'pdf-lib';
 import { BUSY_RETRY_POLICY } from '@/lib/busy-retry';
 
 const mockShowToast = jest.fn();
@@ -22,12 +23,35 @@ jest.mock('next/image', () => ({
   default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} />,
 }));
 
+// pdf.js needs a real browser to load; pdf-lib reads the same bytes here, so a file it
+// cannot read fails to load as it would in pdf.js.
+const mockGetDocument = jest.fn(({ data }: { data: Uint8Array }) => ({
+  promise: PDFDocument.load(data).then((doc) => ({ numPages: doc.getPageCount() })),
+  destroy: jest.fn(async () => {}),
+}));
+jest.mock('react-pdf', () => ({
+  pdfjs: {
+    version: 'test',
+    GlobalWorkerOptions: {},
+    getDocument: (options: { data: Uint8Array }) => mockGetDocument(options),
+  },
+}));
+
 import SideDrawer from '../components/dashboard/SideDrawer';
 
 jest.setTimeout(30_000);
 
 // Browsers have TextEncoder; jsdom's test environment does not, and the Lock PDF check needs it.
 globalThis.TextEncoder ??= TextEncoder as typeof globalThis.TextEncoder;
+// Browsers' Blob has arrayBuffer(); jsdom's does not, and Split PDF's page count reads it.
+Blob.prototype.arrayBuffer ??= function (this: Blob) {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(this);
+  });
+};
 
 const MOBILE_QUERY = '(max-width: 767px)';
 
@@ -66,7 +90,13 @@ function pdf(name = 'report.pdf') {
   return new File(['%PDF-1.7 test'], name, { type: 'application/pdf' });
 }
 
-function renderDrawer(toolId: string) {
+async function pdfWithPages(pages: number, name = 'pages.pdf') {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < pages; i++) doc.addPage([200, 200]);
+  return new File([new Uint8Array(await doc.save())], name, { type: 'application/pdf' });
+}
+
+function renderDrawer(toolId: string | null) {
   return render(<SideDrawer isOpen onClose={jest.fn()} file={null} toolId={toolId} />);
 }
 
@@ -93,6 +123,7 @@ function sentForm(index = 0) {
 }
 
 beforeEach(() => {
+  mockGetDocument.mockClear();
   mockShowToast.mockReset();
   mockAddNotification.mockReset();
   fetchMock = jest.fn(async () => answer());
@@ -272,5 +303,136 @@ describe('SideDrawer at desktop width', () => {
     expect(toolRequests()).toHaveLength(1);
     expect(toolRequests()[0][0]).toBe('/api/convert/lock-pdf');
     expect(sentForm().get('password')).toBe('long enough secret');
+  });
+});
+
+function removeFile(name: string) {
+  let tile: HTMLElement | null = screen.getByText(name);
+  while (tile && !tile.querySelector('button')) tile = tile.parentElement;
+  fireEvent.click(tile!.querySelector('button')!);
+}
+
+function pageInputs() {
+  return screen.getAllByRole('spinbutton') as HTMLInputElement[];
+}
+
+describe.each(['mobile', 'desktop'] as const)('Split PDF page range at %s width', (layout) => {
+  beforeEach(() => useLayout(layout));
+
+  it("lets the page inputs go up to the chosen PDF's last page", async () => {
+    const { container } = renderDrawer('split-pdf');
+    chooseFiles(container, [await pdfWithPages(10, 'ten.pdf')]);
+
+    await waitFor(() => expect(pageInputs().map((input) => input.max)).toEqual(['10', '10']));
+
+    const [start, end] = pageInputs();
+    fireEvent.change(end, { target: { value: '12' } });
+    expect(end.value).toBe('10');
+    fireEvent.change(start, { target: { value: '10' } });
+    expect(start.value).toBe('10');
+  });
+
+  it('forgets the page count when the file is removed, and counts the next one', async () => {
+    const { container } = renderDrawer('split-pdf');
+    chooseFiles(container, [await pdfWithPages(10, 'ten.pdf')]);
+    await waitFor(() => expect(pageInputs()[0].max).toBe('10'));
+
+    removeFile('ten.pdf');
+    expect(pageInputs().map((input) => input.max)).toEqual(['', '']);
+
+    chooseFiles(container, [await pdfWithPages(3, 'three.pdf')]);
+    await waitFor(() => expect(pageInputs().map((input) => input.max)).toEqual(['3', '3']));
+  });
+
+  it("keeps the inputs open and sends the typed range when the PDF can't be counted", async () => {
+    const { container } = renderDrawer('split-pdf');
+    chooseFiles(container, [pdf('broken.pdf')]);
+    await waitFor(() => expect(mockGetDocument).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await mockGetDocument.mock.results[0].value.promise.catch(() => {});
+    });
+
+    const [start, end] = pageInputs();
+    expect([start.max, end.max]).toEqual(['', '']);
+    fireEvent.change(end, { target: { value: '7' } });
+    fireEvent.change(start, { target: { value: '5' } });
+    fireEvent.click(processButton());
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('PDF split successfully!', 'success'));
+    expect(sentForm().get('startPage')).toBe('5');
+    expect(sentForm().get('endPage')).toBe('7');
+  });
+});
+
+const ENABLED_COLOUR = 'bg-[#6366f1]';
+const DISABLED_COLOUR = 'bg-[#f3f4f6]';
+
+function expectLook(button: HTMLElement, expected: 'enabled' | 'disabled') {
+  expect((button as HTMLButtonElement).disabled).toBe(expected === 'disabled');
+  expect(button.className.includes(ENABLED_COLOUR)).toBe(expected === 'enabled');
+  expect(button.className.includes(DISABLED_COLOUR)).toBe(expected === 'disabled');
+}
+
+describe.each(['mobile', 'desktop'] as const)('Process button look at %s width', (layout) => {
+  beforeEach(() => useLayout(layout));
+
+  it('looks disabled before a tool is chosen', () => {
+    const { container } = renderDrawer(null);
+    chooseFiles(container, [pdf()]);
+
+    expectLook(processButton(), 'disabled');
+  });
+
+  it('looks disabled until a file is chosen', () => {
+    const { container } = renderDrawer('compress-pdf');
+    expectLook(processButton(), 'disabled');
+
+    chooseFiles(container, [pdf()]);
+    expectLook(processButton(), 'enabled');
+  });
+
+  it('looks disabled while the Lock PDF password is invalid or unconfirmed', () => {
+    const { container } = renderDrawer('lock-pdf');
+    chooseFiles(container, [pdf()]);
+    const password = screen.getByPlaceholderText(/At least \d+ characters/);
+    const confirm = screen.getByPlaceholderText('Repeat password');
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(password, { target: { value: 'short' } });
+    fireEvent.change(confirm, { target: { value: 'short' } });
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(password, { target: { value: 'long enough secret' } });
+    expectLook(processButton(), 'disabled');
+
+    fireEvent.change(confirm, { target: { value: 'long enough secret' } });
+    expectLook(processButton(), 'enabled');
+  });
+
+  it('looks disabled while a file is processing', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { container } = renderDrawer('compress-pdf');
+    chooseFiles(container, [pdf()]);
+
+    fireEvent.click(processButton());
+
+    expect(await screen.findByText('Processing...')).toBeTruthy();
+    expectLook(processButton(), 'disabled');
+  });
+
+  it('looks disabled while a video job waits in the queue', async () => {
+    jest.useFakeTimers();
+    fetchMock.mockImplementation(async (url: string) =>
+      url === '/api/convert/video-compress'
+        ? answer({ status: 202, json: { jobId: 'job-1', status: 'queued' } })
+        : answer({ json: { status: 'queued', position: 2, fileName: 'clip.mp4', originalSize: 1 } }),
+    );
+    const { container } = renderDrawer('video-compress');
+    chooseFiles(container, [new File(['raw video'], 'clip.mp4', { type: 'video/mp4' })]);
+    expectLook(processButton(), 'enabled');
+
+    fireEvent.click(processButton());
+
+    expectLook(await screen.findByRole('button', { name: 'Queued (2 ahead)…' }), 'disabled');
   });
 });

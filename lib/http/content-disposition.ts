@@ -37,3 +37,31 @@ export function attachmentDisposition(fileName: string, fallbackName: string): s
   const asciiName = name.replace(UNSAFE_IN_QUOTED_ASCII, '_');
   return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeExtValue(name)}`;
 }
+
+const EXTENDED_FILENAME = /(?:^|;)\s*filename\*\s*=\s*([^;]*)/i;
+const PLAIN_FILENAME = /(?:^|;)\s*filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;\s]*))/i;
+
+function decodeExtValue(value: string): string | null {
+  const match = /^utf-8'[^']*'(.*)$/i.exec(value.trim());
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The file name a Content-Disposition header gives: the UTF-8 `filename*` when it can be
+ * decoded, else the plain `filename`, else null.
+ */
+export function fileNameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const extended = EXTENDED_FILENAME.exec(header);
+  const decoded = extended ? decodeExtValue(extended[1]) : null;
+  if (decoded) return decoded;
+
+  const plain = PLAIN_FILENAME.exec(header);
+  const name = plain ? (plain[1]?.replace(/\\(.)/g, '$1') ?? plain[2]) : null;
+  return name || null;
+}

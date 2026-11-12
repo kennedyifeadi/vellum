@@ -258,19 +258,21 @@ describe('video-compress upload', () => {
     expect(file.arrayBuffer).not.toHaveBeenCalled();
   });
 
-  it('refuses the upload with the storage error, before reading it, when no storage is configured', async () => {
+  it('refuses the upload before reading it when no storage is configured, keeping the reason in the log', async () => {
     mockGetStorage.mockImplementationOnce(() => {
       throw new Error('No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.');
     });
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
     const file = fakeFile(Buffer.from('raw-input'));
 
     const { res, body } = await upload({}, file);
 
     expect(res.status).toBe(503);
     expect(res.headers.get('Retry-After')).toBeNull();
-    expect(body).toEqual({
-      error: 'Compress Video is unavailable: No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.',
-    });
+    expect(body).toEqual({ error: 'Compress Video is temporarily unavailable. Please try again later.' });
+    expect(logged).toHaveBeenCalledWith(
+      '[convert] Compress Video is unavailable: No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket.',
+    );
     expect(file.arrayBuffer).not.toHaveBeenCalled();
     expect(mockStore.all()).toEqual([]);
   });

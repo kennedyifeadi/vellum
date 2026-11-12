@@ -5,6 +5,7 @@ import {
   VideoJobUnreachableError,
   videoJobHeaders,
   videoJobLabel,
+  videoResultFileName,
   videoResultMessage,
   waitForVideoJob,
   type VideoJobStatus,
@@ -193,5 +194,28 @@ describe('the drawer text for a video job', () => {
 
   it('builds no token header for a signed-in owner', () => {
     expect(videoJobHeaders({ jobId: 'j' })).toEqual({});
+  });
+});
+
+describe('videoResultFileName', () => {
+  const download = (headers: Record<string, string> = {}) => ({ headers: new Headers(headers) }) as Response;
+
+  it("uses the name the download's Content-Disposition gives", () => {
+    const headers = { 'Content-Disposition': `attachment; filename="compressed___.mp4"; filename*=UTF-8''compressed_%E6%97%85%E8%A1%8C.mp4` };
+
+    expect(videoResultFileName(download(headers), '旅行.mov')).toBe('compressed_旅行.mp4');
+  });
+
+  it.each([
+    ['clip.mov', 'compressed_clip.mp4'],
+    ['clip.MKV', 'compressed_clip.mp4'],
+    ['my.holiday.webm', 'compressed_my.holiday.mp4'],
+    ['no-extension', 'compressed_no-extension.mp4'],
+  ])('names %s as MP4 when the download has no Content-Disposition', (input, expected) => {
+    expect(videoResultFileName(download(), input)).toBe(expected);
+  });
+
+  it('falls back when the header names no file', () => {
+    expect(videoResultFileName(download({ 'Content-Disposition': 'attachment' }), 'clip.mov')).toBe('compressed_clip.mp4');
   });
 });

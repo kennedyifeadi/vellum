@@ -1,4 +1,5 @@
 import { RetryCancelledError, sleep } from '@/lib/busy-retry';
+import { fileNameFromDisposition } from '@/lib/http/content-disposition';
 
 // How the upload screen follows a Compress Video job from upload to download. The upload
 // answers 202 with the job's id (and a token for a guest); the status route says where the
@@ -137,4 +138,13 @@ export function videoResultMessage({ savedPercent = 0, originalSize, compressedS
     return `Reduced by ${savedPercent}% — ${savedMb} MB saved!`;
   }
   return 'Video was already well-compressed, so it is unchanged.';
+}
+
+/**
+ * The name to save a finished job's result under: the one its download names, or the
+ * input's name with the output's extension, since the result is always MP4.
+ */
+export function videoResultFileName(download: Response, inputName: string): string {
+  const named = fileNameFromDisposition(download.headers.get('Content-Disposition'));
+  return named ?? `compressed_${inputName.replace(/\.[^/.]+$/, '')}.mp4`;
 }
