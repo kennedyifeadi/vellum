@@ -8,14 +8,23 @@ import { buildSessionEntry } from "@/lib/auth/session";
 import User from "@/models/user"; // Your existing User model
 
 type Adapter = NonNullable<AuthOptions["adapter"]>;
-let adapter: Adapter | undefined;
+let cachedAdapter: { client: ReturnType<typeof getMongoClient>; adapter: Adapter } | undefined;
+
+// The adapter keeps the client promise it was built with, so it is rebuilt whenever
+// getMongoClient hands out a new one after a failed connect.
+function mongoAdapter(): Adapter {
+  const client = getMongoClient();
+  if (cachedAdapter?.client !== client) {
+    cachedAdapter = { client, adapter: MongoDBAdapter(client) as Adapter };
+  }
+  return cachedAdapter.adapter;
+}
 
 export const authOptions: AuthOptions = {
   // The adapter starts connecting as soon as it is created, so it is created on the first
   // auth request rather than when the build imports this route.
   get adapter(): Adapter {
-    adapter ??= MongoDBAdapter(getMongoClient()) as Adapter;
-    return adapter;
+    return mongoAdapter();
   },
   providers: [
     // Google OAuth Provider
