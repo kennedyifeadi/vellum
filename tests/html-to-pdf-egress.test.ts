@@ -4,6 +4,7 @@ jest.mock('dns/promises', () => ({ lookup: (...args: any[]) => mockLookup(...arg
 const mainFrame = { name: 'main' };
 
 const mockPage = {
+  authenticate: jest.fn().mockResolvedValue(undefined),
   setViewport: jest.fn().mockResolvedValue(undefined),
   emulateMediaType: jest.fn().mockResolvedValue(undefined),
   setRequestInterception: jest.fn().mockResolvedValue(undefined),
@@ -21,6 +22,16 @@ const mockBrowser = {
 
 jest.mock('puppeteer', () => ({
   launch: jest.fn().mockResolvedValue(mockBrowser),
+}));
+
+// The proxy's credential priming is launch's own (tests/chromium-launch.test.ts); here the
+// page is just the mock page, so goto counts only the converter's navigation. The hosts in
+// mockRefusedHosts are the ones the browser's egress proxy refused.
+let mockRefusedHosts: string[] = [];
+jest.mock('@/lib/puppeteer/launch', () => ({
+  ...jest.requireActual('@/lib/puppeteer/launch'),
+  openRenderPage: (browser: { newPage(): Promise<unknown> }) => browser.newPage(),
+  wasDestinationRefused: (_browser: unknown, url: string) => mockRefusedHosts.includes(new URL(url).host),
 }));
 
 import puppeteer from 'puppeteer';
@@ -155,6 +166,57 @@ describe('egress policy on every request (redirects and sub-resources)', () => {
       ClientError,
     );
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('destinations the egress proxy refuses', () => {
+  beforeEach(() => {
+    mockRefusedHosts = [];
+  });
+
+  it('checks sub-resources without looking their names up', async () => {
+    await convertHtmlToPdf({ htmlContent: '<img src="x">' });
+    mockLookup.mockClear();
+    const handler = registeredRequestHandler();
+
+    const req = fakeRequest('https://rebind.example.com/pixel.png');
+    handler(req);
+    await flush();
+
+    expect(req.continue).toHaveBeenCalledTimes(1);
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a ClientError when the proxy refused the https main navigation', async () => {
+    mockRefusedHosts = ['start.example.com'];
+    mockPage.goto.mockRejectedValueOnce(new Error('net::ERR_TUNNEL_CONNECTION_FAILED'));
+
+    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+  });
+
+  it('surfaces a ClientError when the proxy refused where the main navigation was redirected', async () => {
+    mockRefusedHosts = ['rebind.example.com'];
+    mockPage.goto.mockImplementationOnce(async () => {
+      registeredRequestHandler()(fakeRequest('https://rebind.example.com/', { navigation: true, frame: mainFrame }));
+      throw new Error('net::ERR_TUNNEL_CONNECTION_FAILED');
+    });
+
+    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+  });
+
+  it("refuses to render the proxy's own 403 for a plain-http main navigation", async () => {
+    mockRefusedHosts = ['rebind.example.com'];
+    mockPage.goto.mockResolvedValueOnce({ url: () => 'http://rebind.example.com/' });
+
+    await expect(convertHtmlToPdf({ url: 'http://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+    expect(mockPage.pdf).not.toHaveBeenCalled();
+  });
+
+  it('keeps a navigation failure the proxy had no part in as a server fault', async () => {
+    mockPage.goto.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_RESET'));
+
+    const error = await convertHtmlToPdf({ url: 'https://start.example.com/' }).catch((e) => e);
+    expect(error).not.toBeInstanceOf(ClientError);
   });
 });
 

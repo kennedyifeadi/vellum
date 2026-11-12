@@ -3,9 +3,12 @@ import { assertNavigableUrl, isRequestAllowed } from '@/lib/html/url-policy';
 import {
   RENDER_TIMEOUT_MS,
   closeBrowser,
+  ignoreHandledRequest,
   withRenderDeadline,
 } from '@/lib/puppeteer/lifecycle';
-import { launchBrowser } from '@/lib/puppeteer/launch';
+import { launchBrowser, openRenderPage, wasDestinationRefused } from '@/lib/puppeteer/launch';
+
+const REFUSED_REDIRECT_MESSAGE = 'That URL redirects to a private, internal, or non-web address.';
 
 interface HtmlToPdfOptions {
   htmlContent?: string;
@@ -26,47 +29,45 @@ export async function convertHtmlToPdf({
     await assertNavigableUrl(url);
   }
 
-  const browser = await launchBrowser();
+  const browser = await launchBrowser('public');
 
   try {
     const render = (async () => {
-      const page = await browser.newPage();
+      const page = await openRenderPage(browser);
       await page.setViewport({ width: 1280, height: 900 });
       await page.emulateMediaType('print');
 
+      // Interception refuses other schemes and internal names; the browser's egress proxy
+      // refuses every address that is not public, including ones a name resolves to.
       let blockedMainNavigation = false;
+      let mainNavigationUrl = url;
       await page.setRequestInterception(true);
       page.on('request', (request) => {
-        void (async () => {
-          try {
-            if (await isRequestAllowed(request.url())) {
-              await request.continue();
-              return;
-            }
-            if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-              blockedMainNavigation = true;
-            }
-            await request.abort('blockedbyclient');
-          } catch {
-            try {
-              await request.abort('failed');
-            } catch {
-              /* request was already handled */
-            }
-          }
-        })();
+        const isMainNavigation = request.isNavigationRequest() && request.frame() === page.mainFrame();
+        if (isMainNavigation) mainNavigationUrl = request.url();
+        if (isRequestAllowed(request.url())) {
+          request.continue().catch(ignoreHandledRequest);
+          return;
+        }
+        if (isMainNavigation) blockedMainNavigation = true;
+        request.abort('blockedbyclient').catch(ignoreHandledRequest);
       });
 
+      const refusedMainNavigation = () =>
+        blockedMainNavigation ||
+        (mainNavigationUrl !== undefined && wasDestinationRefused(browser, mainNavigationUrl));
+
       if (url) {
+        let response;
         try {
-          await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
+          response = await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
         } catch (error) {
-          if (blockedMainNavigation) {
-            throw new ClientError(
-              'That URL redirects to a private, internal, or non-web address.',
-            );
-          }
+          if (refusedMainNavigation()) throw new ClientError(REFUSED_REDIRECT_MESSAGE);
           throw error;
+        }
+        // A refused plain-http destination is the proxy's own 403 page, not the site's.
+        if (response && wasDestinationRefused(browser, response.url())) {
+          throw new ClientError(REFUSED_REDIRECT_MESSAGE);
         }
       } else if (htmlContent) {
         await page.setContent(htmlContent, { waitUntil: 'load', timeout: timeoutMs });

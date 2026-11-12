@@ -8,64 +8,71 @@ const INERT_SCHEMES = new Set(['about:', 'data:', 'blob:']);
 const BLOCKED_HOSTNAMES = new Set(['localhost']);
 const BLOCKED_HOSTNAME_SUFFIXES = ['.localhost', '.internal', '.local'];
 
+type Screened = { reason: string } | { hostname: string } | { inert: true };
+
 /**
- * Decides whether a URL may be fetched while rendering user-supplied input to a PDF.
- * `null` means allowed; a string is a caller-safe reason it was rejected.
- *
- * `allowInertSchemes` is set only for sub-resource requests already inside the page
- * (request interception), where `data:`/`blob:`/`about:` carry no egress and blocking
+ * The checks that need no DNS: the URL parses, its scheme is http/https, and its host is not
+ * an internal name. `allowInertSchemes` is set only for sub-resource requests already inside
+ * the page (request interception), where `data:`/`blob:`/`about:` carry no egress and blocking
  * them would break ordinary self-contained documents.
  */
-async function screenUrl(
-  rawUrl: string,
-  { allowInertSchemes }: { allowInertSchemes: boolean },
-): Promise<string | null> {
+function screenUrlShape(rawUrl: string, { allowInertSchemes }: { allowInertSchemes: boolean }): Screened {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return 'The URL is not valid.';
+    return { reason: 'The URL is not valid.' };
   }
 
   const scheme = parsed.protocol.toLowerCase();
   if (allowInertSchemes && INERT_SCHEMES.has(scheme)) {
-    return null;
+    return { inert: true };
   }
   if (!NAVIGABLE_SCHEMES.has(scheme)) {
-    return `Only http and https URLs can be converted (received "${scheme.replace(/:$/, '')}").`;
+    return { reason: `Only http and https URLs can be converted (received "${scheme.replace(/:$/, '')}").` };
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (!hostname) {
-    return 'The URL has no host.';
+    return { reason: 'The URL has no host.' };
   }
   if (isBlockedHostname(hostname)) {
-    return 'That URL points to a private or internal host.';
+    return { reason: 'That URL points to a private or internal host.' };
   }
+  return { hostname };
+}
 
-  const literal = isIP(hostname) ? hostname : null;
-  const addresses = literal ? [literal] : await resolveHost(hostname);
+/**
+ * Throws a 400 `ClientError` if `rawUrl` may not be navigated to. Checked before a browser
+ * launches, so a plainly internal URL is refused without one; the render's egress proxy
+ * checks the addresses it actually connects to.
+ */
+export async function assertNavigableUrl(rawUrl: string): Promise<void> {
+  const screened = screenUrlShape(rawUrl, { allowInertSchemes: false });
+  if ('reason' in screened) {
+    throw new ClientError(screened.reason);
+  }
+  if (!('hostname' in screened)) return;
+
+  const { hostname } = screened;
+  const addresses = isIP(hostname) ? [hostname] : await resolveHost(hostname);
   if (addresses.length === 0) {
-    return 'The URL host could not be resolved.';
+    throw new ClientError('The URL host could not be resolved.');
   }
   if (addresses.some(isBlockedAddress)) {
-    return 'That URL resolves to a private or internal address.';
-  }
-
-  return null;
-}
-
-/** Throws a 400 `ClientError` if `rawUrl` may not be navigated to. */
-export async function assertNavigableUrl(rawUrl: string): Promise<void> {
-  const reason = await screenUrl(rawUrl, { allowInertSchemes: false });
-  if (reason) {
-    throw new ClientError(reason);
+    throw new ClientError('That URL resolves to a private or internal address.');
   }
 }
 
-/** Non-throwing check for the puppeteer request-interception handler. */
-export async function isRequestAllowed(rawUrl: string): Promise<boolean> {
-  return (await screenUrl(rawUrl, { allowInertSchemes: true })) === null;
+/**
+ * The request-interception check: scheme and host name only, with no DNS. A literal IP is
+ * checked here too since that needs no lookup; every other address is the egress proxy's.
+ */
+export function isRequestAllowed(rawUrl: string): boolean {
+  const screened = screenUrlShape(rawUrl, { allowInertSchemes: true });
+  if ('reason' in screened) return false;
+  if (!('hostname' in screened)) return true;
+  return !(isIP(screened.hostname) && isBlockedAddress(screened.hostname));
 }
 
 function isBlockedHostname(hostname: string): boolean {

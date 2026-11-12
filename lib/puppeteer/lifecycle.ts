@@ -1,5 +1,6 @@
 import type { Browser } from 'puppeteer';
 import { ClientError } from '@/lib/convert/errors';
+import { closeEgressProxy } from '@/lib/puppeteer/launch';
 
 /**
  * How long a single HTML/DOCX render (navigation + layout + PDF) is allowed to take
@@ -20,8 +21,8 @@ export class RenderTimeoutError extends ClientError {
 }
 
 /**
- * Closes a puppeteer browser, guaranteeing the OS process is gone even when a graceful
- * close hangs (which it does when the renderer is stuck). Never throws.
+ * Closes a puppeteer browser and its egress proxy, guaranteeing the OS process is gone even
+ * when a graceful close hangs (which it does when the renderer is stuck). Never throws.
  */
 export async function closeBrowser(browser: Browser): Promise<void> {
   let killTimer: NodeJS.Timeout | undefined;
@@ -39,8 +40,15 @@ export async function closeBrowser(browser: Browser): Promise<void> {
     browser.process()?.kill('SIGKILL');
   } finally {
     if (killTimer) clearTimeout(killTimer);
+    await closeEgressProxy(browser);
   }
 }
+
+/**
+ * For the rejection of `request.continue()`/`abort()` in an interception handler: the page is
+ * gone, or puppeteer already settled the request, and there is nothing left to do with it.
+ */
+export function ignoreHandledRequest(): void {}
 
 /**
  * Runs `render` under a hard deadline. If the deadline wins, the returned promise

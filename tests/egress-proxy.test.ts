@@ -213,6 +213,39 @@ describe('egress proxy, absolute-URI HTTP requests', () => {
     expect(received).toEqual([]);
   });
 
+  it('refuses everything, without a lookup, when told to refuse all', async () => {
+    const resolve = jest.fn(resolverFor({ 'allowed.test': ['127.0.0.1'] }));
+    proxy = await startEgressProxy({ resolve, isDestinationAllowed: onlyUpstream, refuseAll: true });
+
+    const named = await proxiedGet(proxy, `http://allowed.test:${upstreamPort}/`);
+    const literal = await proxiedGet(proxy, `http://127.0.0.1:${upstreamPort}/`);
+    const tunnel = await connectThrough(proxy, `allowed.test:${echoPort}`);
+    tunnel.socket.destroy();
+
+    expect([named.status, literal.status, tunnel.status]).toEqual([403, 403, 403]);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(received).toEqual([]);
+    expect(echoSockets).toEqual([]);
+  });
+
+  it('still answers its prime URL when told to refuse all', async () => {
+    proxy = await startEgressProxy({ refuseAll: true });
+    expect((await proxiedGet(proxy, proxy.primeUrl)).status).toBe(200);
+  });
+
+  it('answers its prime URL itself once the credential is presented', async () => {
+    const resolve = jest.fn(resolverFor({}));
+    proxy = await startEgressProxy({ resolve });
+
+    const authorized = await proxiedGet(proxy, proxy.primeUrl);
+    const unauthorized = await proxiedGet(proxy, proxy.primeUrl, {});
+
+    expect(authorized.status).toBe(200);
+    expect(authorized.body).toBe('');
+    expect(unauthorized.status).toBe(407);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
   it('gives every proxy its own credential', async () => {
     const first = await startEgressProxy();
     const second = await startEgressProxy();

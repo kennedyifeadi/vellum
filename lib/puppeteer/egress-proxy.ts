@@ -11,6 +11,8 @@ export interface EgressProxyOptions {
   resolve?: HostResolver;
   /** Whether the proxy may connect to `address:port`. Defaults to any public address. */
   isDestinationAllowed?: (address: string, port: number) => boolean;
+  /** Refuse every destination, without looking anything up, whatever the options above say. */
+  refuseAll?: boolean;
 }
 
 export interface ProxyCredentials {
@@ -21,6 +23,12 @@ export interface ProxyCredentials {
 export interface EgressProxy {
   /** The `--proxy-server` value for Chromium. */
   readonly url: string;
+  /**
+   * A URL the proxy answers itself, with an empty page, once the credential is presented.
+   * Loading it first makes Chromium cache the credential and send it with every later
+   * request, which it otherwise does only for top-level navigations.
+   */
+  readonly primeUrl: string;
   readonly port: number;
   readonly credentials: ProxyCredentials;
   /** Whether the proxy refused a connection to `hostname:port` during its lifetime. */
@@ -30,6 +38,8 @@ export interface EgressProxy {
 }
 
 const PROXY_REALM = 'vellum-render';
+// .invalid never resolves (RFC 2606), so this cannot name a real destination.
+const PRIME_HOST = 'egress-proxy.invalid';
 
 // Hop-by-hop headers (RFC 9110 §7.6.1) and the proxy's own, never sent on to the destination
 // or back to Chromium.
@@ -125,21 +135,23 @@ export async function startEgressProxy(options: EgressProxyOptions = {}): Promis
     return resolution;
   }
 
+  async function checkDestination(hostname: string, port: number): Promise<{ reason: string } | { address: string }> {
+    if (options.refuseAll) return { reason: 'this render has no network access' };
+    const addresses = await resolveOnce(hostname);
+    if (addresses.length === 0) return { reason: 'it does not resolve' };
+    if (addresses.some((address) => !isDestinationAllowed(address, port))) {
+      return { reason: `it resolves to a blocked address (${addresses.join(', ')})` };
+    }
+    return { address: addresses[0] };
+  }
+
   /** The address to connect to, or null after logging why the destination is refused. */
   async function validatedAddress(hostname: string, port: number, logged: string): Promise<string | null> {
-    const addresses = await resolveOnce(hostname);
-    const reason =
-      addresses.length === 0
-        ? 'it does not resolve'
-        : addresses.some((address) => !isDestinationAllowed(address, port))
-          ? `it resolves to a blocked address (${addresses.join(', ')})`
-          : null;
-    if (reason) {
-      refused.add(destinationKey(hostname, port));
-      console.warn(`[render-egress] refused ${logged}: ${reason}`);
-      return null;
-    }
-    return addresses[0];
+    const checked = await checkDestination(hostname, port);
+    if ('address' in checked) return checked.address;
+    refused.add(destinationKey(hostname, port));
+    console.warn(`[render-egress] refused ${logged}: ${checked.reason}`);
+    return null;
   }
 
   function refuseHttp(res: ServerResponse, status: 400 | 403 | 407): void {
@@ -165,6 +177,11 @@ export async function startEgressProxy(options: EgressProxyOptions = {}): Promis
       return refuseHttp(res, 400);
     }
     if (target.protocol !== 'http:') return refuseHttp(res, 400);
+    if (target.hostname === PRIME_HOST) {
+      res.writeHead(200, { 'content-type': 'text/html', 'content-length': 0 });
+      res.end();
+      return;
+    }
 
     const port = Number(target.port || 80);
     const address = await validatedAddress(
@@ -246,6 +263,7 @@ export async function startEgressProxy(options: EgressProxyOptions = {}): Promis
   let closing: Promise<void> | undefined;
   return {
     url: `http://127.0.0.1:${port}`,
+    primeUrl: `http://${PRIME_HOST}/`,
     port,
     credentials,
     wasRefused: (hostname, destinationPort) => refused.has(destinationKey(hostname, destinationPort)),

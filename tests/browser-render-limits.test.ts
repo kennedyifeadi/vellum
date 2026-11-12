@@ -26,7 +26,11 @@ jest.mock('@/lib/puppeteer/lifecycle', () => {
 
 jest.mock('@/lib/puppeteer/launch', () => {
   const actual = jest.requireActual('@/lib/puppeteer/launch');
-  return { launchBrowser: () => require('./helpers/heldRenders').launchHeldBrowser(actual.launchBrowser) };
+  return {
+    ...actual,
+    launchBrowser: (...args: unknown[]) =>
+      require('./helpers/heldRenders').launchHeldBrowser(() => actual.launchBrowser(...args)),
+  };
 });
 
 jest.mock('@/lib/auth/jwt', () => ({

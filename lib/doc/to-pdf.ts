@@ -151,7 +151,7 @@ export async function convertDocxToPdf({
   `;
 
   // 3. Render HTML to PDF using puppeteer
-  const browser = await launchBrowser();
+  const browser = await launchBrowser('none');
 
   try {
     const render = (async () => {

@@ -75,10 +75,18 @@ function holdSetContent(page: Page, browser: Browser): void {
 
 // Killing only the main process on Windows leaves its GPU and crash-reporter children
 // running, where Linux takes them down with it, so a crash there is the whole tree.
+// taskkill exits non-zero when a child is already on its way out (a renderer Chromium is
+// replacing after a navigation) and "could not be terminated", even though the browser is
+// gone; it is a failure only if the browser itself still runs. A child that really stays is
+// caught by leftoverChromiumProcesses.
 function killProcessTree(child: ChildProcess | null): void {
   if (!child?.pid) return;
   if (process.platform === 'win32') {
-    execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    } catch (error) {
+      if (isRunning(child)) throw error;
+    }
   } else {
     child.kill('SIGKILL');
   }
@@ -95,6 +103,13 @@ export async function launchHeldBrowser(launch: () => Promise<Browser>): Promise
     holdSetContent(page, browser);
     return page;
   };
+  return browser;
+}
+
+/** Launches a real browser with `launch`, counted for the checks below but not held. */
+export async function launchTrackedBrowser(launch: () => Promise<Browser>): Promise<Browser> {
+  const browser = await launch();
+  trackProcess(browser);
   return browser;
 }
 

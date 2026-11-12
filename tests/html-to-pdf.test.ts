@@ -1,6 +1,7 @@
 const mainFrame = { name: 'main' };
 
 const mockPage = {
+  authenticate: jest.fn().mockResolvedValue(undefined),
   setViewport: jest.fn().mockResolvedValue(undefined),
   emulateMediaType: jest.fn().mockResolvedValue(undefined),
   setRequestInterception: jest.fn().mockResolvedValue(undefined),
@@ -20,6 +21,13 @@ const mockBrowser = {
 
 jest.mock('puppeteer', () => ({
   launch: jest.fn().mockResolvedValue(mockBrowser),
+}));
+
+// The proxy's credential priming is launch's own (tests/chromium-launch.test.ts); here the
+// page is just the mock page, so goto counts only the converter's navigation.
+jest.mock('@/lib/puppeteer/launch', () => ({
+  ...jest.requireActual('@/lib/puppeteer/launch'),
+  openRenderPage: (browser: { newPage(): Promise<unknown> }) => browser.newPage(),
 }));
 
 jest.mock('dns/promises', () => ({

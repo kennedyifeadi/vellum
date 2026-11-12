@@ -96,9 +96,21 @@ describe('isRequestAllowed (sub-resource interception)', () => {
     expect(await isRequestAllowed('http://169.254.169.254/')).toBe(false);
   });
 
-  it('allows an ordinary public sub-resource', async () => {
-    mockLookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }]);
-    expect(await isRequestAllowed('https://cdn.example.com/logo.png')).toBe(true);
+  it('allows an ordinary public sub-resource without looking it up', () => {
+    expect(isRequestAllowed('https://cdn.example.com/logo.png')).toBe(true);
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it("leaves a name's addresses to the egress proxy", () => {
+    mockLookup.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+    expect(isRequestAllowed('https://rebind.example.com/')).toBe(true);
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it('blocks internal names and private IP literals', () => {
+    expect(isRequestAllowed('http://localhost:3000/')).toBe(false);
+    expect(isRequestAllowed('http://metadata.internal/')).toBe(false);
+    expect(isRequestAllowed('http://[fd00::1]/')).toBe(false);
   });
 });
 
