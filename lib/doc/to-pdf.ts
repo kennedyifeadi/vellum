@@ -1,11 +1,13 @@
 import mammoth from 'mammoth'; // You'll need to install this: npm install mammoth
 import { ClientError } from '@/lib/convert/errors';
+import { isInertUrl } from '@/lib/html/url-policy';
 import {
   RENDER_TIMEOUT_MS,
   closeBrowser,
+  ignoreHandledRequest,
   withRenderDeadline,
 } from '@/lib/puppeteer/lifecycle';
-import { launchBrowser } from '@/lib/puppeteer/launch';
+import { launchBrowser, openRenderPage } from '@/lib/puppeteer/launch';
 
 interface DocxToPdfOptions {
   docxBuffer: Buffer;
@@ -155,7 +157,15 @@ export async function convertDocxToPdf({
 
   try {
     const render = (async () => {
-      const page = await browser.newPage();
+      // A DOCX render needs no network: mammoth inlines images as data: URIs and emits no
+      // scripts, so anything else the document asks for is refused.
+      const page = await openRenderPage(browser);
+      await page.setJavaScriptEnabled(false);
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        const handled = isInertUrl(request.url()) ? request.continue() : request.abort('blockedbyclient');
+        handled.catch(ignoreHandledRequest);
+      });
       await page.setContent(styledHtml, { waitUntil: 'load', timeout: timeoutMs });
 
       return page.pdf({

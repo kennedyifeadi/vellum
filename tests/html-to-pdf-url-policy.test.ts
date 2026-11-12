@@ -1,7 +1,7 @@
 const mockLookup = jest.fn();
 jest.mock('dns/promises', () => ({ lookup: (...args: any[]) => mockLookup(...args) }));
 
-import { assertNavigableUrl, isRequestAllowed, isBlockedAddress } from '../lib/html/url-policy';
+import { assertNavigableUrl, isBlockedAddress, isInertUrl, isRequestAllowed } from '../lib/html/url-policy';
 import { ClientError } from '../lib/convert/errors';
 
 beforeEach(() => {
@@ -152,4 +152,17 @@ describe('isBlockedAddress', () => {
   it('fails closed on an unparseable address', () => {
     expect(isBlockedAddress('not-an-ip')).toBe(true);
   });
+});
+
+describe('isInertUrl', () => {
+  it.each(['data:text/plain,x', 'about:blank', 'blob:null/1234'])('is true for %s', (url) => {
+    expect(isInertUrl(url)).toBe(true);
+  });
+
+  it.each(['https://example.com/', 'http://127.0.0.1/', 'file:///etc/passwd', 'ws://example.com/', 'not a url'])(
+    'is false for %s',
+    (url) => {
+      expect(isInertUrl(url)).toBe(false);
+    },
+  );
 });

@@ -75,6 +75,15 @@ export function isRequestAllowed(rawUrl: string): boolean {
   return !(isIP(screened.hostname) && isBlockedAddress(screened.hostname));
 }
 
+/** Whether `rawUrl` is a data:, blob: or about: URL, which loads nothing from the network. */
+export function isInertUrl(rawUrl: string): boolean {
+  try {
+    return INERT_SCHEMES.has(new URL(rawUrl).protocol.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function isBlockedHostname(hostname: string): boolean {
   if (BLOCKED_HOSTNAMES.has(hostname)) {
     return true;

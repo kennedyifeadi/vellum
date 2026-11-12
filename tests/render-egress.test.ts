@@ -18,6 +18,11 @@ const proxyPorts: number[] = [];
 // What a render's PDF waits for, so "nothing arrived" is checked only once the attempt ended.
 let mockBeforePdf: ((page: Page) => Promise<void>) | undefined;
 
+// What mammoth turns the test's DOCX into: a document that reaches for the recorder in
+// every way a page can.
+let mockDocxHtml = '';
+jest.mock('mammoth', () => ({ convertToHtml: jest.fn(async () => ({ value: mockDocxHtml })) }));
+
 jest.mock('dns/promises', () => ({
   lookup: jest.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
 }));
@@ -68,6 +73,7 @@ jest.mock('@/lib/puppeteer/launch', () => {
 
 import puppeteer from 'puppeteer';
 import { convertHtmlToPdf } from '@/lib/html/to-pdf';
+import { convertDocxToPdf } from '@/lib/doc/to-pdf';
 import { ClientError } from '@/lib/convert/errors';
 
 interface Recorder {
@@ -299,5 +305,25 @@ describe('an allowed destination is still reached', () => {
       `/page host=${ALLOWED_HOST}:${allowed.port}`,
       `/pixel.svg host=${ALLOWED_HOST}:${allowed.port}`,
     ]);
+  });
+});
+
+describe('a DOCX render', () => {
+  it('reaches nothing its HTML references, not even a destination HTML renders may reach', async () => {
+    allowed.requests.length = 0;
+    const origin = `http://127.0.0.1:${recorder.port}`;
+    mockDocxHtml = `
+      <p>Document</p>
+      <img src="${origin}/image.png">
+      <link rel="stylesheet" href="${origin}/style.css">
+      <iframe src="${origin}/frame"></iframe>
+      <img src="http://${REBIND_HOST}:${recorder.port}/named.png">
+      <iframe src="http://${ALLOWED_HOST}:${allowed.port}/page"></iframe>
+      <script>fetch('${origin}/script'); new WebSocket('ws://127.0.0.1:${recorder.port}/');</script>`;
+
+    await expectPdf(convertDocxToPdf({ docxBuffer: Buffer.from('mammoth is mocked') }));
+
+    expect(recorder.received).toEqual([]);
+    expect(allowed.requests).toEqual([]);
   });
 });
