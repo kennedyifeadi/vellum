@@ -20,6 +20,9 @@
 # production
 /build
 
+# pdf.js worker that scripts/copy-pdf-worker.mjs copies before dev and build
+/public/pdfjs/
+
 # misc
 .DS_Store
 *.pem
