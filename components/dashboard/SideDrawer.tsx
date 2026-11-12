@@ -389,20 +389,17 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   };
 
   const createPicker = (accessToken: string) => {
-    console.log('[GooglePicker] createPicker started. Access Token received.');
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY!;
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
     const appId = clientId.split('-')[0];
 
     if (window.google && window.google.picker && window.google.picker.PickerBuilder) {
-      console.log('[GooglePicker] PickerBuilder is available. Building picker...');
       const pickerBuilder = new window.google.picker.PickerBuilder()
         .addView(new window.google.picker.DocsView().setMimeTypes(getPickerMimeTypes()).setIncludeFolders(true))
         .setOAuthToken(accessToken)
         .setDeveloperKey(apiKey)
         .setAppId(appId)
         .setCallback((data: GooglePickerData) => {
-          console.log('[GooglePicker] Picker Callback Event:', data.action, data);
           if (data.action === window.google.picker.Action.PICKED) {
             addFiles(data.docs.map((doc): DriveFile => ({
               isDriveFile: true,
@@ -420,9 +417,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       }
       
       
-      console.log('[GooglePicker] Building picker...');
       const picker = pickerBuilder.build();
-      console.log('[GooglePicker] Setting picker visible...');
       picker.setVisible(true);
       
       setTimeout(() => {
@@ -436,13 +431,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         }
       }, 100);
     } else {
-      console.log('[GooglePicker] window.google.picker.PickerBuilder not found. Loading picker module...');
       window.gapi.load('picker', { callback: () => createPicker(accessToken) });
     }
   };
 
   const openGooglePicker = () => {
-    console.log('[GooglePicker] openGooglePicker clicked');
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     
@@ -453,18 +446,15 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     }
 
     try {
-      console.log('[GooglePicker] Initializing tokenClient...');
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.readonly',
         callback: (response: GoogleTokenResponse) => {
-          console.log('[GooglePicker] tokenClient Callback received:', response);
           if (response.error !== undefined) {
             console.error('[GooglePicker] Error from tokenClient:', response);
             throw response;
           }
           if (window.gapi) {
-            console.log('[GooglePicker] Token successful. Loading gapi picker...');
             window.gapi.load('picker', { callback: () => createPicker(response.access_token) });
           } else {
             console.error('[GooglePicker] window.gapi is not defined');
@@ -472,7 +462,6 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           }
         },
       });
-      console.log('[GooglePicker] Requesting Access Token...');
       tokenClient.requestAccessToken({ prompt: '' });
     } catch (e) {
       console.error('[GooglePicker] Failed to open Google Drive picker', e);
