@@ -74,7 +74,7 @@ jest.mock('@/lib/puppeteer/launch', () => {
 import puppeteer from 'puppeteer';
 import { convertHtmlToPdf } from '@/lib/html/to-pdf';
 import { convertDocxToPdf } from '@/lib/doc/to-pdf';
-import { ClientError } from '@/lib/convert/errors';
+import { DESTINATION_REFUSED_MESSAGE } from '@/lib/html/url-policy';
 
 interface Recorder {
   port: number;
@@ -272,8 +272,8 @@ describe('an uploaded page cannot reach a local server', () => {
 
 describe('a URL render cannot reach a local server', () => {
   it("through a name only Chromium's resolver maps to it", async () => {
-    await expect(convertHtmlToPdf({ url: `http://${REBIND_HOST}:${recorder.port}/` })).rejects.toBeInstanceOf(
-      ClientError,
+    await expect(convertHtmlToPdf({ url: `http://${REBIND_HOST}:${recorder.port}/` })).rejects.toThrow(
+      DESTINATION_REFUSED_MESSAGE,
     );
     expect(recorder.received).toEqual([]);
   });

@@ -1,7 +1,13 @@
 const mockLookup = jest.fn();
 jest.mock('dns/promises', () => ({ lookup: (...args: any[]) => mockLookup(...args) }));
 
-import { assertNavigableUrl, isBlockedAddress, isInertUrl, isRequestAllowed } from '../lib/html/url-policy';
+import {
+  DESTINATION_REFUSED_MESSAGE,
+  assertNavigableUrl,
+  isBlockedAddress,
+  isInertUrl,
+  isRequestAllowed,
+} from '../lib/html/url-policy';
 import { ClientError } from '../lib/convert/errors';
 
 beforeEach(() => {
@@ -132,6 +138,30 @@ describe('isBlockedAddress', () => {
     'fd12:3456::1',
     '::ffff:127.0.0.1',
     '::ffff:7f00:1',
+    '0:0:0:0:0:ffff:7f00:1',
+    '0:0:0:0:0:ffff:10.0.0.1',
+    '::127.0.0.1',
+    '::7f00:1',
+    // TEST-NET documentation ranges
+    '192.0.2.1',
+    '198.51.100.7',
+    '203.0.113.200',
+    // NAT64, including private IPv4 addresses embedded in it
+    '64:ff9b::7f00:1',
+    '64:ff9b::10.0.0.1',
+    '64:ff9b::a9fe:a9fe',
+    '64:ff9b::8.8.8.8',
+    '64:ff9b:1::c0a8:101',
+    // 6to4 of 127.0.0.1, 192.168.1.1, 169.254.169.254, and of a public address
+    '2002:7f00:1::1',
+    '2002:c0a8:101::1',
+    '2002:a9fe:a9fe::',
+    '2002:808:808::1',
+    // Teredo, whose client address is the last 32 bits inverted (here 10.0.0.1 and 127.0.0.1)
+    '2001:0:4136:e378:8000:63bf:f5ff:fffe',
+    '2001::80ff:fffe',
+    'fec0::1',
+    'feff::1',
   ])('blocks %s', (ip) => {
     expect(isBlockedAddress(ip)).toBe(true);
   });
@@ -145,12 +175,56 @@ describe('isBlockedAddress', () => {
     '172.32.0.1',
     '2606:4700:4700::1111',
     '2001:4860:4860::8888',
+    '::ffff:8.8.8.8',
+    '0:0:0:0:0:ffff:808:808',
+    '192.0.3.1',
+    '198.51.101.1',
+    '203.0.114.1',
+    '64:ff9c::1',
+    '2003::1',
+    '2001:1::1',
+    'fe7f::1',
   ])('allows %s', (ip) => {
     expect(isBlockedAddress(ip)).toBe(false);
   });
 
   it('fails closed on an unparseable address', () => {
     expect(isBlockedAddress('not-an-ip')).toBe(true);
+  });
+});
+
+describe('one message for every refused destination', () => {
+  async function messageFor(url: string): Promise<string> {
+    const error = await assertNavigableUrl(url).catch((e) => e);
+    expect(error).toBeInstanceOf(ClientError);
+    expect(error.status).toBe(400);
+    return error.message;
+  }
+
+  it('is the same for an internal name, a private address, a name resolving to one, and an unresolvable name', async () => {
+    const messages = [
+      await messageFor('http://localhost/'),
+      await messageFor('http://metadata.internal/'),
+      await messageFor('http://127.0.0.1/'),
+      await messageFor('http://[::1]/'),
+      await messageFor('http://169.254.169.254/latest/meta-data/'),
+    ];
+    mockLookup.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }]);
+    messages.push(await messageFor('https://rebind.example.com/'));
+    mockLookup.mockResolvedValueOnce([
+      { address: '93.184.216.34', family: 4 },
+      { address: '192.168.0.1', family: 4 },
+    ]);
+    messages.push(await messageFor('https://mixed.example.com/'));
+    mockLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+    messages.push(await messageFor('https://nope.invalid/'));
+
+    expect(new Set(messages)).toEqual(new Set([DESTINATION_REFUSED_MESSAGE]));
+  });
+
+  it('keeps its own message for an invalid URL and for a non-web scheme', async () => {
+    expect(await messageFor('not a url')).toBe('The URL is not valid.');
+    expect(await messageFor('file:///etc/passwd')).toBe('Only http and https URLs can be converted (received "file").');
   });
 });
 

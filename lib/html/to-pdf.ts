@@ -1,5 +1,5 @@
 import { ClientError } from '@/lib/convert/errors';
-import { assertNavigableUrl, isRequestAllowed } from '@/lib/html/url-policy';
+import { DESTINATION_REFUSED_MESSAGE, assertNavigableUrl, isRequestAllowed } from '@/lib/html/url-policy';
 import {
   RENDER_TIMEOUT_MS,
   closeBrowser,
@@ -7,8 +7,6 @@ import {
   withRenderDeadline,
 } from '@/lib/puppeteer/lifecycle';
 import { launchBrowser, openRenderPage, wasDestinationRefused } from '@/lib/puppeteer/launch';
-
-const REFUSED_REDIRECT_MESSAGE = 'That URL redirects to a private, internal, or non-web address.';
 
 interface HtmlToPdfOptions {
   htmlContent?: string;
@@ -62,12 +60,12 @@ export async function convertHtmlToPdf({
         try {
           response = await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
         } catch (error) {
-          if (refusedMainNavigation()) throw new ClientError(REFUSED_REDIRECT_MESSAGE);
+          if (refusedMainNavigation()) throw new ClientError(DESTINATION_REFUSED_MESSAGE);
           throw error;
         }
         // A refused plain-http destination is the proxy's own 403 page, not the site's.
         if (response && wasDestinationRefused(browser, response.url())) {
-          throw new ClientError(REFUSED_REDIRECT_MESSAGE);
+          throw new ClientError(DESTINATION_REFUSED_MESSAGE);
         }
       } else if (htmlContent) {
         await page.setContent(htmlContent, { waitUntil: 'load', timeout: timeoutMs });

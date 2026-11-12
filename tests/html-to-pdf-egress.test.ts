@@ -37,6 +37,7 @@ jest.mock('@/lib/puppeteer/launch', () => ({
 import puppeteer from 'puppeteer';
 import { convertHtmlToPdf } from '../lib/html/to-pdf';
 import { ClientError } from '../lib/convert/errors';
+import { DESTINATION_REFUSED_MESSAGE } from '../lib/html/url-policy';
 
 function fakeRequest(url: string, opts: { navigation?: boolean; frame?: unknown } = {}) {
   return {
@@ -162,8 +163,8 @@ describe('egress policy on every request (redirects and sub-resources)', () => {
       throw new Error('net::ERR_ABORTED');
     });
 
-    await expect(convertHtmlToPdf({ url: 'https://start.example.com/go' })).rejects.toBeInstanceOf(
-      ClientError,
+    await expect(convertHtmlToPdf({ url: 'https://start.example.com/go' })).rejects.toThrow(
+      DESTINATION_REFUSED_MESSAGE,
     );
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
@@ -191,7 +192,7 @@ describe('destinations the egress proxy refuses', () => {
     mockRefusedHosts = ['start.example.com'];
     mockPage.goto.mockRejectedValueOnce(new Error('net::ERR_TUNNEL_CONNECTION_FAILED'));
 
-    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toThrow(DESTINATION_REFUSED_MESSAGE);
   });
 
   it('surfaces a ClientError when the proxy refused where the main navigation was redirected', async () => {
@@ -201,14 +202,14 @@ describe('destinations the egress proxy refuses', () => {
       throw new Error('net::ERR_TUNNEL_CONNECTION_FAILED');
     });
 
-    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+    await expect(convertHtmlToPdf({ url: 'https://start.example.com/' })).rejects.toThrow(DESTINATION_REFUSED_MESSAGE);
   });
 
   it("refuses to render the proxy's own 403 for a plain-http main navigation", async () => {
     mockRefusedHosts = ['rebind.example.com'];
     mockPage.goto.mockResolvedValueOnce({ url: () => 'http://rebind.example.com/' });
 
-    await expect(convertHtmlToPdf({ url: 'http://start.example.com/' })).rejects.toBeInstanceOf(ClientError);
+    await expect(convertHtmlToPdf({ url: 'http://start.example.com/' })).rejects.toThrow(DESTINATION_REFUSED_MESSAGE);
     expect(mockPage.pdf).not.toHaveBeenCalled();
   });
 
