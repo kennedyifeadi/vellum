@@ -1,6 +1,7 @@
 import { execFileSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import type { Browser, Page } from 'puppeteer';
+import { isProcessRunning } from '@/lib/puppeteer/process-tree';
 
 // Wraps the real Chromium launcher so a test can count the browsers it started and hold
 // each render at its setContent until the test lets it go, without sleeping.
@@ -29,21 +30,9 @@ function trackProcess(browser: Browser): void {
   peakBrowsers = Math.max(peakBrowsers, countLiveBrowsers());
 }
 
-// On a loaded Windows machine Node sometimes never emits 'exit' for a browser the OS has
-// already ended, so whether a browser still runs is asked of the OS instead.
-function isRunning(child: ChildProcess): boolean {
-  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return false;
-  try {
-    process.kill(child.pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
 function countLiveBrowsers(): number {
   for (const child of liveBrowsers) {
-    if (!isRunning(child)) liveBrowsers.delete(child);
+    if (!isProcessRunning(child)) liveBrowsers.delete(child);
   }
   return liveBrowsers.size;
 }
@@ -85,7 +74,7 @@ function killProcessTree(child: ChildProcess | null): void {
     try {
       execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
     } catch (error) {
-      if (isRunning(child)) throw error;
+      if (isProcessRunning(child)) throw error;
     }
   } else {
     child.kill('SIGKILL');

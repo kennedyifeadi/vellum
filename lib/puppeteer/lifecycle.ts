@@ -1,6 +1,7 @@
 import type { Browser } from 'puppeteer';
 import { ClientError } from '@/lib/convert/errors';
 import { releaseLaunchResources } from '@/lib/puppeteer/launch';
+import { killProcessTree } from '@/lib/puppeteer/process-tree';
 
 /**
  * How long a single HTML/DOCX render (navigation + layout + PDF) is allowed to take
@@ -21,8 +22,9 @@ export class RenderTimeoutError extends ClientError {
 }
 
 /**
- * Closes a puppeteer browser and its egress proxy, guaranteeing the OS process is gone even
- * when a graceful close hangs (which it does when the renderer is stuck). Never throws.
+ * Closes a puppeteer browser and its egress proxy, guaranteeing the browser's OS processes,
+ * children included, are gone even when a graceful close hangs (which it does when the
+ * renderer is stuck). Never throws.
  */
 export async function closeBrowser(browser: Browser): Promise<void> {
   let killTimer: NodeJS.Timeout | undefined;
@@ -37,7 +39,8 @@ export async function closeBrowser(browser: Browser): Promise<void> {
       }),
     ]);
   } catch {
-    browser.process()?.kill('SIGKILL');
+    const child = browser.process();
+    if (child) await killProcessTree(child);
   } finally {
     if (killTimer) clearTimeout(killTimer);
     await releaseLaunchResources(browser);
