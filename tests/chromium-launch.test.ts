@@ -37,6 +37,11 @@ function profileDir(): string {
   return launch.mock.calls[launch.mock.calls.length - 1][0].userDataDir;
 }
 
+/** Resolves once `dir` is gone: the profile is removed in the background after the browser. */
+async function removed(dir: string): Promise<void> {
+  while (fs.existsSync(dir)) await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
 function isListening(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = net.connect({ host: '127.0.0.1', port });
@@ -140,7 +145,7 @@ describe('launchBrowser', () => {
       await closeBrowser(browser);
 
       expect(await isListening(port)).toBe(false);
-      expect(fs.existsSync(profile)).toBe(false);
+      await removed(profile);
     });
 
     it('closes the proxy and removes the profile when Chromium fails to launch', async () => {
@@ -149,7 +154,7 @@ describe('launchBrowser', () => {
       await expect(launchBrowser(network)).rejects.toThrow('no chromium');
 
       expect(await isListening(proxyPort())).toBe(false);
-      expect(fs.existsSync(profileDir())).toBe(false);
+      await removed(profileDir());
     });
   });
 

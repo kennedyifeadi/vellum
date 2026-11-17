@@ -21,8 +21,8 @@ export class RenderTimeoutError extends ClientError {
 }
 
 /**
- * Closes a puppeteer browser, its egress proxy and its profile, guaranteeing the OS process is gone
- * even when a graceful close hangs (which it does when the renderer is stuck). Never throws.
+ * Closes a puppeteer browser and its egress proxy, guaranteeing the OS process is gone even
+ * when a graceful close hangs (which it does when the renderer is stuck). Never throws.
  */
 export async function closeBrowser(browser: Browser): Promise<void> {
   let killTimer: NodeJS.Timeout | undefined;

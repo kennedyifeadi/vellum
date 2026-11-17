@@ -54,18 +54,18 @@ async function createProfile(): Promise<string> {
   return profileDir;
 }
 
-// Windows can hold a profile's files for a moment after Chromium exits, so removal retries.
-async function removeProfile(profileDir: string): Promise<void> {
-  try {
-    await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  } catch (error) {
+// Windows can hold a profile's files for a while after Chromium exits, so removal retries. On a
+// loaded Windows machine it has also been seen never to finish, so a render does not wait for
+// it, just as puppeteer's own temporary profiles are removed inside the close it races.
+function removeProfileInBackground(profileDir: string): void {
+  rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch((error) => {
     console.warn(`[render] could not remove the browser profile ${profileDir}:`, error);
-  }
+  });
 }
 
 async function release({ proxy, profileDir }: LaunchResources): Promise<void> {
+  removeProfileInBackground(profileDir);
   await proxy.close();
-  await removeProfile(profileDir);
 }
 
 export async function launchBrowser(network: RendererNetwork): Promise<Browser> {
@@ -127,7 +127,10 @@ export function wasDestinationRefused(browser: Browser, url: string): boolean {
   }
 }
 
-/** Closes the browser's egress proxy and removes its profile. Called once the browser is gone. */
+/**
+ * Closes the browser's egress proxy and starts removing its profile. Called once the browser
+ * is gone.
+ */
 export async function releaseLaunchResources(browser: Browser): Promise<void> {
   const resources = launches.get(browser);
   launches.delete(browser);
