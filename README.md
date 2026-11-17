@@ -149,6 +149,19 @@ runners (the host refuses the unprivileged user namespaces it needs), so CI runs
 smoke test with the sandbox off and reports the sandboxed result separately. Whether it
 starts sandboxed on Railway is unknown until a real deployment.
 
+### Renderer network access
+
+Each HTML to PDF render starts its own egress proxy (`lib/puppeteer/egress-proxy.ts`) on a
+random 127.0.0.1 port and launches Chromium with all its traffic sent through it, loopback
+and WebRTC included. The proxy resolves each destination once, refuses it with 403 if any of
+its addresses is private, loopback, link-local or otherwise non-public (the ranges in
+`lib/html/url-policy.ts`), and connects to the address it checked, so Chromium's own DNS
+never decides where a render connects. It accepts only the per-launch credential Chromium is
+given, and logs each refusal (`[render-egress] refused …`, without the query string). A
+refused URL answers 400 "That URL can't be converted. It must be a public http or https
+address." DOCX to PDF renders have no network at all: JavaScript is off and every request
+other than `data:`, `blob:` and `about:` is refused.
+
 ## Building and running the container
 
 ```bash

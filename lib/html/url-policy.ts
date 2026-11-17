@@ -5,67 +5,87 @@ import { ClientError } from '@/lib/convert/errors';
 const NAVIGABLE_SCHEMES = new Set(['http:', 'https:']);
 const INERT_SCHEMES = new Set(['about:', 'data:', 'blob:']);
 
+/**
+ * The one answer for every destination refused: an internal name, a non-public address, a
+ * name that does not resolve, or a redirect to any of these. Saying which would tell a caller
+ * what exists on the server's network.
+ */
+export const DESTINATION_REFUSED_MESSAGE = "That URL can't be converted. It must be a public http or https address.";
+
 const BLOCKED_HOSTNAMES = new Set(['localhost']);
 const BLOCKED_HOSTNAME_SUFFIXES = ['.localhost', '.internal', '.local'];
 
+type Screened = { reason: string } | { hostname: string } | { inert: true };
+
 /**
- * Decides whether a URL may be fetched while rendering user-supplied input to a PDF.
- * `null` means allowed; a string is a caller-safe reason it was rejected.
- *
- * `allowInertSchemes` is set only for sub-resource requests already inside the page
- * (request interception), where `data:`/`blob:`/`about:` carry no egress and blocking
+ * The checks that need no DNS: the URL parses, its scheme is http/https, and its host is not
+ * an internal name. `allowInertSchemes` is set only for sub-resource requests already inside
+ * the page (request interception), where `data:`/`blob:`/`about:` carry no egress and blocking
  * them would break ordinary self-contained documents.
  */
-async function screenUrl(
-  rawUrl: string,
-  { allowInertSchemes }: { allowInertSchemes: boolean },
-): Promise<string | null> {
+function screenUrlShape(rawUrl: string, { allowInertSchemes }: { allowInertSchemes: boolean }): Screened {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return 'The URL is not valid.';
+    return { reason: 'The URL is not valid.' };
   }
 
   const scheme = parsed.protocol.toLowerCase();
   if (allowInertSchemes && INERT_SCHEMES.has(scheme)) {
-    return null;
+    return { inert: true };
   }
   if (!NAVIGABLE_SCHEMES.has(scheme)) {
-    return `Only http and https URLs can be converted (received "${scheme.replace(/:$/, '')}").`;
+    return { reason: `Only http and https URLs can be converted (received "${scheme.replace(/:$/, '')}").` };
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (!hostname) {
-    return 'The URL has no host.';
+    return { reason: 'The URL has no host.' };
   }
   if (isBlockedHostname(hostname)) {
-    return 'That URL points to a private or internal host.';
+    return { reason: DESTINATION_REFUSED_MESSAGE };
   }
-
-  const literal = isIP(hostname) ? hostname : null;
-  const addresses = literal ? [literal] : await resolveHost(hostname);
-  if (addresses.length === 0) {
-    return 'The URL host could not be resolved.';
-  }
-  if (addresses.some(isBlockedAddress)) {
-    return 'That URL resolves to a private or internal address.';
-  }
-
-  return null;
+  return { hostname };
 }
 
-/** Throws a 400 `ClientError` if `rawUrl` may not be navigated to. */
+/**
+ * Throws a 400 `ClientError` if `rawUrl` may not be navigated to. Checked before a browser
+ * launches, so a plainly internal URL is refused without one; the render's egress proxy
+ * checks the addresses it actually connects to.
+ */
 export async function assertNavigableUrl(rawUrl: string): Promise<void> {
-  const reason = await screenUrl(rawUrl, { allowInertSchemes: false });
-  if (reason) {
-    throw new ClientError(reason);
+  const screened = screenUrlShape(rawUrl, { allowInertSchemes: false });
+  if ('reason' in screened) {
+    throw new ClientError(screened.reason);
+  }
+  if (!('hostname' in screened)) return;
+
+  const { hostname } = screened;
+  const addresses = isIP(hostname) ? [hostname] : await resolveHost(hostname);
+  if (addresses.length === 0 || addresses.some(isBlockedAddress)) {
+    throw new ClientError(DESTINATION_REFUSED_MESSAGE);
   }
 }
 
-/** Non-throwing check for the puppeteer request-interception handler. */
-export async function isRequestAllowed(rawUrl: string): Promise<boolean> {
-  return (await screenUrl(rawUrl, { allowInertSchemes: true })) === null;
+/**
+ * The request-interception check: scheme and host name only, with no DNS. A literal IP is
+ * checked here too since that needs no lookup; every other address is the egress proxy's.
+ */
+export function isRequestAllowed(rawUrl: string): boolean {
+  const screened = screenUrlShape(rawUrl, { allowInertSchemes: true });
+  if ('reason' in screened) return false;
+  if (!('hostname' in screened)) return true;
+  return !(isIP(screened.hostname) && isBlockedAddress(screened.hostname));
+}
+
+/** Whether `rawUrl` is a data:, blob: or about: URL, which loads nothing from the network. */
+export function isInertUrl(rawUrl: string): boolean {
+  try {
+    return INERT_SCHEMES.has(new URL(rawUrl).protocol.toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 function isBlockedHostname(hostname: string): boolean {
@@ -136,45 +156,44 @@ function isBlockedIpv4(ip: string): boolean {
     inRange('169.254.0.0', 16) || // link-local, incl. cloud metadata 169.254.169.254
     inRange('172.16.0.0', 12) || // private
     inRange('192.0.0.0', 24) || // IETF protocol assignments
+    inRange('192.0.2.0', 24) || // TEST-NET-1 documentation
     inRange('192.168.0.0', 16) || // private
     inRange('198.18.0.0', 15) || // benchmarking
+    inRange('198.51.100.0', 24) || // TEST-NET-2 documentation
+    inRange('203.0.113.0', 24) || // TEST-NET-3 documentation
     inRange('224.0.0.0', 4) || // multicast
     inRange('240.0.0.0', 4) // reserved / limited broadcast
   );
 }
 
+// Checked on the expanded groups, so every spelling of an address (compressed, full, or with
+// a dotted IPv4 tail) is judged the same.
 function isBlockedIpv6(ip: string): boolean {
-  const addr = ip.toLowerCase().split('%')[0];
-
-  const dottedMapped = addr.match(/^::(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/);
-  if (dottedMapped) {
-    return isBlockedIpv4(dottedMapped[1]);
-  }
-  const hexMapped = addr.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMapped) {
-    const high = parseInt(hexMapped[1], 16);
-    const low = parseInt(hexMapped[2], 16);
-    return isBlockedIpv4(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
-  }
-  if (addr === '::' || addr === '::1') {
-    return true;
-  }
-
-  const groups = expandIpv6(addr);
+  const groups = expandIpv6(ip.toLowerCase().split('%')[0]);
   if (!groups) {
     return true;
   }
-  const first = groups[0];
-  if ((first & 0xffc0) === 0xfe80) {
-    return true; // fe80::/10 link-local
+  const [g0, g1, g2, g3, g4, g5] = groups;
+  const embeddedIpv4 = `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`;
+
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0) {
+    if (g5 === 0xffff) {
+      return isBlockedIpv4(embeddedIpv4); // ::ffff:0:0/96 IPv4-mapped
+    }
+    if (g5 === 0) {
+      return true; // ::/96 unspecified, loopback, deprecated IPv4-compatible
+    }
   }
-  if ((first & 0xfe00) === 0xfc00) {
-    return true; // fc00::/7 unique local
-  }
-  if ((first & 0xff00) === 0xff00) {
-    return true; // ff00::/8 multicast
-  }
-  return false;
+  return (
+    (g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) || // 64:ff9b::/96 NAT64
+    (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) || // 64:ff9b:1::/48 local-use NAT64
+    (g0 === 0x2001 && g1 === 0) || // 2001::/32 Teredo
+    g0 === 0x2002 || // 2002::/16 6to4
+    (g0 & 0xffc0) === 0xfe80 || // fe80::/10 link-local
+    (g0 & 0xffc0) === 0xfec0 || // fec0::/10 deprecated site-local
+    (g0 & 0xfe00) === 0xfc00 || // fc00::/7 unique local
+    (g0 & 0xff00) === 0xff00 // ff00::/8 multicast
+  );
 }
 
 function expandIpv6(addr: string): number[] | null {
