@@ -23,6 +23,14 @@ jest.mock('@/models/user', () => ({
   default: { findById: jest.fn() },
 }));
 
+type DiskFileNameCondition = string | { $in?: string[]; $regex?: string };
+
+function mockMatchesDiskFileName(condition: DiskFileNameCondition, diskFileName: string): boolean {
+  if (typeof condition === 'string') return condition === diskFileName;
+  if (condition.$in) return condition.$in.includes(diskFileName);
+  return new RegExp(condition.$regex ?? '').test(diskFileName);
+}
+
 jest.mock('@/models/conversion', () => ({
   __esModule: true,
   default: {
@@ -30,7 +38,7 @@ jest.mock('@/models/conversion', () => ({
       Promise.resolve(
         mockRecords.find(
           (record) =>
-            record.userId === query.userId && new RegExp(query.diskFileName.$regex).test(record.diskFileName),
+            record.userId === query.userId && mockMatchesDiskFileName(query.diskFileName, record.diskFileName),
         ) ?? null,
       ),
     ),
@@ -52,6 +60,7 @@ jest.mock('@/lib/storage', () => ({
   LocalDiskStorage: class {},
 }));
 
+import Conversion from '@/models/conversion';
 import { GET as handleDownload } from '../app/api/download/[id]/route';
 
 function storeRecord(extension: string, fileName: string, bytes: Buffer) {
@@ -158,5 +167,33 @@ describe('download route', () => {
 
     expect(res.status).toBe(404);
     expect((await res.json()).error).toBe('File has expired and was removed');
+  });
+
+  it.each([
+    ['a regex wildcard', '.'],
+    ['a match-anything regex', '.*'],
+    ['a catastrophic-backtracking regex', '(a+)+$'],
+    ['a prefix of a real id', FILE_ID.slice(0, 8)],
+    ['a real id with its extension', `${FILE_ID}.pdf`],
+    ['a non-UUID', 'not-a-uuid'],
+  ])('returns 404 for %s without looking anything up', async (_label, id) => {
+    storeRecord('.pdf', 'report.pdf', Buffer.from('pdf'));
+
+    const res = await download(id);
+
+    expect(res.status).toBe(404);
+    expect(Conversion.findOne).not.toHaveBeenCalled();
+    expect(mockOpened).toHaveLength(0);
+  });
+
+  it('looks a real id up by exact stored names, not by pattern', async () => {
+    storeRecord('.pdf', 'report.pdf', Buffer.from('pdf'));
+
+    const res = await download();
+
+    expect(res.status).toBe(200);
+    const [query] = (Conversion.findOne as jest.Mock).mock.calls[0];
+    expect(query.diskFileName).not.toHaveProperty('$regex');
+    expect(query.diskFileName.$in).toContain(`${FILE_ID}.pdf`);
   });
 });

@@ -5,7 +5,7 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { retentionExpiry, storageFullMessage, storageLimits } from '@/lib/storage-limits';
 import { usedStorageBytes } from '@/lib/storage-usage';
 import { ClientError } from '@/lib/convert/errors';
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const diskFileName = `${uuidv4()}${storageExtension(file.name)}`;
+    const diskFileName = `${randomUUID()}${storageExtension(file.name)}`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
     await storage.put(`docs/${diskFileName}`, buffer);

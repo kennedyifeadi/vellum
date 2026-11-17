@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 // Use a module-level cache that survives hot reloads in dev
 // In production, the module is loaded once so this is effectively a singleton
 declare global {
-  // eslint-disable-next-line no-var
   var _mongooseCache: { conn: typeof mongoose | null; promise: Promise<typeof mongoose> | null };
 }
 

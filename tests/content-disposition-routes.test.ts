@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import sharp from 'sharp';
 
 const OWNER_ID = '507f1f77bcf86cd799439011';
+const CONVERSION_ID = '9b2f4c1e-6d3a-4e8b-a5f7-0c1d2e3f4a5b';
 
 let mockResolvedFiles: File[] = [];
 const mockConversionCreate = jest.fn().mockResolvedValue(true);
@@ -186,9 +187,9 @@ describe.each([
   [
     'download/[id]',
     (fileName: string) => {
-      mockConversionRecord = { userId: OWNER_ID, diskFileName: 'f00d.pdf', fileName };
-      return downloadConversion(new NextRequest('http://localhost:3000/api/download/f00d'), {
-        params: Promise.resolve({ id: 'f00d' }),
+      mockConversionRecord = { userId: OWNER_ID, diskFileName: `${CONVERSION_ID}.pdf`, fileName };
+      return downloadConversion(new NextRequest(`http://localhost:3000/api/download/${CONVERSION_ID}`), {
+        params: Promise.resolve({ id: CONVERSION_ID }),
       });
     },
   ],

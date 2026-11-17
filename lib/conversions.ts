@@ -14,6 +14,8 @@ const STORED_CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png',
 };
 
+export const STORED_EXTENSIONS = Object.keys(STORED_CONTENT_TYPES);
+
 function storedExtension(fileName: string): string | null {
   const extension = path.extname(fileName).toLowerCase();
   return extension in STORED_CONTENT_TYPES ? extension : null;
