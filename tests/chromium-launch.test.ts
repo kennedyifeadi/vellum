@@ -13,6 +13,7 @@ jest.mock('puppeteer', () => ({
 }));
 
 import fs from 'fs';
+import mammoth from 'mammoth';
 import net from 'net';
 import path from 'path';
 import puppeteer from 'puppeteer';
@@ -166,14 +167,20 @@ describe('launchBrowser', () => {
     expect(profileDir()).not.toBe(firstProfile);
   });
 
-  async function docxBuffer(): Promise<Buffer> {
+  // Built and converted once outside any test's timeout: the docx package and mammoth's first
+  // conversion are slow on a busy machine.
+  let docxBuffer: Buffer;
+  beforeAll(async () => {
     const docx = await import('docx');
-    return docx.Packer.toBuffer(new docx.Document({ sections: [{ children: [new docx.Paragraph('x')] }] }));
-  }
+    docxBuffer = await docx.Packer.toBuffer(
+      new docx.Document({ sections: [{ children: [new docx.Paragraph('x')] }] }),
+    );
+    await mammoth.convertToHtml({ buffer: docxBuffer });
+  }, 60_000);
 
   const renderers: [string, () => Promise<Buffer>][] = [
     ['HTML to PDF', () => convertHtmlToPdf({ htmlContent: '<p>x</p>' })],
-    ['DOCX to PDF', async () => convertDocxToPdf({ docxBuffer: await docxBuffer() })],
+    ['DOCX to PDF', () => convertDocxToPdf({ docxBuffer })],
   ];
 
   describe.each(renderers)('%s', (_name, render) => {
