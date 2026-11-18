@@ -8,6 +8,8 @@ import { launchTrackedBrowser, leftoverChromiumProcesses } from './helpers/heldR
 // On Windows the crash-reporter children outlive a kill of the main process and exit only
 // once they notice it is gone, which on a loaded machine can take over a minute. Suspending
 // them stands in for that load: a suspended child can only be ended, never exit by itself.
+// The check allows the suites' usual grace, because under load a killed process can take
+// over 15 s to finish terminating.
 
 function profileOf(browser: Browser): string {
   const arg = browser.process()?.spawnargs.find((a) => a.startsWith('--user-data-dir='));
@@ -56,8 +58,8 @@ it('leaves no Chromium process of the profile behind when the graceful close tim
 
     await closeBrowser(browser);
 
-    expect(await leftoverChromiumProcesses(15_000)).toEqual([]);
+    expect(await leftoverChromiumProcesses()).toEqual([]);
   } finally {
     if (process.platform === 'win32') stopProcessesOf(profile);
   }
-}, 90_000);
+}, 120_000);
