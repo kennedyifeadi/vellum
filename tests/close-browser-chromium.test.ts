@@ -7,9 +7,10 @@ import { launchTrackedBrowser, leftoverChromiumProcesses } from './helpers/heldR
 // Real Chromium: a close that times out must leave none of the browser's processes behind.
 // On Windows the crash-reporter children outlive a kill of the main process and exit only
 // once they notice it is gone, which on a loaded machine can take over a minute. Suspending
-// them stands in for that load: a suspended child can only be ended, never exit by itself.
-// The check allows the suites' usual grace, because under load a killed process can take
-// over 15 s to finish terminating.
+// them stands in for that load: a suspended process can only be ended, never exit by itself.
+// Only they are suspended: with the GPU process suspended too, the killed main process
+// sometimes took over a minute to finish terminating under load. The check allows the
+// suites' usual grace, because under load a killed process can take over 15 s to go.
 
 function profileOf(browser: Browser): string {
   const arg = browser.process()?.spawnargs.find((a) => a.startsWith('--user-data-dir='));
@@ -26,8 +27,7 @@ function processesOfProfile(profile: string): string {
   return `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${escaped}') }`;
 }
 
-function suspendChildren(browser: Browser): void {
-  const mainPid = browser.process()?.pid;
+function suspendCrashReporters(browser: Browser): void {
   const suspended = powershell(`
     Add-Type -TypeDefinition @'
     using System; using System.Runtime.InteropServices;
@@ -37,12 +37,12 @@ function suspendChildren(browser: Browser): void {
       [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
     }
 '@
-    ${processesOfProfile(profileOf(browser))} | Where-Object { $_.ProcessId -ne ${mainPid} } | ForEach-Object {
+    ${processesOfProfile(profileOf(browser))} | Where-Object { $_.CommandLine.Contains('--type=crashpad-handler') } | ForEach-Object {
       $handle = [ProcessSuspend]::OpenProcess(0x0800, $false, $_.ProcessId)
       if ([ProcessSuspend]::NtSuspendProcess($handle) -eq 0) { $_.ProcessId }
       [void][ProcessSuspend]::CloseHandle($handle)
     }`);
-  if (!suspended.trim()) throw new Error('No child process of the browser was suspended');
+  if (!suspended.trim()) throw new Error('No crash reporter of the browser was suspended');
 }
 
 function stopProcessesOf(profile: string): void {
@@ -53,7 +53,7 @@ it('leaves no Chromium process of the profile behind when the graceful close tim
   const browser = await launchTrackedBrowser(() => launchBrowser('none'));
   const profile = profileOf(browser);
   try {
-    if (process.platform === 'win32') suspendChildren(browser);
+    if (process.platform === 'win32') suspendCrashReporters(browser);
     browser.close = () => new Promise(() => {});
 
     await closeBrowser(browser);
