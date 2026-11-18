@@ -79,6 +79,17 @@ describe('killProcessTree', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
     expect(warn).toHaveBeenCalledTimes(1);
   });
+
+  it('still kills the main process and warns, without throwing, when it has no profile to find', async () => {
+    const child = { pid: process.pid, kill: jest.fn() } as unknown as ChildProcess & { kill: jest.Mock };
+    const stopProcessesOf = jest.fn();
+
+    await expect(killProcessTree(child, { platform: 'win32', stopProcessesOf })).resolves.toBeUndefined();
+
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(stopProcessesOf).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('stopProfileProcessesCommand', () => {

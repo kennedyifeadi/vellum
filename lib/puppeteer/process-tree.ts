@@ -80,11 +80,12 @@ export async function killProcessTree(
   }: { platform?: NodeJS.Platform; stopProcessesOf?: StopProfileProcesses } = {},
 ): Promise<void> {
   child.kill('SIGKILL');
-  const profileDir = profileDirOf(child);
-  if (platform !== 'win32' || !profileDir) return;
+  if (platform !== 'win32') return;
   try {
+    const profileDir = profileDirOf(child);
+    if (!profileDir) throw new Error('the browser was started without a profile');
     await stopProcessesOf(profileDir);
   } catch (error) {
-    console.warn(`[render] could not end the browser's child processes (profile ${profileDir}):`, error);
+    console.warn(`[render] could not end the child processes of browser ${child.pid}:`, error);
   }
 }
