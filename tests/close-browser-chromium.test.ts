@@ -4,13 +4,16 @@ import { launchBrowser } from '@/lib/puppeteer/launch';
 import { closeBrowser } from '@/lib/puppeteer/lifecycle';
 import { launchTrackedBrowser, leftoverChromiumProcesses } from './helpers/heldRenders';
 
-// Real Chromium: a close that times out must leave none of the browser's processes behind.
+// Real Chromium: a close that times out must leave none of the browser's processes running.
 // On Windows the crash-reporter children outlive a kill of the main process and exit only
 // once they notice it is gone, which on a loaded machine can take over a minute. Suspending
 // them stands in for that load: a suspended process can only be ended, never exit by itself.
-// Only they are suspended: with the GPU process suspended too, the killed main process
-// sometimes took over a minute to finish terminating under load. The check allows the
-// suites' usual grace, because under load a killed process can take over 15 s to go.
+//
+// While a suspended crash reporter is being ended, the main process it reports for can stay
+// listed for over a minute under load, already ended but not yet gone. So on Windows a
+// process counts as left behind only while the OS still reports no exit code for it.
+
+const GRACE_MS = 60_000;
 
 function profileOf(browser: Browser): string {
   const arg = browser.process()?.spawnargs.find((a) => a.startsWith('--user-data-dir='));
@@ -27,7 +30,7 @@ function processesOfProfile(profile: string): string {
   return `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${escaped}') }`;
 }
 
-function suspendCrashReporters(browser: Browser): void {
+function suspendCrashReporters(profile: string): void {
   const suspended = powershell(`
     Add-Type -TypeDefinition @'
     using System; using System.Runtime.InteropServices;
@@ -37,7 +40,7 @@ function suspendCrashReporters(browser: Browser): void {
       [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
     }
 '@
-    ${processesOfProfile(profileOf(browser))} | Where-Object { $_.CommandLine.Contains('--type=crashpad-handler') } | ForEach-Object {
+    ${processesOfProfile(profile)} | Where-Object { $_.CommandLine.Contains('--type=crashpad-handler') } | ForEach-Object {
       $handle = [ProcessSuspend]::OpenProcess(0x0800, $false, $_.ProcessId)
       if ([ProcessSuspend]::NtSuspendProcess($handle) -eq 0) { $_.ProcessId }
       [void][ProcessSuspend]::CloseHandle($handle)
@@ -45,21 +48,47 @@ function suspendCrashReporters(browser: Browser): void {
   if (!suspended.trim()) throw new Error('No crash reporter of the browser was suspended');
 }
 
+// Node's signal 0 asks Windows for the exit code, so an ended process reads as gone.
+function hasNoExitCode(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function runningProcessesOf(profile: string): Promise<string[]> {
+  const giveUpAt = Date.now() + GRACE_MS;
+  for (;;) {
+    const running = powershell(`${processesOfProfile(profile)} | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`)
+      .split(/\r?\n/)
+      .filter((line) => line && hasNoExitCode(Number(line.split(' ')[0])));
+    if (running.length === 0 || Date.now() > giveUpAt) return running;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+}
+
 function stopProcessesOf(profile: string): void {
   powershell(`${processesOfProfile(profile)} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`);
 }
 
-it('leaves no Chromium process of the profile behind when the graceful close times out', async () => {
+it('leaves no Chromium process of the profile running when the graceful close times out', async () => {
   const browser = await launchTrackedBrowser(() => launchBrowser('none'));
   const profile = profileOf(browser);
-  try {
-    if (process.platform === 'win32') suspendCrashReporters(browser);
-    browser.close = () => new Promise(() => {});
+  browser.close = () => new Promise(() => {});
 
+  if (process.platform !== 'win32') {
     await closeBrowser(browser);
+    expect(await leftoverChromiumProcesses(GRACE_MS)).toEqual([]);
+    return;
+  }
 
-    expect(await leftoverChromiumProcesses()).toEqual([]);
+  try {
+    suspendCrashReporters(profile);
+    await closeBrowser(browser);
+    expect(await runningProcessesOf(profile)).toEqual([]);
   } finally {
-    if (process.platform === 'win32') stopProcessesOf(profile);
+    stopProcessesOf(profile);
   }
 }, 120_000);
