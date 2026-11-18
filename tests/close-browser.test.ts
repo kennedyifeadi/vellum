@@ -19,16 +19,19 @@ jest.mock('@/lib/puppeteer/launch', () => ({
 
 import { closeBrowser } from '@/lib/puppeteer/lifecycle';
 
-const { killProcessTree } = jest.requireActual<typeof import('@/lib/puppeteer/process-tree')>(
+const { killProcessTree, stopProfileProcessesCommand } = jest.requireActual<typeof import('@/lib/puppeteer/process-tree')>(
   '@/lib/puppeteer/process-tree',
 );
 
-function fakeChild(state: { running: boolean; pid?: number }): ChildProcess & { kill: jest.Mock } {
+const PROFILE = 'C:\\Temp\\vellum-render-profile-abc123';
+
+function fakeChild(calls: string[] = []): ChildProcess & { kill: jest.Mock } {
   return {
-    pid: 'pid' in state ? state.pid : process.pid,
-    exitCode: state.running ? null : 0,
+    pid: process.pid,
+    exitCode: null,
     signalCode: null,
-    kill: jest.fn(),
+    spawnargs: ['chrome.exe', '--headless=new', `--user-data-dir=${PROFILE}`],
+    kill: jest.fn((signal: string) => calls.push(`kill ${signal}`)),
   } as unknown as ChildProcess & { kill: jest.Mock };
 }
 
@@ -43,48 +46,49 @@ describe('killProcessTree', () => {
     warn.mockRestore();
   });
 
-  it('ends the whole tree with taskkill on Windows, the pid passed as its own argument', async () => {
-    const child = fakeChild({ running: true, pid: 4242 });
-    const runTaskkill = jest.fn().mockResolvedValue(undefined);
+  it("on Windows kills the main process first, then the rest of its profile's processes", async () => {
+    const calls: string[] = [];
+    const child = fakeChild(calls);
+    const stopProcessesOf = jest.fn(async (profileDir: string) => {
+      calls.push(`stop ${profileDir}`);
+    });
 
-    await killProcessTree(child, { platform: 'win32', runTaskkill });
+    await killProcessTree(child, { platform: 'win32', stopProcessesOf });
 
-    expect(runTaskkill).toHaveBeenCalledWith(4242);
-    expect(child.kill).not.toHaveBeenCalled();
+    expect(calls).toEqual(['kill SIGKILL', `stop ${PROFILE}`]);
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('SIGKILLs only the main process elsewhere, which takes its children with it', async () => {
-    const child = fakeChild({ running: true });
-    const runTaskkill = jest.fn();
+    const child = fakeChild();
+    const stopProcessesOf = jest.fn();
 
-    await killProcessTree(child, { platform: 'linux', runTaskkill });
+    await killProcessTree(child, { platform: 'linux', stopProcessesOf });
 
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
-    expect(runTaskkill).not.toHaveBeenCalled();
+    expect(stopProcessesOf).not.toHaveBeenCalled();
   });
 
-  it('is quiet when taskkill fails only because a child was already exiting', async () => {
-    const child = fakeChild({ running: false });
-
-    await killProcessTree(child, {
-      platform: 'win32',
-      runTaskkill: jest.fn().mockRejectedValue(new Error('could not be terminated')),
-    });
-
-    expect(child.kill).not.toHaveBeenCalled();
-    expect(warn).not.toHaveBeenCalled();
-  });
-
-  it('falls back to SIGKILL and warns once, without throwing, when the browser survives taskkill', async () => {
-    const child = fakeChild({ running: true });
+  it("warns once, without throwing, when the profile's processes cannot be ended", async () => {
+    const child = fakeChild();
 
     await expect(
-      killProcessTree(child, { platform: 'win32', runTaskkill: jest.fn().mockRejectedValue(new Error('timed out')) }),
+      killProcessTree(child, { platform: 'win32', stopProcessesOf: jest.fn().mockRejectedValue(new Error('timed out')) }),
     ).resolves.toBeUndefined();
 
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('stopProfileProcessesCommand', () => {
+  it('runs PowerShell without a shell and passes the profile through the environment, not the script', () => {
+    const profile = "C:\\Temp\\it's'; Remove-Item -Recurse C:\\";
+    const { file, args, env } = stopProfileProcessesCommand(profile);
+
+    expect(file).toBe('powershell.exe');
+    expect(args.join(' ')).not.toContain(profile);
+    expect(env.VELLUM_RENDER_PROFILE).toBe(profile);
   });
 });
 
@@ -104,7 +108,7 @@ describe('closeBrowser', () => {
   }
 
   it('kills the process tree when the graceful close times out, then releases the proxy and profile', async () => {
-    const child = fakeChild({ running: true });
+    const child = fakeChild();
     const closing = closeBrowser(fakeBrowser(() => new Promise(() => {}), child));
 
     await jest.advanceTimersByTimeAsync(5_000);
@@ -115,7 +119,7 @@ describe('closeBrowser', () => {
   });
 
   it('kills nothing when the browser closes in time', async () => {
-    await closeBrowser(fakeBrowser(async () => {}, fakeChild({ running: true })));
+    await closeBrowser(fakeBrowser(async () => {}, fakeChild()));
 
     expect(mockKillProcessTree).not.toHaveBeenCalled();
     expect(mockCalls).toEqual(['release']);

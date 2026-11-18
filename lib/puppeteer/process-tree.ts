@@ -1,23 +1,53 @@
 import { execFile, type ChildProcess } from 'child_process';
 
-// taskkill took 2.3s at the median and 5.2s at p95 under six busy loops on an 8-core machine.
-const TASKKILL_TIMEOUT_MS = 15_000;
+// The query took 0.7s idle and up to 2.2s under six busy loops on an 8-core machine.
+const STOP_PROFILE_PROCESSES_TIMEOUT_MS = 15_000;
 
-export type TaskKill = (pid: number) => Promise<void>;
+const STOP_PROFILE_PROCESSES_SCRIPT =
+  "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | " +
+  'Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:VELLUM_RENDER_PROFILE) } | ' +
+  'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }';
 
-// Settles at the deadline even if the killed taskkill is slow to exit, as it was once under load.
-function taskkill(pid: number): Promise<void> {
+export interface Command {
+  file: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * Ends every Chromium process started with the profile `profileDir`. Each launch has its own
+ * profile, so this reaches exactly one browser's processes. The path goes in through the
+ * environment, never into the script.
+ */
+export function stopProfileProcessesCommand(profileDir: string): Command {
+  return {
+    file: 'powershell.exe',
+    args: ['-NoProfile', '-NonInteractive', '-Command', STOP_PROFILE_PROCESSES_SCRIPT],
+    env: { ...process.env, VELLUM_RENDER_PROFILE: profileDir },
+  };
+}
+
+export type StopProfileProcesses = (profileDir: string) => Promise<void>;
+
+// Settles at the deadline even if the killed runner is slow to exit, as one was under load.
+function stopProfileProcesses(profileDir: string): Promise<void> {
+  const { file, args, env } = stopProfileProcessesCommand(profileDir);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       runner.kill();
-      reject(new Error(`taskkill did not finish within ${TASKKILL_TIMEOUT_MS} ms`));
-    }, TASKKILL_TIMEOUT_MS);
-    const runner = execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, (error) => {
+      reject(new Error(`did not finish within ${STOP_PROFILE_PROCESSES_TIMEOUT_MS} ms`));
+    }, STOP_PROFILE_PROCESSES_TIMEOUT_MS);
+    const runner = execFile(file, args, { env, windowsHide: true }, (error) => {
       clearTimeout(timer);
       if (error) reject(error);
       else resolve();
     });
   });
+}
+
+export function profileDirOf(child: ChildProcess): string | undefined {
+  const arg = child.spawnargs.find((a) => a.startsWith('--user-data-dir='));
+  return arg?.slice('--user-data-dir='.length);
 }
 
 /**
@@ -38,23 +68,23 @@ export function isProcessRunning(child: ChildProcess): boolean {
  * Force-kills a browser and its child processes. Never throws.
  *
  * On Linux SIGKILL on the main process takes its children down with it. On Windows the GPU and
- * crash-reporter children keep running and hold the profile, so the whole tree is ended with
- * taskkill. taskkill exits non-zero when a child is already exiting (a renderer being replaced)
- * even though the tree is gone, so it is a failure only if the browser itself still runs.
+ * crash-reporter children keep running and hold the profile, so they are ended too. The main
+ * process goes first: while it runs, it starts a new GPU process for one that was killed, which
+ * is how ending the tree children-first (taskkill /T) still left GPU processes behind.
  */
 export async function killProcessTree(
   child: ChildProcess,
-  { platform = process.platform, runTaskkill = taskkill }: { platform?: NodeJS.Platform; runTaskkill?: TaskKill } = {},
+  {
+    platform = process.platform,
+    stopProcessesOf = stopProfileProcesses,
+  }: { platform?: NodeJS.Platform; stopProcessesOf?: StopProfileProcesses } = {},
 ): Promise<void> {
-  if (platform !== 'win32' || child.pid === undefined) {
-    child.kill('SIGKILL');
-    return;
-  }
+  child.kill('SIGKILL');
+  const profileDir = profileDirOf(child);
+  if (platform !== 'win32' || !profileDir) return;
   try {
-    await runTaskkill(child.pid);
+    await stopProcessesOf(profileDir);
   } catch (error) {
-    if (!isProcessRunning(child)) return;
-    child.kill('SIGKILL');
-    console.warn(`[render] could not end the browser's process tree (pid ${child.pid}):`, error);
+    console.warn(`[render] could not end the browser's child processes (profile ${profileDir}):`, error);
   }
 }

@@ -1,7 +1,7 @@
 import { execFileSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import type { Browser, Page } from 'puppeteer';
-import { isProcessRunning } from '@/lib/puppeteer/process-tree';
+import { isProcessRunning, profileDirOf, stopProfileProcessesCommand } from '@/lib/puppeteer/process-tree';
 
 // Wraps the real Chromium launcher so a test can count the browsers it started and hold
 // each render at its setContent until the test lets it go, without sleeping.
@@ -23,8 +23,8 @@ function trackProcess(browser: Browser): void {
   const process = browser.process();
   if (!process) throw new Error('The launched browser has no process to count');
 
-  const userDataDir = process.spawnargs.find((arg) => arg.startsWith('--user-data-dir='));
-  if (userDataDir) userDataDirs.add(userDataDir.slice('--user-data-dir='.length));
+  const userDataDir = profileDirOf(process);
+  if (userDataDir) userDataDirs.add(userDataDir);
 
   liveBrowsers.add(process);
   peakBrowsers = Math.max(peakBrowsers, countLiveBrowsers());
@@ -63,22 +63,16 @@ function holdSetContent(page: Page, browser: Browser): void {
 }
 
 // Killing only the main process on Windows leaves its GPU and crash-reporter children
-// running, where Linux takes them down with it, so a crash there is the whole tree.
-// taskkill exits non-zero when a child is already on its way out (a renderer Chromium is
-// replacing after a navigation) and "could not be terminated", even though the browser is
-// gone; it is a failure only if the browser itself still runs. A child that really stays is
-// caught by leftoverChromiumProcesses.
+// running, where Linux takes them down with it, so a crash there is the whole tree: the main
+// process first, so it can't start a new GPU process, then the rest of its profile's processes.
+// A child that really stays is caught by leftoverChromiumProcesses.
 function killProcessTree(child: ChildProcess | null): void {
   if (!child?.pid) return;
-  if (process.platform === 'win32') {
-    try {
-      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } catch (error) {
-      if (isProcessRunning(child)) throw error;
-    }
-  } else {
-    child.kill('SIGKILL');
-  }
+  child.kill('SIGKILL');
+  const profileDir = profileDirOf(child);
+  if (process.platform !== 'win32' || !profileDir) return;
+  const { file, args, env } = stopProfileProcessesCommand(profileDir);
+  execFileSync(file, args, { env, stdio: 'ignore', windowsHide: true });
 }
 
 /** Launches a real browser with `launch`, counted and with its renders held. */

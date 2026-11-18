@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process';
 import type { Browser } from 'puppeteer';
 import { launchBrowser } from '@/lib/puppeteer/launch';
 import { closeBrowser } from '@/lib/puppeteer/lifecycle';
+import { profileDirOf, stopProfileProcessesCommand } from '@/lib/puppeteer/process-tree';
 import { launchTrackedBrowser, leftoverChromiumProcesses } from './helpers/heldRenders';
 
 // Real Chromium: a close that times out must leave none of the browser's processes running.
@@ -16,9 +17,9 @@ import { launchTrackedBrowser, leftoverChromiumProcesses } from './helpers/heldR
 const GRACE_MS = 60_000;
 
 function profileOf(browser: Browser): string {
-  const arg = browser.process()?.spawnargs.find((a) => a.startsWith('--user-data-dir='));
-  if (!arg) throw new Error('The launched browser has no profile');
-  return arg.slice('--user-data-dir='.length);
+  const profileDir = profileDirOf(browser.process()!);
+  if (!profileDir) throw new Error('The launched browser has no profile');
+  return profileDir;
 }
 
 function powershell(script: string): string {
@@ -70,7 +71,8 @@ async function runningProcessesOf(profile: string): Promise<string[]> {
 }
 
 function stopProcessesOf(profile: string): void {
-  powershell(`${processesOfProfile(profile)} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`);
+  const { file, args, env } = stopProfileProcessesCommand(profile);
+  execFileSync(file, args, { env, stdio: 'ignore' });
 }
 
 it('leaves no Chromium process of the profile running when the graceful close times out', async () => {
