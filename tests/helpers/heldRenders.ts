@@ -1,7 +1,7 @@
 import { execFileSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import type { Browser, Page } from 'puppeteer';
-import { isProcessRunning, profileDirOf, stopProfileProcessesCommand } from '@/lib/puppeteer/process-tree';
+import { isPidRunning, isProcessRunning, profileDirOf, stopProfileProcessesCommand } from '@/lib/puppeteer/process-tree';
 
 // Wraps the real Chromium launcher so a test can count the browsers it started and hold
 // each render at its setContent until the test lets it go, without sleeping.
@@ -150,14 +150,19 @@ function chromiumProcessesOfTheseTests(): string[] {
   return runningCommandLines().filter((line) => [...userDataDirs].some((dir) => line.includes(dir)));
 }
 
-// The container's slim Debian has no ps, so Linux reads /proc directly.
+// The container's slim Debian has no ps, so Linux reads /proc directly, where an exited
+// process's cmdline is empty. Windows can keep listing a killed process for over a minute
+// while it finishes terminating, so there a process counts only while it has no exit code.
 function runningCommandLines(): string[] {
   if (process.platform === 'win32') {
     return execFileSync(
       'powershell.exe',
-      ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }'],
+      ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.CommandLine }"],
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-    ).split(/\r?\n/);
+    )
+      .split(/\r?\n/)
+      .filter((line) => isPidRunning(Number(line.slice(0, line.indexOf(' ')))))
+      .map((line) => line.slice(line.indexOf(' ') + 1));
   }
   if (process.platform === 'linux') {
     return fs

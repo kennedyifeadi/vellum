@@ -56,8 +56,17 @@ export function profileDirOf(child: ChildProcess): string | undefined {
  */
 export function isProcessRunning(child: ChildProcess): boolean {
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return false;
+  return isPidRunning(child.pid);
+}
+
+/**
+ * Whether the OS still runs the process `pid`. On Windows this reads its exit code, so a killed
+ * process that the OS still lists while it finishes terminating reads as not running.
+ */
+export function isPidRunning(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
-    process.kill(child.pid, 0);
+    process.kill(pid, 0);
     return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
