@@ -1,6 +1,7 @@
 import { execFileSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import type { Browser, Page } from 'puppeteer';
+import { isPidRunning, isProcessRunning, profileDirOf, stopProfileProcessesCommand } from '@/lib/puppeteer/process-tree';
 
 // Wraps the real Chromium launcher so a test can count the browsers it started and hold
 // each render at its setContent until the test lets it go, without sleeping.
@@ -22,28 +23,16 @@ function trackProcess(browser: Browser): void {
   const process = browser.process();
   if (!process) throw new Error('The launched browser has no process to count');
 
-  const userDataDir = process.spawnargs.find((arg) => arg.startsWith('--user-data-dir='));
-  if (userDataDir) userDataDirs.add(userDataDir.slice('--user-data-dir='.length));
+  const userDataDir = profileDirOf(process);
+  if (userDataDir) userDataDirs.add(userDataDir);
 
   liveBrowsers.add(process);
   peakBrowsers = Math.max(peakBrowsers, countLiveBrowsers());
 }
 
-// On a loaded Windows machine Node sometimes never emits 'exit' for a browser the OS has
-// already ended, so whether a browser still runs is asked of the OS instead.
-function isRunning(child: ChildProcess): boolean {
-  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return false;
-  try {
-    process.kill(child.pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
 function countLiveBrowsers(): number {
   for (const child of liveBrowsers) {
-    if (!isRunning(child)) liveBrowsers.delete(child);
+    if (!isProcessRunning(child)) liveBrowsers.delete(child);
   }
   return liveBrowsers.size;
 }
@@ -74,22 +63,16 @@ function holdSetContent(page: Page, browser: Browser): void {
 }
 
 // Killing only the main process on Windows leaves its GPU and crash-reporter children
-// running, where Linux takes them down with it, so a crash there is the whole tree.
-// taskkill exits non-zero when a child is already on its way out (a renderer Chromium is
-// replacing after a navigation) and "could not be terminated", even though the browser is
-// gone; it is a failure only if the browser itself still runs. A child that really stays is
-// caught by leftoverChromiumProcesses.
+// running, where Linux takes them down with it, so a crash there is the whole tree: the main
+// process first, so it can't start a new GPU process, then the rest of its profile's processes.
+// A child that really stays is caught by leftoverChromiumProcesses.
 function killProcessTree(child: ChildProcess | null): void {
   if (!child?.pid) return;
-  if (process.platform === 'win32') {
-    try {
-      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } catch (error) {
-      if (isRunning(child)) throw error;
-    }
-  } else {
-    child.kill('SIGKILL');
-  }
+  child.kill('SIGKILL');
+  const profileDir = profileDirOf(child);
+  if (process.platform !== 'win32' || !profileDir) return;
+  const { file, args, env } = stopProfileProcessesCommand(profileDir);
+  execFileSync(file, args, { env, stdio: 'ignore', windowsHide: true });
 }
 
 /** Launches a real browser with `launch`, counted and with its renders held. */
@@ -167,14 +150,19 @@ function chromiumProcessesOfTheseTests(): string[] {
   return runningCommandLines().filter((line) => [...userDataDirs].some((dir) => line.includes(dir)));
 }
 
-// The container's slim Debian has no ps, so Linux reads /proc directly.
+// The container's slim Debian has no ps, so Linux reads /proc directly, where an exited
+// process's cmdline is empty. Windows can keep listing a killed process for over a minute
+// while it finishes terminating, so there a process counts only while it has no exit code.
 function runningCommandLines(): string[] {
   if (process.platform === 'win32') {
     return execFileSync(
       'powershell.exe',
-      ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }'],
+      ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.CommandLine }"],
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-    ).split(/\r?\n/);
+    )
+      .split(/\r?\n/)
+      .filter((line) => isPidRunning(Number(line.slice(0, line.indexOf(' ')))))
+      .map((line) => line.slice(line.indexOf(' ') + 1));
   }
   if (process.platform === 'linux') {
     return fs

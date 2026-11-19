@@ -138,9 +138,12 @@ describe('docx-to-pdf route: auth + per-plan upload cap run before conversion', 
 
 describe('docx-to-pdf route: decompression-bomb guard', () => {
   it('rejects a small DOCX whose document.xml expands enormously with a 4xx, not a timeout', async () => {
-    // ~20MB of highly compressible XML in a file that is only a few KB on disk.
-    const bomb = await makeDocx('<a>' + 'A'.repeat(20 * MB) + '</a>');
+    // Deflate tops out near 1000:1 on a repeated byte, so 2MB already expands far past the
+    // guard's 100x ratio. 20MB tested nothing more and took up to 5.7s to build under load.
+    const documentXml = '<a>' + 'A'.repeat(2 * MB) + '</a>';
+    const bomb = await makeDocx(documentXml);
     expect(bomb.length).toBeLessThan(200 * 1024);
+    expect(documentXml.length / bomb.length).toBeGreaterThan(500);
     mockResolvedFiles = [fakeFile(bomb)];
 
     const res = await handleDocxToPdf(docxRequest());
@@ -148,7 +151,7 @@ describe('docx-to-pdf route: decompression-bomb guard', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('This DOCX expands to too much content to process.');
     expect(convertDocxToPdf).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it('rejects a corrupt / non-zip payload with a 4xx', async () => {
     mockResolvedFiles = [fakeFile(Buffer.from('this is not a zip'))];
