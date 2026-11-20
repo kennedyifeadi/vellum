@@ -4,6 +4,7 @@ import {
   VIDEO_JOB_RETRY,
   VideoJobUnreachableError,
   videoJobHeaders,
+  formatSavedSize,
   videoJobLabel,
   videoResultFileName,
   videoResultMessage,
@@ -192,8 +193,38 @@ describe('the drawer text for a video job', () => {
     expect(videoResultMessage(status({ status: 'done', savedPercent: 0 }))).toBe('Video was already well-compressed, so it is unchanged.');
   });
 
+  it.each([
+    [20 * 1024, '20 KB'],
+    [999 * 1024, '999 KB'],
+    [1024 * 1024, '1.0 MB'],
+    [37.5 * 1024 * 1024, '37.5 MB'],
+  ])('names a saving of %d bytes as %s', (saved, label) => {
+    const originalSize = 100 * 1024 * 1024;
+    const done = status({ status: 'done', savedPercent: 1, originalSize, compressedSize: originalSize - saved });
+
+    expect(videoResultMessage(done)).toBe(`Reduced by 1% — ${label} saved!`);
+  });
+
   it('builds no token header for a signed-in owner', () => {
     expect(videoJobHeaders({ jobId: 'j' })).toEqual({});
+  });
+});
+
+describe('formatSavedSize', () => {
+  it.each([
+    [1, '1 KB'],
+    [1023, '1 KB'],
+    [20.9 * 1024, '20 KB'],
+    [1024 * 1024 - 1, '1023 KB'],
+    [1024 * 1024, '1.0 MB'],
+    [1.04 * 1024 * 1024, '1.0 MB'],
+    [37.5 * 1024 * 1024, '37.5 MB'],
+  ])('formats %d bytes as %s', (bytes, expected) => {
+    expect(formatSavedSize(bytes)).toBe(expected);
+  });
+
+  it('says 0 KB when nothing was saved', () => {
+    expect(formatSavedSize(0)).toBe('0 KB');
   });
 });
 

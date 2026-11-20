@@ -131,18 +131,30 @@ export async function waitForVideoJob(
   }
 }
 
+const KB = 1024;
+const MB = 1024 * KB;
+
+/**
+ * A saving in whole KB below 1 MB, never less than 1 KB when anything was saved (rounding
+ * down, so 1 MB less a byte is 1023 KB), and in MB to one decimal from 1 MB up.
+ */
+export function formatSavedSize(bytes: number): string {
+  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
+  return `${bytes > 0 ? Math.max(Math.floor(bytes / KB), 1) : 0} KB`;
+}
+
 /** The toast for a downloaded result, like Compress PDF's. */
 export function videoResultMessage({ savedPercent = 0, originalSize, compressedSize = originalSize }: VideoJobStatus): string {
   if (savedPercent > 0) {
-    const savedMb = ((originalSize - compressedSize) / 1024 / 1024).toFixed(1);
-    return `Reduced by ${savedPercent}% — ${savedMb} MB saved!`;
+    return `Reduced by ${savedPercent}% — ${formatSavedSize(originalSize - compressedSize)} saved!`;
   }
   return 'Video was already well-compressed, so it is unchanged.';
 }
 
 /**
- * The name to save a finished job's result under: the one its download names, or the
- * input's name with the output's extension, since the result is always MP4.
+ * The name to save a finished job's result under: the one its download names, else the
+ * input's name as MP4. The header is read first because an upload that couldn't be made
+ * smaller comes back unchanged in its own format (a .mov stays a .mov).
  */
 export function videoResultFileName(download: Response, inputName: string): string {
   const named = fileNameFromDisposition(download.headers.get('Content-Disposition'));
