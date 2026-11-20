@@ -373,6 +373,37 @@ function expectLook(button: HTMLElement, expected: 'enabled' | 'disabled') {
   expect(button.className.includes(DISABLED_COLOUR)).toBe(expected === 'disabled');
 }
 
+describe('HTML to PDF download name', () => {
+  beforeEach(() => useLayout('desktop'));
+
+  async function savedName(headers: Record<string, string>) {
+    fetchMock.mockImplementation(async () => answer({ headers }));
+    const clicked = jest.spyOn(HTMLAnchorElement.prototype, 'click');
+    const { container } = renderDrawer('html-to-pdf');
+    chooseFiles(container, [new File(['<p>hi</p>'], 'page.html', { type: 'text/html' })]);
+    fireEvent.click(processButton());
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('HTML converted to PDF successfully!', 'success'));
+    return (clicked.mock.contexts.at(-1) as HTMLAnchorElement).download;
+  }
+
+  it('saves a non-ASCII name from filename*', async () => {
+    const headers = {
+      'Content-Disposition': `attachment; filename="R_sum_ _ 2026.pdf"; filename*=UTF-8''R%C3%A9sum%C3%A9%20%E2%80%94%202026.pdf`,
+    };
+
+    expect(await savedName(headers)).toBe('Résumé — 2026.pdf');
+  });
+
+  it('saves the plain filename when there is no filename*', async () => {
+    expect(await savedName({ 'Content-Disposition': 'attachment; filename="example.com.pdf"' })).toBe('example.com.pdf');
+  });
+
+  it('saves converted.pdf when the response names no file', async () => {
+    expect(await savedName({})).toBe('converted.pdf');
+  });
+});
+
 describe.each(['mobile', 'desktop'] as const)('Process button look at %s width', (layout) => {
   beforeEach(() => useLayout(layout));
 

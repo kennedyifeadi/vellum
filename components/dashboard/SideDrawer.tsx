@@ -19,6 +19,7 @@ import {
   type VideoJobHandle,
 } from '@/lib/video-job-client';
 import { MIN_LOCK_PASSWORD_LENGTH, validateLockPassword } from '@/lib/pdf/lock-password';
+import { fileNameFromDisposition } from '@/lib/http/content-disposition';
 
 export interface DriveFile {
   isDriveFile: true;
@@ -1036,9 +1037,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           throw new Error(err.error || 'Failed to convert HTML to PDF');
         }
 
-        const disposition = response.headers.get('Content-Disposition') || '';
-        const nameMatch = disposition.match(/filename="(.+?)"/);
-        const downloadName = nameMatch ? nameMatch[1] : 'converted.pdf';
+        const downloadName = fileNameFromDisposition(response.headers.get('Content-Disposition')) ?? 'converted.pdf';
 
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
