@@ -34,7 +34,9 @@ npm run build                     # needs no database or other configuration
 ```
 
 The tests generate their own inputs and need no database: `jest.setup.ts` supplies
-placeholder secrets and a placeholder `MONGODB_URI`.
+placeholder secrets and a placeholder `MONGODB_URI`. The suites that need a real MongoDB
+(`tests/*-mongo.test.ts`) are skipped unless `VELLUM_TEST_MONGODB_URI` names a server, for
+example `mongodb://127.0.0.1:27017`. Each uses a database of its own and drops it afterwards.
 
 CI (`.github/workflows/container.yml`) builds the Docker image on every push and pull
 request, runs the test suite inside it, starts the image and sends one request to each tool
@@ -132,6 +134,30 @@ the log says "Compress Video jobs will not run: <reason>", and a video upload is
   deleted as soon as the job ends, however it ends. Signed-in users get a Recent Activity
   row (not re-downloadable, as before) and a notification: done, with a download link, or
   failed, with the reason. Guests get neither, and a guest who closes the page loses the job.
+
+### File retention and account deletion
+
+A stored document or conversion is kept 3, 5 or 7 days by plan (`lib/storage-limits.ts`).
+From its `expiresAt` it is gone to its owner: lists, downloads, exports and the quota ignore
+the row at once. With the auto-delete preference a conversion stores no file and its history
+row expires after a second, so it doesn't stay in Recent Activity.
+
+- **The sweep.** Each server process starts one from `instrumentation.ts`
+  (`lib/retention-sweep.ts`): once at startup, then every 10 minutes, on either storage
+  driver. In batches, it deletes each expired file and then its row. A delete that fails
+  keeps the row, and later sweeps retry it. Two processes sweeping at once is safe. Without
+  `MONGODB_URI` or a working storage driver it logs "Expired files will not be deleted:
+  <reason>" and the server serves as usual.
+- **The index.** `expiresAt` has a plain index on `Conversion` and `UserDocument`. Before
+  #158 it was a TTL index, which deleted the row, and with it the key, while the file was
+  still stored. Each sweep first drops such an index if it finds one and creates the plain
+  one, so the database user must be allowed to drop and create indexes (Atlas's `readWrite`
+  is enough). Code from before #158 has no sweep and cannot turn the index back into a TTL
+  one, so **after a rollback nothing expires**. Roll forward.
+- **Account deletion.** It cancels the user's active video jobs and deletes their
+  conversions, documents and video jobs with the files. What can't be deleted yet stays as
+  an expired record, or for a video as a discarded job that the job TTL skips, until a sweep
+  has deleted it. The response then has `filesPending: true`.
 
 ### Chromium sandbox (`CHROMIUM_DISABLE_SANDBOX`)
 
@@ -233,22 +259,25 @@ Railway uses automatically. Files are stored in Cloudflare R2.
    client, and `<NEXTAUTH_URL>` as an authorised JavaScript origin if the Drive picker is
    used.
 5. **Region.** Choose the region closest to the expected users.
-6. **R2 lifecycle rule (owner step).** The app never deletes expired files from R2: MongoDB
-   removes an expired conversion's or document's row, and the local-disk sweep
-   (`cleanupStorage` in `lib/conversions.ts`) does not run with `STORAGE_DRIVER=s3`.
-   **Without a lifecycle rule, expired files stay in the bucket forever and use up its
-   storage.** In the Cloudflare dashboard, open the bucket's Settings, Object lifecycle
-   rules, and add a rule that deletes objects 8 days after upload: the longest retention
+6. **R2 lifecycle rule (owner step), a backstop.** The app deletes expired files from R2
+   itself (see File retention and account deletion), so the R2 API token needs permission
+   to delete objects. The rule catches what the app has no record of: a file stored just
+   before a crash or a database failure. It also catches what the app can't delete while it
+   is down or its deletes keep failing. The local-disk cleanup of such orphans
+   (`cleanupStorage` in `lib/conversions.ts`) does not run with `STORAGE_DRIVER=s3`, so
+   **without a lifecycle rule those files stay in the bucket forever.** In the Cloudflare
+   dashboard, open the bucket's Settings, Object lifecycle rules, and add a rule that
+   deletes objects 8 days after upload: the longest retention
    (7 days on Enterprise, `lib/storage-limits.ts`) plus a day of margin. It must cover the
    conversion outputs at the bucket root (`<uuid>.<ext>`) and the documents under `docs/`.
    Root keys share no prefix, so the rule applies to the whole bucket (no prefix). Raise it
-   if the longest retention grows. On R2 this rule is also the only thing that removes the
-   file of a conversion saved with the `autoDelete` preference, or of a delete that failed
-   part-way.
-7. **R2 lifecycle rule for video jobs (owner step).** Add a second rule, for the prefix
-   `video-jobs/`, that deletes objects 2 days after upload. The worker deletes each job's
-   input when the job ends and its result after 24 hours, so this only catches files a
-   failed delete or a crash left behind; 2 days is the 24-hour result plus a day of margin.
+   if the longest retention grows.
+7. **R2 lifecycle rule for video jobs (owner step), a backstop.** Add a second rule, for the
+   prefix `video-jobs/`, that deletes objects 2 days after upload. The worker deletes each
+   job's input when the job ends and its result after 24 hours, and retries a failed delete.
+   For a deleted account it retries until it succeeds. For others the job's row expires a
+   day after the result, so the rule catches what was still failing then, or what a crash
+   left behind; 2 days is the 24-hour result plus a day of margin.
    Both rules match these keys. S3 applies the earlier of two matching expirations; check
    that R2 does too (checklist item 12).
 
@@ -364,3 +393,6 @@ Watch the memory graph during the first weeks and adjust.
 12. Confirm the 2-day lifecycle rule for the `video-jobs/` prefix exists (step 7 above),
     that a `video-jobs/` object left behind is gone after 2 days rather than 8, and that a
     compressed video can be downloaded from R2 through its job.
+13. Confirm the retention sweep works: `expiresAt_1` on `conversions` and `userdocuments`
+    has no `expireAfterSeconds`, and a document whose `expiresAt` you set to the past is
+    gone from R2, and then from MongoDB, within 15 minutes.
