@@ -24,7 +24,7 @@ const PROFILE = { name: 'Ada Lovelace', role: 'Student', currentGoal: 'Merge PDF
 
 const env = process.env as Record<string, string | undefined>;
 const originalEnv = { ...env };
-let stored: Record<string, any> | null;
+let stored: Record<string, unknown> | null;
 let logged: jest.SpyInstance[];
 
 // One stored user, behind updates that are atomic and reads that can be stale by the time

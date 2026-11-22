@@ -34,7 +34,7 @@ const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 const env = process.env as Record<string, string | undefined>;
 const originalEnv = { ...env };
-let savedTickets: Record<string, any>[];
+let savedTickets: Record<string, unknown>[];
 let logged: jest.SpyInstance[];
 
 function submit(body: unknown, headers: Record<string, string> = {}) {
