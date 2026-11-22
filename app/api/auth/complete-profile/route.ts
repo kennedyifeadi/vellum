@@ -3,9 +3,32 @@ import { verifyToken, createToken } from '@/lib/auth/jwt';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
-import { BrevoClient } from '@getbrevo/brevo';
+import { ClientError } from '@/lib/convert/errors';
+import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send';
 import { getWelcomeEmailHtml } from '@/lib/email/templates/welcomeEmail';
+import { MAX_NAME_LENGTH, requiredLine } from '@/lib/http/text-input';
 import { getToken } from 'next-auth/jwt';
+
+async function sendWelcomeEmail(userId: string, name: string, email: string) {
+  if (!hasEmailApiKey()) {
+    console.log(`[WELCOME] Skipping email send for user ${userId} (API key not configured).`);
+    return;
+  }
+
+  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  try {
+    await sendEmail({
+      senderName: 'JFK from Vellum',
+      to: email,
+      // Brevo evaluates {{ }} in subjects too, and they are plain text, so can't be escaped.
+      subject: `Welcome to Vellum, ${name.replace(/[{}]/g, '')}!`,
+      html: getWelcomeEmailHtml(name, `${baseUrl}/dashboard`),
+    });
+  } catch (emailError) {
+    // We don't fail the whole request if email fails
+    console.error(`Failed to send welcome email to user ${userId}: ${emailFailureReason(emailError)}`);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,22 +60,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name, role, currentGoal } = await req.json();
+    const { name: submittedName, role, currentGoal } = await req.json();
 
-    if (!name || !role) {
+    if (!submittedName || !role) {
       return NextResponse.json({ error: 'Name and role are required' }, { status: 400 });
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      {
-        name,
-        role,
-        currentGoal,
-        isProfileComplete: true,
-      },
+    const name = requiredLine(submittedName, 'Name', MAX_NAME_LENGTH);
+    const profile = { name, role, currentGoal, isProfileComplete: true };
+
+    // The filter and the update are one operation, so of two racing requests only one matches.
+    const newlyCompleted = await User.findOneAndUpdate(
+      { _id: userId, isProfileComplete: { $ne: true } },
+      profile,
       { new: true }
     );
+    const user = newlyCompleted ?? (await User.findByIdAndUpdate(userId, profile, { new: true }));
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -75,29 +98,8 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 2, // 2 hours
     });
 
-    // Send Welcome Email
-    if (process.env.BREVO_API_KEY && process.env.BREVO_API_KEY !== "YOUR_BREVO_API_KEY") {
-      try {
-        const client = new BrevoClient({ 
-          apiKey: process.env.BREVO_API_KEY as string 
-        });
-
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-        const dashboardUrl = `${baseUrl}/dashboard`;
-
-        await client.transactionalEmails.sendTransacEmail({
-          subject: `Welcome to Vellum, ${user.name}!`,
-          htmlContent: getWelcomeEmailHtml(user.name || 'there', dashboardUrl),
-          sender: { name: "JFK from Vellum", email: process.env.EMAIL_USER as string },
-          to: [{ email: user.email }],
-        });
-
-      } catch (emailError: any) {
-        console.error('Failed to send welcome email:', emailError);
-        // We don't fail the whole request if email fails
-      }
-    } else {
-        console.log(`[WELCOME] Skipping email send for ${user.email} (API key not configured).`);
+    if (newlyCompleted) {
+      await sendWelcomeEmail(userId, name, user.email);
     }
 
     return NextResponse.json({
@@ -112,6 +114,9 @@ export async function POST(req: NextRequest) {
     }, { status: 200 });
 
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error completing profile:', error);
     return NextResponse.json({ error: 'Failed to complete profile' }, { status: 500 });
   }

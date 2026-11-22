@@ -4,6 +4,8 @@ import dbConnect from "@/lib/db/mongoose";
 import { verifyToken } from "@/lib/auth/jwt";
 import { getToken } from "next-auth/jwt";
 import User from "@/models/user";
+import { ClientError } from "@/lib/convert/errors";
+import { optionalName } from "@/lib/http/text-input";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -35,7 +37,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name, currentGoal } = await req.json();
+    const { name: submittedName, currentGoal } = await req.json();
+    const name = optionalName(submittedName);
 
     const user = await User.findById(userId);
     if (!user) {
@@ -59,6 +62,9 @@ export async function PATCH(req: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Profile Update Error:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
