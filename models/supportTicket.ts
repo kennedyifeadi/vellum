@@ -1,5 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export const SUPPORT_TICKET_CATEGORIES = ['general', 'technical', 'billing', 'feature_request', 'other'] as const;
+export type SupportTicketCategory = (typeof SUPPORT_TICKET_CATEGORIES)[number];
+
 export interface ISupportTicket extends Document {
   userId?: mongoose.Types.ObjectId;
   guestName?: string;
@@ -20,7 +23,7 @@ const SupportTicketSchema: Schema = new Schema({
   guestEmail: { type: String, required: false },
   ticketId: { type: String, required: true, unique: true },
   subject: { type: String, required: true },
-  category: { type: String, required: true, enum: ['general', 'technical', 'billing', 'feature_request', 'other'] },
+  category: { type: String, required: true, enum: SUPPORT_TICKET_CATEGORIES },
   message: { type: String, required: true },
   status: { type: String, default: 'open', enum: ['open', 'in-progress', 'resolved', 'closed'] },
   priority: { type: String, default: 'medium', enum: ['low', 'medium', 'high'] },

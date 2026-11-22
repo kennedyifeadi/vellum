@@ -1,4 +1,6 @@
-export const getSupportTicketEmailHtml = (name: string, ticketId: string, subject: string, category: string, message: string, dashboardUrl: string) => `
+import { escapeHtml } from '@/lib/email/escape-html';
+
+export const getSupportTicketEmailHtml = (name: string, ticketId: string, dashboardUrl: string) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -52,27 +54,14 @@ export const getSupportTicketEmailHtml = (name: string, ticketId: string, subjec
             border-radius: 0 8px 8px 0;
         }
         .ticket-info p {
-            margin: 0 0 12px 0;
+            margin: 0;
             color: #374151;
             font-size: 15px;
-        }
-        .ticket-info p:last-child {
-            margin: 0;
         }
         .ticket-info strong {
             color: #111827;
             display: inline-block;
             width: 80px;
-        }
-        .message-box {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 24px;
-            border-radius: 12px;
-            margin: 24px 0;
-            font-size: 15px;
-            color: #4b5563;
-            white-space: pre-wrap;
         }
         .cta-button {
             display: block;
@@ -105,18 +94,11 @@ export const getSupportTicketEmailHtml = (name: string, ticketId: string, subjec
             <h1>VELLUM</h1>
         </div>
         <div class="content">
-            <p class="greeting">Hi ${name},</p>
+            <p class="greeting">Hi ${escapeHtml(name)},</p>
             <p>We have received your support request. Our team has been notified and we will get back to you within 24-48 hours.</p>
             
             <div class="ticket-info">
                 <p><strong>Ticket ID:</strong> ${ticketId}</p>
-                <p><strong>Category:</strong> ${category.toUpperCase()}</p>
-                <p><strong>Subject:</strong> ${subject}</p>
-            </div>
-
-            <p style="text-transform: uppercase; font-size: 12px; font-weight: 700; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: -16px;">Your Message</p>
-            <div class="message-box">
-                ${message.replace(/\n/g, '<br>')}
             </div>
 
             <p>If you have any additional information to add, please hold on until a support agent reaches out to you via this email.</p>
