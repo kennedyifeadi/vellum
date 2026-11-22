@@ -184,5 +184,118 @@ export function describeSignInContract(database: string) {
         expect(setCookie).toHaveBeenCalledWith('auth-token', 'test-token', expect.any(Object));
       });
     });
+
+    describe('codes', () => {
+      it('accepts the code after four wrong attempts', async () => {
+        const email = newEmail();
+        const code = await receiveCode(email);
+        await enterWrongCodes(email, code, 4);
+
+        expect((await signIn(email, code)).status).toBe(200);
+      });
+
+      it('refuses the code after five wrong attempts', async () => {
+        const email = newEmail();
+        const code = await receiveCode(email);
+        await enterWrongCodes(email, code, 5);
+
+        expect((await signIn(email, code)).status).toBe(401);
+        expect(setCookie).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [4, 200],
+        [5, 401],
+        [20, 401],
+      ])('after %i simultaneous wrong attempts answers the code with %i', async (times, status) => {
+        const email = newEmail();
+        const code = await receiveCode(email);
+        await Promise.all(Array.from({ length: times }, (_, i) => signIn(email, otherCode(code, i + 1))));
+
+        expect((await signIn(email, code)).status).toBe(status);
+      });
+
+      it('resets the count with a new code', async () => {
+        const email = newEmail();
+        await enterWrongCodes(email, await receiveCode(email), 5);
+
+        const code = await receiveCode(email);
+        await enterWrongCodes(email, code, 4);
+
+        expect((await signIn(email, code)).status).toBe(200);
+      });
+
+      it('counts attempts for each address separately', async () => {
+        const [first, second] = [newEmail(), newEmail()];
+        const firstCode = await receiveCode(first);
+        const secondCode = await receiveCode(second);
+        await enterWrongCodes(first, firstCode, 5);
+
+        expect((await signIn(second, secondCode)).status).toBe(200);
+      });
+
+      it('accepts a code once', async () => {
+        const email = newEmail();
+        const code = await receiveCode(email);
+
+        expect((await signIn(email, code)).status).toBe(200);
+        expect((await signIn(email, code)).status).toBe(401);
+      });
+
+      it('accepts a code once when two requests race', async () => {
+        for (let round = 0; round < 10; round++) {
+          const email = newEmail();
+          const code = await receiveCode(email);
+          setCookie.mockClear();
+
+          const responses = await Promise.all([signIn(email, code), signIn(email, code)]);
+
+          expect(responses.map((res) => res.status).sort()).toEqual([200, 401]);
+          expect(setCookie).toHaveBeenCalledTimes(1);
+        }
+      });
+
+      it('replaces the previous code', async () => {
+        const email = newEmail();
+        const previous = await receiveCode(email);
+        let latest = await receiveCode(email);
+        while (latest === previous) latest = await receiveCode(email);
+
+        expect((await signIn(email, previous)).status).toBe(401);
+        expect((await signIn(email, latest)).status).toBe(200);
+      });
+
+      it('keeps one usable code when requests for a new address race', async () => {
+        const email = newEmail();
+        await Promise.all(Array.from({ length: 4 }, () => requestCode(email)));
+
+        const statuses: number[] = [];
+        for (const code of new Set(sentCodes.map((sent) => sent.code))) {
+          statuses.push((await signIn(email, code)).status);
+        }
+
+        expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+      });
+
+      it('accepts a code until just before its 10 minutes end', async () => {
+        const moveTo = controlClock();
+        const email = newEmail();
+        const code = await receiveCode(email);
+
+        moveTo(10 * MINUTE_MS - 1);
+
+        expect((await signIn(email, code)).status).toBe(200);
+      });
+
+      it('refuses a code once its 10 minutes end', async () => {
+        const moveTo = controlClock();
+        const email = newEmail();
+        const code = await receiveCode(email);
+
+        moveTo(10 * MINUTE_MS);
+
+        expect((await signIn(email, code)).status).toBe(401);
+      });
+    });
   });
 }
