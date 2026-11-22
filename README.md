@@ -388,11 +388,11 @@ Watch the memory graph during the first weeks and adjust.
    Redeploy while a video is being compressed and check that the job starts again on the
    new deployment and completes, and that its owner is notified.
 9. Check memory and CPU under real use against the sizing above.
-10. Confirm files land in, and are served from, the R2 bucket.
+10. Confirm files land in, and are served from, the R2 bucket, and that the retention sweep
+    deletes them: `expiresAt_1` on `conversions` and `userdocuments` has no
+    `expireAfterSeconds`, and a document whose `expiresAt` you set to the past is gone from
+    R2, and then from MongoDB, within 15 minutes.
 11. Confirm the bucket's 8-day lifecycle rule exists (step 6 above).
 12. Confirm the 2-day lifecycle rule for the `video-jobs/` prefix exists (step 7 above),
     that a `video-jobs/` object left behind is gone after 2 days rather than 8, and that a
     compressed video can be downloaded from R2 through its job.
-13. Confirm the retention sweep works: `expiresAt_1` on `conversions` and `userdocuments`
-    has no `expireAfterSeconds`, and a document whose `expiresAt` you set to the past is
-    gone from R2, and then from MongoDB, within 15 minutes.
