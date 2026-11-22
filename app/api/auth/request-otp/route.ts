@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateOtp } from '@/lib/auth/otp';
+import { isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: NextRequest) {
   try {
-    await dbConnect();
-
     let body: unknown;
     try {
       body = await req.json();
@@ -15,14 +12,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
     }
 
-    const { email } = (body ?? {}) as { email?: string };
+    const { email } = (body ?? {}) as { email?: unknown };
     if (!email) {
       return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
     }
-    if (typeof email !== 'string' || !EMAIL_PATTERN.test(email)) {
+    if (!isValidEmail(email)) {
       return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
     }
 
+    await dbConnect();
     const otpCode = await generateOtp(email);
 
     // Send email using native fetch to Brevo v3 API

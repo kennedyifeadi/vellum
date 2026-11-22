@@ -1,6 +1,9 @@
 import Otp from '@/models/otp';
+import { isValidEmail, isValidOtpCode } from '@/lib/auth/signInInput';
 
-export async function verifyOtp(email: string, code: string): Promise<boolean> {
+export async function verifyOtp(email: unknown, code: unknown): Promise<boolean> {
+  if (!isValidEmail(email) || !isValidOtpCode(code)) return false;
+
   const otpRecord = await Otp.findOne({ email, code });
 
   if (otpRecord && otpRecord.expiresAt > new Date()) {
