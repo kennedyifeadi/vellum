@@ -19,8 +19,6 @@ jest.mock('@/lib/db/mongodb', () => ({ getMongoClient: jest.fn() }));
 
 jest.mock('@next-auth/mongodb-adapter', () => ({ MongoDBAdapter: () => ({}) }));
 
-jest.mock('@/lib/auth/verifyOtp', () => ({ verifyOtp: jest.fn() }));
-
 jest.mock('@/models/user', () => ({
   __esModule: true,
   default: { findByIdAndUpdate: jest.fn() },
