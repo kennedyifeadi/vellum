@@ -45,6 +45,15 @@ async function deleteFileThenRow(kind: StoredFileKind, row: StoredRow): Promise<
 }
 
 /**
+ * Deletes one row's file and then the row. The row is expired first, so it is gone to its
+ * owner even when the file can't be deleted yet; the sweep then retries, and this is false.
+ */
+export async function removeStoredFile(kind: StoredFileKind, row: StoredRow): Promise<boolean> {
+  await kind.model.updateOne({ _id: row._id }, { $set: { expiresAt: new Date() } });
+  return deleteFileThenRow(kind, row);
+}
+
+/**
  * Deletes the expired files and then their rows, in batches. A failed delete keeps its row
  * for the next try, and the answer is then false. Safe to run in two processes at once.
  */
