@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
+import { unexpired } from '@/lib/stored-files';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     await dbConnect();
     
     // Fetch conversions for user, newest first
-    const conversions = await Conversion.find({ userId })
+    const conversions = await Conversion.find({ userId, ...unexpired() })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -44,7 +45,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     await dbConnect();
-    const conversion = await Conversion.findOne({ _id: id, userId });
+    const conversion = await Conversion.findOne({ _id: id, userId, ...unexpired() });
     if (!conversion) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }

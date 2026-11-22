@@ -3,6 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import Conversion from '@/models/conversion';
 import User from '@/models/user';
+import { unexpired } from '@/lib/stored-files';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,8 +19,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Get exact count of all conversions processed by this user
-    const processedFilesCount = await Conversion.countDocuments({ userId });
+    // Get exact count of this user's unexpired conversions
+    const processedFilesCount = await Conversion.countDocuments({ userId, ...unexpired() });
 
     return NextResponse.json({
       plan: user.plan,

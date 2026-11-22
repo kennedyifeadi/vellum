@@ -3,6 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
+import { unexpired } from '@/lib/stored-files';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   await dbConnect();
-  const docs = await UserDocumentModel.find({ userId })
+  const docs = await UserDocumentModel.find({ userId, ...unexpired() })
     .sort({ createdAt: -1 })
     .lean();
 
@@ -26,7 +27,7 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   await dbConnect();
-  const doc = await UserDocumentModel.findOneAndDelete({ _id: id, userId });
+  const doc = await UserDocumentModel.findOneAndDelete({ _id: id, userId, ...unexpired() });
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   // Delete physical file
