@@ -2,8 +2,9 @@ import { BrevoClient, BrevoError } from '@getbrevo/brevo';
 
 const PLACEHOLDER_API_KEY = 'YOUR_BREVO_API_KEY';
 
-// Brevo's client allows 60 seconds by default, and a form waits on the answer.
-const SEND_TIMEOUT_SECONDS = 10;
+// A form waits on the answer. The client's own timeoutInSeconds stops counting when the
+// response's headers arrive, so this deadline is a signal, which covers the body too.
+const SEND_DEADLINE_SECONDS = 10;
 
 interface Email {
   senderName: string;
@@ -29,14 +30,25 @@ export async function sendEmail({ senderName, to, replyTo, subject, html }: Emai
   const senderEmail = process.env.EMAIL_USER;
   if (!senderEmail) throw new Error('EMAIL_USER is not set.');
 
-  const client = new BrevoClient({ apiKey, timeoutInSeconds: SEND_TIMEOUT_SECONDS });
-  await client.transactionalEmails.sendTransacEmail({
+  // No retries: the client waits up to a minute between them, and each can send another copy.
+  const client = new BrevoClient({ apiKey, maxRetries: 0 });
+  const request = {
     subject,
     htmlContent: html,
     sender: { name: senderName, email: senderEmail },
     to: [{ email: to }],
     ...(replyTo && { replyTo: { email: replyTo } }),
-  });
+  };
+
+  const deadline = AbortSignal.timeout(SEND_DEADLINE_SECONDS * 1000);
+  try {
+    await client.transactionalEmails.sendTransacEmail(request, { abortSignal: deadline });
+  } catch (error) {
+    if (deadline.aborted) {
+      throw new Error(`Brevo did not answer within ${SEND_DEADLINE_SECONDS} seconds.`, { cause: error });
+    }
+    throw error;
+  }
 }
 
 /** What to log of a failed send: Brevo's answers can repeat the addresses, so only their status. */
