@@ -4,6 +4,10 @@ import { reserveOtpRequest } from '@/lib/auth/otpRequestLimit';
 import { isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
 
+function isBrevoConfigured() {
+  return !!process.env.BREVO_API_KEY && process.env.BREVO_API_KEY !== "YOUR_BREVO_API_KEY";
+}
+
 export async function POST(req: NextRequest) {
   try {
     let body: unknown;
@@ -21,6 +25,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
     }
 
+    const canSendEmail = isBrevoConfigured();
+    if (!canSendEmail && process.env.NODE_ENV === 'production') {
+      console.error('Cannot send a sign-in code: BREVO_API_KEY is not configured.');
+      return NextResponse.json({ error: 'Email sign-in is temporarily unavailable.' }, { status: 503 });
+    }
+
     await dbConnect();
     if (!(await reserveOtpRequest(email))) {
       return NextResponse.json({ error: 'Too many codes requested. Please try again later.' }, { status: 429 });
@@ -28,7 +38,7 @@ export async function POST(req: NextRequest) {
     const otpCode = await generateOtp(email);
 
     // Send email using native fetch to Brevo v3 API
-    if (process.env.BREVO_API_KEY && process.env.BREVO_API_KEY !== "YOUR_BREVO_API_KEY") {
+    if (canSendEmail) {
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {

@@ -354,5 +354,51 @@ export function describeSignInContract(database: string) {
         expect((await requestCode(email)).status).toBe(429);
       });
     });
+
+    describe('delivery', () => {
+      it.each([
+        ['unset', undefined],
+        ['empty', ''],
+        ['the placeholder', 'YOUR_BREVO_API_KEY'],
+      ])('refuses in production when the Brevo key is %s', async (_kind, key) => {
+        const email = newEmail();
+        const earlierCode = await receiveCode(email);
+        setNodeEnv('production');
+        if (key === undefined) delete process.env.BREVO_API_KEY;
+        else process.env.BREVO_API_KEY = key;
+        jest.mocked(dbConnect).mockClear();
+        const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        const res = await requestCode(email);
+
+        expect(res.status).toBe(503);
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(log).not.toHaveBeenCalled();
+        expect(JSON.stringify(error.mock.calls)).not.toMatch(/\b\d{6}\b/);
+        expect((await signIn(email, earlierCode)).status).toBe(200);
+      });
+
+      it('sends without logging the code in production', async () => {
+        setNodeEnv('production');
+        const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+        await receiveCode(newEmail());
+
+        expect(log).not.toHaveBeenCalled();
+      });
+
+      it('logs the code outside production when Brevo is not configured', async () => {
+        delete process.env.BREVO_API_KEY;
+        const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+        const email = newEmail();
+
+        expect((await requestCode(email)).status).toBe(200);
+
+        const code = /\b\d{6}\b/.exec(String(log.mock.calls[0][0]))![0];
+        expect(sentCodes).toEqual([]);
+        expect((await signIn(email, code)).status).toBe(200);
+      });
+    });
   });
 }
