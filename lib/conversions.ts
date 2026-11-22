@@ -2,10 +2,10 @@ import crypto from 'crypto';
 import path from 'path';
 import Conversion from '@/models/conversion';
 import User from '@/models/user';
-import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage, LocalDiskStorage } from '@/lib/storage';
 import { retentionExpiry } from '@/lib/storage-limits';
+import { STORED_FILE_KINDS } from '@/lib/stored-files';
 
 const STORED_CONTENT_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -100,7 +100,6 @@ export async function saveConversionRecord(
   const storage = getStorage();
   await storage.put(diskFileName, fileBuffer);
 
-  // Save database record with TTL index
   const conversion = await Conversion.create({
     userId,
     toolUsed,
@@ -136,22 +135,16 @@ export async function recordConversionHistory(
   return createHistoryRow(userId, toolUsed, fileName, fileSize, retention.expiresAt, metadata);
 }
 
-// The storage folders the sweep owns ('' is the root), each with the model whose
-// diskFileName keeps a file alive. Any other folder is left alone.
-const SWEPT_FOLDERS = [
-  { folder: '', model: Conversion },
-  { folder: 'docs', model: UserDocumentModel },
-];
-
 async function storedFileNames(model: typeof Conversion): Promise<Set<string>> {
   const rows: { diskFileName?: string }[] = await model.find({ diskFileName: { $exists: true } }, 'diskFileName');
   return new Set(rows.map(row => row.diskFileName).filter((name): name is string => Boolean(name)));
 }
 
 /**
- * Deletes local files whose database rows are gone (expired by TTL or deleted), in the
- * folders listed in SWEPT_FOLDERS.
- * Local-disk only: an S3-backed deployment relies on bucket lifecycle rules instead.
+ * Deletes local files that no row records, as a crash between storing a file and creating
+ * its row leaves, in the folders of STORED_FILE_KINDS. Any other folder is left alone.
+ * Expired files still have their rows: lib/retention-sweep.ts deletes those, on every driver.
+ * Local-disk only: for orphans an S3-backed deployment relies on bucket lifecycle rules.
  */
 export async function cleanupStorage() {
   const storage = getStorage();
@@ -160,7 +153,7 @@ export async function cleanupStorage() {
   await dbConnect();
 
   const validNamesByFolder = new Map<string, Set<string>>();
-  for (const { folder, model } of SWEPT_FOLDERS) {
+  for (const { folder, model } of STORED_FILE_KINDS) {
     validNamesByFolder.set(folder, await storedFileNames(model));
   }
 

@@ -259,7 +259,7 @@ describe('Features & Conversion Lifecycle System Tests', () => {
   });
 
   describe('Storage Sweep & Cleanup Routine (cleanupStorage)', () => {
-    it('should delete orphaned files present on disk that have expired in MongoDB', async () => {
+    it('should delete orphaned files present on disk that have no row in MongoDB', async () => {
       mockReaddirResult = ['valid.pdf', 'expired.pdf'];
       mockValidConversions = [{ diskFileName: 'valid.pdf' }];
       mockStatIsDirectory = false;
@@ -270,7 +270,7 @@ describe('Features & Conversion Lifecycle System Tests', () => {
       expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('expired.pdf'));
     });
 
-    it('deletes a stored document whose row has expired', async () => {
+    it('deletes a stored document whose row is gone', async () => {
       mockDocsReaddirResult = ['expired-doc.pdf'];
 
       await cleanupStorage();

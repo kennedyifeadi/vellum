@@ -1,13 +1,18 @@
 import { createMemoryVideoJobStore } from './helpers/memoryVideoJobStore';
 
 // instrumentation.ts runs once as the server starts. If register() rejected, Next would fail
-// every request, /api/health included, so the video worker must never make it reject.
+// every request, /api/health included, so neither the video worker nor the retention sweep
+// may make it reject. The sweep itself is tested in retention-sweep.test.ts. It must not run
+// here, where it would change the indexes of whatever database MONGODB_URI names.
+
+const mockStartRetentionSweep = jest.fn();
 
 const STORAGE_ERROR =
   'No storage driver is configured. Set STORAGE_DRIVER=s3 with the S3_* variables for the R2 bucket ' +
   "(or STORAGE_DRIVER=local to keep files on this server's disk, which a redeploy deletes).";
 
 jest.mock('@/lib/db/mongoose', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/retention-sweep', () => ({ startRetentionSweep: () => mockStartRetentionSweep() }));
 jest.mock('@/lib/video/video-job-store', () => ({
   ...jest.requireActual('@/lib/video/video-job-store'),
   createMongoVideoJobStore: () => createMemoryVideoJobStore(),
@@ -19,6 +24,7 @@ const storageDriver = process.env.STORAGE_DRIVER;
 
 beforeEach(() => {
   jest.resetModules();
+  mockStartRetentionSweep.mockReset();
   jest.spyOn(console, 'error').mockImplementation(() => {});
   process.env.NEXT_RUNTIME = 'nodejs';
 });
@@ -56,6 +62,20 @@ describe('instrumentation register()', () => {
     await expect(register()).resolves.toBeUndefined();
 
     expect(console.error).toHaveBeenCalledWith('Compress Video jobs will not run: Cannot find module ffmpeg-static');
+    expect(mockStartRetentionSweep).toHaveBeenCalled();
+  });
+
+  it('resolves, with the worker running, when the retention sweep cannot start', async () => {
+    process.env.STORAGE_DRIVER = 'local';
+    mockStartRetentionSweep.mockImplementation(() => {
+      throw new Error('Cannot find module mongoose');
+    });
+    const { register } = await import('../instrumentation');
+
+    await expect(register()).resolves.toBeUndefined();
+
+    expect(console.error).toHaveBeenCalledWith('Expired files will not be deleted: Cannot find module mongoose');
+    expect((globalThis as { vellumVideoJobs?: { worker: unknown } }).vellumVideoJobs?.worker).not.toBeNull();
   });
 
   it('starts the worker when storage is configured', async () => {
@@ -77,5 +97,6 @@ describe('instrumentation register()', () => {
     await expect(register()).resolves.toBeUndefined();
 
     expect((globalThis as { vellumVideoJobs?: unknown }).vellumVideoJobs).toBeUndefined();
+    expect(mockStartRetentionSweep).not.toHaveBeenCalled();
   });
 });
