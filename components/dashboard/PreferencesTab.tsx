@@ -146,7 +146,7 @@ export default function PreferencesTab() {
               <div>
                 <p className="text-[13px] font-bold text-[#111827] dark:text-white">Auto-delete processed files</p>
                 <p className="text-[12px] text-[#6b7280] dark:text-gray-400 mt-0.5">
-                  Don&apos;t keep converted files: each one is only downloaded once, straight after conversion, and never stored on Vellum&apos;s servers. Recent Activity still lists it, without a download button.
+                  Don&apos;t keep converted files: each one is only downloaded once, straight after conversion, and doesn&apos;t stay in Recent Activity. Two exceptions: Compress Video stores your upload until the job ends and keeps the result for 24 hours, and files you upload to My Documents are stored until they expire.
                 </p>
               </div>
             </label>
