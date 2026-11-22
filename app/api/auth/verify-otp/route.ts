@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/auth/verifyOtp';
+import { isValidEmail, isValidOtpCode } from '@/lib/auth/signInInput';
 import { createToken } from '@/lib/auth/jwt';
 import { buildSessionEntry } from '@/lib/auth/session';
 import User from '@/models/user';
@@ -8,8 +9,6 @@ import dbConnect from '@/lib/db/mongoose';
 
 export async function POST(req: NextRequest) {
   try {
-    await dbConnect();
-
     let body: unknown;
     try {
       body = await req.json();
@@ -17,12 +16,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
     }
 
-    const { email, code } = (body ?? {}) as { email?: string; code?: string };
+    const { email, code } = (body ?? {}) as { email?: unknown; code?: unknown };
 
-    if (!email || !code) {
-      return NextResponse.json({ error: 'Email and OTP are required.' }, { status: 400 });
+    if (!isValidEmail(email) || !isValidOtpCode(code)) {
+      return NextResponse.json({ error: 'A valid email address and six-digit OTP are required.' }, { status: 400 });
     }
 
+    await dbConnect();
     const isValid = await verifyOtp(email, code);
 
     if (!isValid) {
