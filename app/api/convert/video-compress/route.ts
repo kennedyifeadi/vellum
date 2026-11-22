@@ -3,8 +3,9 @@ import { resolveCaller, type Caller } from '@/lib/auth/caller';
 import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
 import { checkVideoUpload } from '@/lib/video/compress';
+import { reasonOf } from '@/lib/reason-of';
 import { getStorage, type StorageDriver } from '@/lib/storage';
-import { enqueueVideoJob, newGuestToken, reasonOf, videoJobCallerKey, videoJobStore } from '@/lib/video/video-job-service';
+import { enqueueVideoJob, newGuestToken, videoJobCallerKey, videoJobStore } from '@/lib/video/video-job-service';
 import { handleConvertError } from '@/lib/convert/errors';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import {

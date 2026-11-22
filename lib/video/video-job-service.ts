@@ -5,6 +5,7 @@ import { ClientError } from '@/lib/convert/errors';
 import { encodeLimitsForPlan, MAX_CONCURRENT_VIDEO_ENCODES } from '@/lib/convert/video-compress-limits';
 import { recordConversionHistory } from '@/lib/conversions';
 import { pushNotification } from '@/lib/notifications';
+import { reasonOf } from '@/lib/reason-of';
 import { getStorage, type StorageDriver } from '@/lib/storage';
 import { compressVideo, inputExtension } from '@/lib/video/compress';
 import {
@@ -138,10 +139,6 @@ interface WorkerDeps {
   storage?: StorageDriver;
   encode?: VideoEncoder;
   processEvents?: ProcessEvents;
-}
-
-export function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
