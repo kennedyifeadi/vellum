@@ -17,6 +17,7 @@ import {
 } from '@/lib/video/video-job-store';
 import {
   cancelVideoJob as cancelJob,
+  deleteDiscardedJob,
   VideoJobFailure,
   VideoJobWorker,
   videoJobInputKey,
@@ -215,6 +216,24 @@ export async function enqueueVideoJob(
 
   void runtime().worker?.wake();
   return job;
+}
+
+/** Discards every job of a signed-in user, killing those of their encodes this process runs. */
+export async function discardVideoJobsOf(ownerId: string): Promise<VideoJob[]> {
+  const { store, worker } = runtime();
+  const jobs = await store.discardOwnerJobs(ownerId, new Date());
+  for (const job of jobs) worker?.abort(job.id);
+  return jobs;
+}
+
+/** Deletes every job of a signed-in user with its files; false while a file waits for a retry. */
+export async function deleteVideoJobsOf(ownerId: string, storage: StorageDriver = getStorage()): Promise<boolean> {
+  const store = videoJobStore();
+  let allDeleted = true;
+  for (const job of await discardVideoJobsOf(ownerId)) {
+    allDeleted = (await deleteDiscardedJob(store, storage, job)) && allDeleted;
+  }
+  return allDeleted;
 }
 
 /** Cancels a queued or running job: its encode is killed and its input deleted. */

@@ -44,12 +44,16 @@ export interface VideoJob {
   claimId: string | null;
   attempts: number;
   resultExpiresAt: Date | null;
+  /** When the job became nobody's; its files are then only waiting to be deleted. */
+  discardedAt: Date | null;
 }
 
 export type NewVideoJob = Pick<
   VideoJob,
   'id' | 'ownerId' | 'guest' | 'callerKey' | 'plan' | 'options' | 'fileName' | 'originalSize' | 'inputKey'
 >;
+
+export type VideoJobFileField = 'inputKey' | 'outputKey';
 
 export interface VideoJobResult {
   outputKey: string;
@@ -105,11 +109,24 @@ export interface VideoJobStore {
   cancel(id: string, now: Date, resultExpiresAt: Date): Promise<CancelledJob | null>;
   /** Requeues, or fails once out of attempts, every running job whose lease has run out. */
   expireLeases(expiry: LeaseExpiry): Promise<ExpiredLeases>;
-  /** Done jobs whose result has expired and whose output file is still recorded. */
-  findExpiredResults(now: Date): Promise<VideoJob[]>;
+  /** Recorded outputs to delete: expired results, and any of a failed or cancelled job. */
+  findDeletableOutputs(now: Date): Promise<VideoJob[]>;
   /** Ended jobs whose input file is still recorded. */
   findLeftoverInputs(): Promise<VideoJob[]>;
   forgetFiles(id: string, files: { input?: boolean; output?: boolean }): Promise<void>;
+  /**
+   * Discards every job of a signed-in owner, whatever state it is in by then: one still
+   * queued or running is cancelled. Returns them all, as they now are.
+   */
+  discardOwnerJobs(ownerId: string, now: Date): Promise<VideoJob[]>;
+  findDiscarded(): Promise<VideoJob[]>;
+  /** Removes a discarded job's row, unless it still records a file. */
+  removeDiscarded(id: string): Promise<void>;
+  /**
+   * Records a file whose delete failed on its job, recreating the job as discarded when its
+   * row is gone or was never created. A done job's result is never replaced.
+   */
+  keepUndeleted(job: NewVideoJob, field: VideoJobFileField, key: string, now: Date): Promise<void>;
 }
 
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
@@ -145,6 +162,7 @@ interface StoredVideoJob {
   claimId?: string;
   attempts: number;
   resultExpiresAt?: Date;
+  discardedAt?: Date;
 }
 
 function toVideoJob(row: StoredVideoJob): VideoJob {
@@ -172,6 +190,7 @@ function toVideoJob(row: StoredVideoJob): VideoJob {
     claimId: row.claimId ?? null,
     attempts: row.attempts,
     resultExpiresAt: row.resultExpiresAt ?? null,
+    discardedAt: row.discardedAt ?? null,
   };
 }
 
@@ -306,10 +325,13 @@ export function createMongoVideoJobStore({ model = VideoJobModel, connect = dbCo
       return outcome;
     },
 
-    async findExpiredResults(now) {
+    async findDeletableOutputs(now) {
       await ready();
       const rows = await jobs
-        .find({ status: 'done', resultExpiresAt: { $lte: now }, outputKey: { $exists: true } })
+        .find({
+          outputKey: { $exists: true },
+          $or: [{ status: 'done', resultExpiresAt: { $lte: now } }, { status: { $in: ['failed', 'cancelled'] } }],
+        })
         .lean<StoredVideoJob[]>();
       return rows.map(toVideoJob);
     },
@@ -329,6 +351,68 @@ export function createMongoVideoJobStore({ model = VideoJobModel, connect = dbCo
       if (Object.keys(unset).length === 0) return;
       await ready();
       await jobs.updateOne({ _id: byId(id) }, { $unset: unset });
+    },
+
+    async discardOwnerJobs(ownerId, now) {
+      await ready();
+      const owned = { ownerId, guest: false };
+      // One update for every status, so a job that finishes, or is requeued, meanwhile is
+      // still discarded: there is no list to go stale before the cancel.
+      await jobs.updateMany(
+        owned,
+        [
+          {
+            $set: {
+              status: { $cond: [{ $in: ['$status', ACTIVE_STATUSES] }, 'cancelled', '$status'] },
+              finishedAt: { $ifNull: ['$finishedAt', now] },
+              discardedAt: now,
+            },
+          },
+          { $unset: ['resultExpiresAt', ...Object.keys(CLAIM_FIELDS)] },
+        ],
+        { updatePipeline: true },
+      );
+      const rows = await jobs.find({ ...owned, discardedAt: { $exists: true } }).lean<StoredVideoJob[]>();
+      return rows.map(toVideoJob);
+    },
+
+    async findDiscarded() {
+      await ready();
+      const rows = await jobs.find({ discardedAt: { $exists: true } }).lean<StoredVideoJob[]>();
+      return rows.map(toVideoJob);
+    },
+
+    async removeDiscarded(id) {
+      await ready();
+      await jobs.deleteOne({
+        _id: byId(id),
+        discardedAt: { $exists: true },
+        inputKey: { $exists: false },
+        outputKey: { $exists: false },
+      });
+    },
+
+    async keepUndeleted({ id, ownerId, guest, callerKey, plan, options, fileName, originalSize }, field, key, now) {
+      await ready();
+      const _id = byId(id);
+      const recorded = await jobs.updateOne({ _id, status: { $ne: 'done' } }, { $set: { [field]: key } });
+      if (recorded.matchedCount > 0 || (await jobs.exists({ _id }))) return;
+      await jobs.create({
+        _id,
+        ownerId,
+        guest,
+        callerKey,
+        plan,
+        options,
+        fileName,
+        originalSize,
+        [field]: key,
+        status: 'cancelled',
+        attempts: 0,
+        createdAt: now,
+        finishedAt: now,
+        discardedAt: now,
+      });
     },
   };
 }

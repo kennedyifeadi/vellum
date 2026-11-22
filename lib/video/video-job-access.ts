@@ -9,7 +9,7 @@ import { guestTokenOwns, VIDEO_JOB_TOKEN_HEADER, videoJobStore } from '@/lib/vid
  */
 export async function findOwnedVideoJob(req: NextRequest, id: string): Promise<VideoJob | null> {
   const job = await videoJobStore().get(id);
-  if (!job) return null;
+  if (!job || job.discardedAt) return null;
 
   if (job.guest) {
     const token = req.headers.get(VIDEO_JOB_TOKEN_HEADER);

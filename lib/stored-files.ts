@@ -44,6 +44,11 @@ async function deleteFileThenRow(kind: StoredFileKind, row: StoredRow): Promise<
   }
 }
 
+/** Expires all of a user's rows of one kind, which hands their files to the sweep. */
+export async function expireFilesOf(kind: StoredFileKind, userId: string): Promise<void> {
+  await kind.model.updateMany({ userId }, { $set: { expiresAt: new Date() } });
+}
+
 /**
  * Deletes one row's file and then the row. The row is expired first, so it is gone to its
  * owner even when the file can't be deleted yet; the sweep then retries, and this is false.

@@ -1,6 +1,13 @@
 import { randomUUID } from 'crypto';
 import type { StorageDriver } from '@/lib/storage/types';
-import { ENDED_STATUSES, type VideoJob, type VideoJobStore, type VideoOutputFormat } from '@/lib/video/video-job-store';
+import {
+  ENDED_STATUSES,
+  type NewVideoJob,
+  type VideoJob,
+  type VideoJobFileField,
+  type VideoJobStore,
+  type VideoOutputFormat,
+} from '@/lib/video/video-job-store';
 
 // Runs Compress Video's queued jobs in this process. It imports nothing from Next, and all
 // it shares with other processes is the store and the storage, so it can move to a process
@@ -93,6 +100,34 @@ export async function discardInput(store: VideoJobStore, storage: StorageDriver,
   if (job.inputKey && (await deleteQuietly(storage, job.inputKey))) {
     await store.forgetFiles(job.id, { input: true });
   }
+}
+
+/** Deletes a file that no job needs, recording it for the sweep to retry if that fails. */
+export async function deleteUnneededFile(
+  store: VideoJobStore,
+  storage: StorageDriver,
+  job: NewVideoJob,
+  field: VideoJobFileField,
+  key: string,
+  now: number,
+): Promise<void> {
+  if (await deleteQuietly(storage, key)) return;
+  try {
+    await store.keepUndeleted(job, field, key, new Date(now));
+  } catch (error) {
+    console.error(`Could not record the undeleted video job file ${key}:`, error);
+  }
+}
+
+/** Deletes a discarded job's files and then its row; false while a file waits for a retry. */
+export async function deleteDiscardedJob(store: VideoJobStore, storage: StorageDriver, job: VideoJob): Promise<boolean> {
+  const { inputKey, outputKey } = job;
+  const inputDeleted = !inputKey || (await deleteQuietly(storage, inputKey));
+  const outputDeleted = !outputKey || (await deleteQuietly(storage, outputKey));
+
+  await store.forgetFiles(job.id, { input: Boolean(inputKey) && inputDeleted, output: Boolean(outputKey) && outputDeleted });
+  await store.removeDiscarded(job.id);
+  return inputDeleted && outputDeleted;
 }
 
 /**
@@ -280,8 +315,9 @@ export class VideoJobWorker {
       ended = await this.failQuietly(job, error);
     }
 
-    if (!ended && outputKey) {
-      await deleteQuietly(this.storage, outputKey);
+    // Also when the job failed: a put can store the file and still report an error.
+    if (outputKey && ended?.status !== 'done') {
+      await deleteUnneededFile(this.store, this.storage, job, 'outputKey', outputKey, this.now());
     }
     await this.discardInputIfEnded(job, ended);
     if (ended) await this.report(ended);
@@ -333,11 +369,14 @@ export class VideoJobWorker {
     }
   }
 
-  /** Deletes expired results, and inputs a failed delete left behind. */
+  /** Deletes discarded jobs, expired results, and files a failed delete left behind. */
   async sweep(): Promise<void> {
     try {
       const now = new Date(this.now());
-      for (const job of await this.store.findExpiredResults(now)) {
+      for (const job of await this.store.findDiscarded()) {
+        await deleteDiscardedJob(this.store, this.storage, job);
+      }
+      for (const job of await this.store.findDeletableOutputs(now)) {
         if (job.outputKey && (await deleteQuietly(this.storage, job.outputKey))) {
           await this.store.forgetFiles(job.id, { output: true });
         }
