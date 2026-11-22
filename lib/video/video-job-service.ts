@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { AccountMissingError, accountExists } from '@/lib/account';
 import type { Caller } from '@/lib/auth/caller';
 import { callerKeyOf, GUEST_SLOTS_PER_POOL } from '@/lib/convert/caller-jobs';
 import { ClientError } from '@/lib/convert/errors';
@@ -11,6 +12,7 @@ import { compressVideo, inputExtension } from '@/lib/video/compress';
 import {
   createMongoVideoJobStore,
   newVideoJobId,
+  type NewVideoJob,
   type VideoJob,
   type VideoJobOptions,
   type VideoJobStore,
@@ -18,6 +20,7 @@ import {
 import {
   cancelVideoJob as cancelJob,
   deleteDiscardedJob,
+  deleteUnneededFile,
   VideoJobFailure,
   VideoJobWorker,
   videoJobInputKey,
@@ -194,7 +197,10 @@ export interface UploadedVideo {
   input: Buffer;
 }
 
-/** Stores the upload and queues its job, then wakes the worker. */
+/**
+ * Stores the upload and queues its job, then wakes the worker. Throws AccountMissingError,
+ * keeping nothing, when the signed-in caller's account was deleted meanwhile.
+ */
 export async function enqueueVideoJob(
   { caller, callerKey, ownerId, fileName, options, input }: UploadedVideo,
   storage: StorageDriver = getStorage(),
@@ -203,15 +209,20 @@ export async function enqueueVideoJob(
   const inputKey = videoJobInputKey(id, inputExtension(fileName));
   await storage.put(inputKey, input);
 
+  const store = videoJobStore();
+  const queued: NewVideoJob = {
+    id, ownerId, guest: !caller.userId, callerKey, plan: caller.plan, options, fileName, originalSize: input.length, inputKey,
+  };
   let job: VideoJob;
   try {
-    job = await videoJobStore().create(
-      { id, ownerId, guest: !caller.userId, callerKey, plan: caller.plan, options, fileName, originalSize: input.length, inputKey },
-      new Date(),
-    );
+    job = await store.create(queued, new Date());
   } catch (error) {
-    await attempt(`delete the input of video job ${id}`, () => storage.delete(inputKey));
+    await deleteUnneededFile(store, storage, queued, 'inputKey', inputKey, Date.now());
     throw error;
+  }
+  if (caller.userId && !(await accountExists(caller.userId))) {
+    await deleteVideoJobsOf(caller.userId, storage);
+    throw new AccountMissingError();
   }
 
   void runtime().worker?.wake();

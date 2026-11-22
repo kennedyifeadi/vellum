@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
-import UserDocumentModel from '@/models/userDocument';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
@@ -8,11 +7,15 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { retentionExpiry, storageFullMessage, storageLimits } from '@/lib/storage-limits';
 import { usedStorageBytes } from '@/lib/storage-usage';
+import { DOCUMENT_FILES, recordForAccount } from '@/lib/stored-files';
+import { ACCOUNT_MISSING_MESSAGE } from '@/lib/account';
 import { ClientError } from '@/lib/convert/errors';
 import { readMultipartForm, uploadBudget, uploadedFiles } from '@/lib/http/read-upload';
 import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+const accountMissing = () => NextResponse.json({ error: ACCOUNT_MISSING_MESSAGE }, { status: 401 });
 
 const SAFE_EXTENSION = /^\.[a-z0-9]{1,10}$/i;
 
@@ -32,7 +35,8 @@ export async function POST(req: NextRequest) {
   await dbConnect();
 
   const user = await User.findById(userId).lean() as { plan?: string } | null;
-  const plan = (user?.plan as string) ?? 'Basic';
+  if (!user) return accountMissing();
+  const plan = (user.plan as string) ?? 'Basic';
   const limitBytes = storageLimits(plan).quotaBytes;
   const currentUsed = await usedStorageBytes(userId);
 
@@ -73,7 +77,7 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await storage.put(`docs/${diskFileName}`, buffer);
 
-    const doc = await UserDocumentModel.create({
+    const doc = await recordForAccount(DOCUMENT_FILES, {
       userId,
       fileName: file.name,
       diskFileName,
@@ -81,6 +85,7 @@ export async function POST(req: NextRequest) {
       mimeType: file.type,
       expiresAt: retentionExpiry(plan),
     });
+    if (!doc) return accountMissing();
 
     usedSoFar += file.size;
     created.push(doc);

@@ -1,11 +1,10 @@
 import crypto from 'crypto';
 import path from 'path';
-import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { getStorage, LocalDiskStorage } from '@/lib/storage';
 import { retentionExpiry } from '@/lib/storage-limits';
-import { STORED_FILE_KINDS } from '@/lib/stored-files';
+import { CONVERSION_FILES, recordForAccount, STORED_FILE_KINDS, type StoredFileKind } from '@/lib/stored-files';
 
 const STORED_CONTENT_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -58,7 +57,7 @@ function createHistoryRow(
   expiresAt: Date,
   metadata?: Record<string, unknown>
 ) {
-  return Conversion.create({
+  return recordForAccount(CONVERSION_FILES, {
     userId,
     toolUsed,
     fileName,
@@ -100,7 +99,7 @@ export async function saveConversionRecord(
   const storage = getStorage();
   await storage.put(diskFileName, fileBuffer);
 
-  const conversion = await Conversion.create({
+  const conversion = await recordForAccount(CONVERSION_FILES, {
     userId,
     toolUsed,
     fileName: outputFileName,
@@ -135,7 +134,7 @@ export async function recordConversionHistory(
   return createHistoryRow(userId, toolUsed, fileName, fileSize, retention.expiresAt, metadata);
 }
 
-async function storedFileNames(model: typeof Conversion): Promise<Set<string>> {
+async function storedFileNames(model: StoredFileKind['model']): Promise<Set<string>> {
   const rows: { diskFileName?: string }[] = await model.find({ diskFileName: { $exists: true } }, 'diskFileName');
   return new Set(rows.map(row => row.diskFileName).filter((name): name is string => Boolean(name)));
 }

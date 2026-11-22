@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AccountMissingError, accountExists } from '@/lib/account';
 import { resolveCaller, type Caller } from '@/lib/auth/caller';
 import { CallerJobRefusedError, callerJobRefusedResponse, runCallerJob } from '@/lib/convert/caller-jobs';
 import { resolveFiles } from '@/lib/drive/resolveFiles';
@@ -58,6 +59,9 @@ async function assertMayEnqueue(callerKey: string): Promise<void> {
  * (lib/video/video-job-worker.ts); the caller polls the job's status and downloads it.
  */
 async function enqueueUpload(req: NextRequest, caller: Caller): Promise<NextResponse> {
+  if (caller.userId && !(await accountExists(caller.userId))) {
+    throw new AccountMissingError();
+  }
   const callerKey = videoJobCallerKey(req.headers, caller);
   await assertMayEnqueue(callerKey);
   const storage = jobStorage();

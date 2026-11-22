@@ -1,5 +1,6 @@
 import Conversion from '@/models/conversion';
 import UserDocumentModel from '@/models/userDocument';
+import { accountExists } from '@/lib/account';
 import { getStorage } from '@/lib/storage';
 
 // A user's stored files are each recorded by a row with an expiresAt, and a row is deleted
@@ -23,6 +24,12 @@ interface StoredRow {
   diskFileName?: string;
 }
 
+interface NewStoredRow extends Record<string, unknown> {
+  userId: string;
+  expiresAt: Date;
+  diskFileName?: string;
+}
+
 /** Matches the rows their owner may still see: from expiresAt on, a row is gone to them. */
 export function unexpired() {
   return { expiresAt: { $gt: new Date() } };
@@ -42,6 +49,40 @@ async function deleteFileThenRow(kind: StoredFileKind, row: StoredRow): Promise<
     console.error(`Failed to delete ${key || `history row ${row._id}`}, so it will be retried:`, error);
     return false;
   }
+}
+
+async function removeUnrecordedFile(kind: StoredFileKind, row: NewStoredRow): Promise<void> {
+  if (!row.diskFileName) return;
+  const key = storageKey(kind, row.diskFileName);
+  try {
+    await getStorage().delete(key);
+  } catch (error) {
+    console.error(`Failed to delete ${key}, which no row records:`, error);
+    try {
+      await kind.model.create({ ...row, expiresAt: new Date() });
+    } catch (recordError) {
+      console.error(`Could not record the undeleted ${key} either:`, recordError);
+    }
+  }
+}
+
+/**
+ * Creates the row of a file just stored, or of history. If it can't, the file is removed.
+ * Null when the account is gone: what was written is removed again. The account is checked
+ * after the create, so a deletion either sees this row or is seen by this check.
+ */
+export async function recordForAccount(kind: StoredFileKind, row: NewStoredRow) {
+  let record;
+  try {
+    record = await kind.model.create(row);
+  } catch (error) {
+    await removeUnrecordedFile(kind, row);
+    throw error;
+  }
+  if (await accountExists(row.userId)) return record;
+
+  await removeStoredFile(kind, record);
+  return null;
 }
 
 /** Expires all of a user's rows of one kind, which hands their files to the sweep. */

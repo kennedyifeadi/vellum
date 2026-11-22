@@ -34,6 +34,9 @@ jest.mock('@/lib/storage', () => ({
     put: async (key: string, data: Buffer) => {
       mockStored.set(key, data);
     },
+    delete: async (key: string) => {
+      mockStored.delete(key);
+    },
   }),
   LocalDiskStorage: class {},
 }));
