@@ -18,8 +18,6 @@ jest.mock('@next-auth/mongodb-adapter', () => ({
   MongoDBAdapter: jest.fn((client: unknown) => ({ client })),
 }));
 
-jest.mock('@/lib/auth/verifyOtp', () => ({ verifyOtp: jest.fn() }));
-
 jest.mock('@/models/user', () => ({ __esModule: true, default: {} }));
 
 import { MongoDBAdapter } from '@next-auth/mongodb-adapter';

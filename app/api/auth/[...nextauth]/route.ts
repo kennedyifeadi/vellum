@@ -1,10 +1,8 @@
 import NextAuth, { AuthOptions } from "next-auth";
 import type { NextRequest } from "next/server";
 import GoogleProvider from "next-auth/providers/google";
-import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import { getMongoClient } from "@/lib/db/mongodb";
-import { verifyOtp } from "@/lib/auth/verifyOtp"; // Your existing OTP verification logic
 import { buildSessionEntry } from "@/lib/auth/session";
 import User from "@/models/user"; // Your existing User model
 
@@ -34,40 +32,6 @@ export function authOptionsFor(req: NextRequest): AuthOptions {
       GoogleProvider({
         clientId: process.env.GOOGLE_CLIENT_ID as string,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      }),
-      // Custom Passwordless OTP Provider
-      CredentialsProvider({
-        id: "email-otp",
-        name: "Email OTP",
-        credentials: {
-          email: { label: "Email", type: "email" },
-          otp: { label: "OTP", type: "text" },
-        },
-        async authorize(credentials) {
-          if (!credentials?.email || !credentials?.otp) {
-            return null;
-          }
-
-          const isValid = await verifyOtp(credentials.email, credentials.otp);
-
-          if (isValid) {
-            let user = await User.findOne({ email: credentials.email });
-            if (!user) {
-              // If user doesn't exist, create a new one (similar to your previous logic)
-              user = await User.create({ email: credentials.email, isProfileComplete: false, emailVerified: new Date() });
-            }
-            // NextAuth expects a user object with at least id, name, email, image
-            return {
-              id: user._id.toString(),
-              name: user.name || user.email,
-              email: user.email,
-              image: user.image,
-              isProfileComplete: user.isProfileComplete,
-              role: user.role,
-            };
-          }
-          return null;
-        },
       }),
     ],
     session: {

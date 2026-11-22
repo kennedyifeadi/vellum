@@ -30,16 +30,13 @@ import LoginPage from '../app/(auth)/login/page';
 describe('configured sign-in providers', () => {
   const authOptions = authOptionsFor(new NextRequest('http://localhost:3000/api/auth/providers'));
 
-  it('are exactly Google and the email OTP credentials provider', () => {
+  it('are exactly Google', () => {
     const providers = authOptions.providers.map((provider) => ({
       id: provider.options?.id ?? provider.id,
       type: provider.type,
     }));
 
-    expect(providers).toEqual([
-      { id: 'google', type: 'oauth' },
-      { id: 'email-otp', type: 'credentials' },
-    ]);
+    expect(providers).toEqual([{ id: 'google', type: 'oauth' }]);
   });
 
   it('offer Google as the only OAuth provider', () => {

@@ -17,6 +17,10 @@ jest.mock('@/lib/auth/otp', () => ({
   generateOtp: jest.fn().mockResolvedValue('123456'),
 }));
 
+jest.mock('@/lib/auth/otpRequestLimit', () => ({
+  reserveOtpRequest: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('@/lib/auth/verifyOtp', () => ({
   verifyOtp: jest.fn().mockResolvedValue(true),
 }));

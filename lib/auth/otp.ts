@@ -6,8 +6,8 @@ export async function generateOtp(email: string) {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
   await Otp.findOneAndUpdate(
-    { email },
-    { code, expiresAt },
+    { _id: email },
+    { code, expiresAt, attempts: 0 },
     { upsert: true, returnDocument: 'after' }
   );
 
