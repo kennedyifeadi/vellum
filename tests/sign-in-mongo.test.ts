@@ -31,7 +31,7 @@ if (!uri) {
 
   describeSignInContract('a real MongoDB');
 
-  it.each(['otps'])('expires rows in %s by their expiresAt', async (collection) => {
+  it.each(['otps', 'otprequests'])('expires rows in %s by their expiresAt', async (collection) => {
     const indexes = await mongoose.connection.collection(collection).indexes();
 
     expect(indexes).toContainEqual(expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }));

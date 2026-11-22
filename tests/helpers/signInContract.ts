@@ -297,5 +297,62 @@ export function describeSignInContract(database: string) {
         expect((await signIn(email, code)).status).toBe(401);
       });
     });
+
+    describe('code requests', () => {
+      it('sends five codes to an address, then refuses without replacing the last', async () => {
+        const email = newEmail();
+        let code = '';
+        for (let i = 0; i < 5; i++) code = await receiveCode(email);
+
+        expect((await requestCode(email)).status).toBe(429);
+        expect(sentCodes).toHaveLength(5);
+        expect((await signIn(email, code)).status).toBe(200);
+      });
+
+      it('keeps the limit after a successful sign-in', async () => {
+        const email = newEmail();
+        for (let i = 0; i < 5; i++) await signIn(email, await receiveCode(email));
+
+        expect((await requestCode(email)).status).toBe(429);
+      });
+
+      it('sends five codes when twelve requests race', async () => {
+        const email = newEmail();
+
+        const responses = await Promise.all(Array.from({ length: 12 }, () => requestCode(email)));
+
+        expect(responses.map((res) => res.status).sort()).toEqual([...Array(5).fill(200), ...Array(7).fill(429)]);
+        expect(sentCodes).toHaveLength(5);
+      });
+
+      it('limits each address separately', async () => {
+        const email = newEmail();
+        for (let i = 0; i < 5; i++) await receiveCode(email);
+
+        expect((await requestCode(newEmail())).status).toBe(200);
+      });
+
+      it('counts an address once whatever its letter case', async () => {
+        const email = newEmail();
+        for (let i = 0; i < 5; i++) await receiveCode(email);
+
+        expect((await requestCode(email.toUpperCase())).status).toBe(429);
+      });
+
+      it('allows five in any 15 minutes', async () => {
+        const moveTo = controlClock();
+        const email = newEmail();
+        await receiveCode(email);
+        moveTo(14 * MINUTE_MS);
+        for (let i = 0; i < 4; i++) await receiveCode(email);
+
+        moveTo(15 * MINUTE_MS - 1);
+        expect((await requestCode(email)).status).toBe(429);
+
+        moveTo(15 * MINUTE_MS);
+        expect((await requestCode(email)).status).toBe(200);
+        expect((await requestCode(email)).status).toBe(429);
+      });
+    });
   });
 }

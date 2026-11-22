@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateOtp } from '@/lib/auth/otp';
+import { reserveOtpRequest } from '@/lib/auth/otpRequestLimit';
 import { isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
 
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest) {
     }
 
     await dbConnect();
+    if (!(await reserveOtpRequest(email))) {
+      return NextResponse.json({ error: 'Too many codes requested. Please try again later.' }, { status: 429 });
+    }
     const otpCode = await generateOtp(email);
 
     // Send email using native fetch to Brevo v3 API
