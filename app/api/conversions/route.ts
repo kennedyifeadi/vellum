@@ -3,7 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 export const dynamic = 'force-dynamic';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
-import { getStorage } from '@/lib/storage';
+import { CONVERSION_FILES, removeStoredFile, unexpired } from '@/lib/stored-files';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     await dbConnect();
     
     // Fetch conversions for user, newest first
-    const conversions = await Conversion.find({ userId })
+    const conversions = await Conversion.find({ userId, ...unexpired() })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -44,16 +44,14 @@ export async function DELETE(req: NextRequest) {
     }
 
     await dbConnect();
-    const conversion = await Conversion.findOne({ _id: id, userId });
+    const conversion = await Conversion.findOne({ _id: id, userId, ...unexpired() });
     if (!conversion) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    if (conversion.diskFileName) {
-      await getStorage().delete(conversion.diskFileName);
+    if (!(await removeStoredFile(CONVERSION_FILES, conversion))) {
+      return NextResponse.json({ filesPending: true }, { status: 202 });
     }
-
-    await Conversion.deleteOne({ _id: id });
 
     return NextResponse.json({ success: true });
   } catch (error) {

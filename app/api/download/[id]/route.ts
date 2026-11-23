@@ -6,6 +6,7 @@ import { getStorage } from '@/lib/storage';
 import { STORED_EXTENSIONS, storedContentType } from '@/lib/conversions';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
+import { unexpired } from '@/lib/stored-files';
 
 // saveConversionRecord names stored files after crypto.randomUUID(), which is lowercase.
 const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const conversion = await Conversion.findOne({
       userId,
+      ...unexpired(),
       diskFileName: { $in: STORED_EXTENSIONS.map(extension => `${id}${extension}`) },
     });
 

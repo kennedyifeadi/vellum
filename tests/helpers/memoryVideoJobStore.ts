@@ -48,6 +48,7 @@ export function createMemoryVideoJobStore(): VideoJobStore & { all(): VideoJob[]
         claimId: null,
         attempts: 0,
         resultExpiresAt: null,
+        discardedAt: null,
       };
       jobs.set(job.id, created);
       return copy(created)!;
@@ -122,9 +123,15 @@ export function createMemoryVideoJobStore(): VideoJobStore & { all(): VideoJob[]
       return outcome;
     },
 
-    async findExpiredResults(now) {
+    async findDeletableOutputs(now) {
       return [...jobs.values()]
-        .filter((job) => job.status === 'done' && job.outputKey && job.resultExpiresAt && job.resultExpiresAt <= now)
+        .filter(
+          (job) =>
+            job.outputKey &&
+            ((job.status === 'done' && job.resultExpiresAt && job.resultExpiresAt <= now) ||
+              job.status === 'failed' ||
+              job.status === 'cancelled'),
+        )
         .map((job) => copy(job)!);
     },
 
@@ -138,6 +145,66 @@ export function createMemoryVideoJobStore(): VideoJobStore & { all(): VideoJob[]
       const job = jobs.get(id);
       if (!job) return;
       update(job, { ...(input ? { inputKey: null } : {}), ...(output ? { outputKey: null } : {}) });
+    },
+
+    async discardOwnerJobs(ownerId, now) {
+      return [...jobs.values()]
+        .filter((job) => job.ownerId === ownerId && !job.guest)
+        .map((job) =>
+          update(job, {
+            status: ACTIVE_STATUSES.includes(job.status) ? 'cancelled' : job.status,
+            finishedAt: job.finishedAt ?? now,
+            discardedAt: now,
+            resultExpiresAt: null,
+            leaseUntil: null,
+            claimId: null,
+          }),
+        );
+    },
+
+    async findDiscarded() {
+      return [...jobs.values()].filter((job) => job.discardedAt).map((job) => copy(job)!);
+    },
+
+    async removeDiscarded(id) {
+      const job = jobs.get(id);
+      if (job?.discardedAt && !job.inputKey && !job.outputKey) jobs.delete(id);
+    },
+
+    async keepUndeleted(job, field, key, now) {
+      const existing = jobs.get(job.id);
+      if (existing?.status === 'done') return;
+      if (existing) {
+        update(existing, { [field]: key });
+        return;
+      }
+      const { id, ownerId, guest, callerKey, plan, options, fileName, originalSize } = job;
+      jobs.set(id, {
+        id,
+        ownerId,
+        guest,
+        callerKey,
+        plan,
+        options,
+        fileName,
+        originalSize,
+        status: 'cancelled',
+        inputKey: null,
+        outputKey: null,
+        [field]: key,
+        outputSize: null,
+        outputFormat: null,
+        compressed: null,
+        error: null,
+        createdAt: now,
+        startedAt: null,
+        finishedAt: now,
+        leaseUntil: null,
+        claimId: null,
+        attempts: 0,
+        resultExpiresAt: null,
+        discardedAt: now,
+      });
     },
   };
 }

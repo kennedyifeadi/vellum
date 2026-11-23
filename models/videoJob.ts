@@ -36,6 +36,10 @@ export const VideoJobSchema = new Schema({
   claimId: { type: String },
   attempts: { type: Number, required: true, default: 0 },
   resultExpiresAt: { type: Date },
+  // Set when the job is nobody's any more: its account was deleted, or it was never queued.
+  // Such a row has no resultExpiresAt, so the TTL index below cannot drop it and the key of
+  // a file still stored. The worker's sweep removes it once its files are deleted.
+  discardedAt: { type: Date },
 });
 
 VideoJobSchema.index({ status: 1, createdAt: 1, _id: 1 });

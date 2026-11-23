@@ -201,7 +201,7 @@ export default function SecurityTab() {
               <button 
                 onClick={() => {
                    if(window.confirm('Are you absolutely sure you want to delete your account? This is irreversible.')) {
-                      handleAction('delete', 'Account deactivated.');
+                      handleAction('delete', 'Account deleted');
                    }
                 }}
                 disabled={loading === 'delete'}

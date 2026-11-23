@@ -4,6 +4,7 @@ import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import JSZip from 'jszip';
+import { unexpired } from '@/lib/stored-files';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const conversions = await Conversion.find({ userId }).lean();
+    const conversions = await Conversion.find({ userId, ...unexpired() }).lean();
 
     const zip = new JSZip();
 

@@ -26,7 +26,8 @@ const ConversionSchema: Schema = new Schema({
   expiresAt: { type: Date, required: true },
 });
 
-ConversionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// Not a TTL index: lib/retention-sweep.ts deletes the file, and only then the row.
+ConversionSchema.index({ expiresAt: 1 });
 
 const Conversion = mongoose.models.Conversion || mongoose.model<IConversion>('Conversion', ConversionSchema);
 export default Conversion;

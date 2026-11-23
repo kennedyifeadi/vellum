@@ -1,21 +1,26 @@
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { AccountMissingError, accountExists } from '@/lib/account';
 import type { Caller } from '@/lib/auth/caller';
 import { callerKeyOf, GUEST_SLOTS_PER_POOL } from '@/lib/convert/caller-jobs';
 import { ClientError } from '@/lib/convert/errors';
 import { encodeLimitsForPlan, MAX_CONCURRENT_VIDEO_ENCODES } from '@/lib/convert/video-compress-limits';
 import { recordConversionHistory } from '@/lib/conversions';
 import { pushNotification } from '@/lib/notifications';
+import { reasonOf } from '@/lib/reason-of';
 import { getStorage, type StorageDriver } from '@/lib/storage';
 import { compressVideo, inputExtension } from '@/lib/video/compress';
 import {
   createMongoVideoJobStore,
   newVideoJobId,
+  type NewVideoJob,
   type VideoJob,
   type VideoJobOptions,
   type VideoJobStore,
 } from '@/lib/video/video-job-store';
 import {
   cancelVideoJob as cancelJob,
+  deleteDiscardedJob,
+  deleteUnneededFile,
   VideoJobFailure,
   VideoJobWorker,
   videoJobInputKey,
@@ -140,10 +145,6 @@ interface WorkerDeps {
   processEvents?: ProcessEvents;
 }
 
-export function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * Starts this process's worker, once. It runs during server startup, so it never throws:
  * without a database, or when the storage or anything else it needs cannot be set up, it
@@ -196,7 +197,10 @@ export interface UploadedVideo {
   input: Buffer;
 }
 
-/** Stores the upload and queues its job, then wakes the worker. */
+/**
+ * Stores the upload and queues its job, then wakes the worker. Throws AccountMissingError,
+ * keeping nothing, when the signed-in caller's account was deleted meanwhile.
+ */
 export async function enqueueVideoJob(
   { caller, callerKey, ownerId, fileName, options, input }: UploadedVideo,
   storage: StorageDriver = getStorage(),
@@ -205,19 +209,42 @@ export async function enqueueVideoJob(
   const inputKey = videoJobInputKey(id, inputExtension(fileName));
   await storage.put(inputKey, input);
 
+  const store = videoJobStore();
+  const queued: NewVideoJob = {
+    id, ownerId, guest: !caller.userId, callerKey, plan: caller.plan, options, fileName, originalSize: input.length, inputKey,
+  };
   let job: VideoJob;
   try {
-    job = await videoJobStore().create(
-      { id, ownerId, guest: !caller.userId, callerKey, plan: caller.plan, options, fileName, originalSize: input.length, inputKey },
-      new Date(),
-    );
+    job = await store.create(queued, new Date());
   } catch (error) {
-    await attempt(`delete the input of video job ${id}`, () => storage.delete(inputKey));
+    await deleteUnneededFile(store, storage, queued, 'inputKey', inputKey, Date.now());
     throw error;
+  }
+  if (caller.userId && !(await accountExists(caller.userId))) {
+    await deleteVideoJobsOf(caller.userId, storage);
+    throw new AccountMissingError();
   }
 
   void runtime().worker?.wake();
   return job;
+}
+
+/** Discards every job of a signed-in user, killing those of their encodes this process runs. */
+export async function discardVideoJobsOf(ownerId: string): Promise<VideoJob[]> {
+  const { store, worker } = runtime();
+  const jobs = await store.discardOwnerJobs(ownerId, new Date());
+  for (const job of jobs) worker?.abort(job.id);
+  return jobs;
+}
+
+/** Deletes every job of a signed-in user with its files; false while a file waits for a retry. */
+export async function deleteVideoJobsOf(ownerId: string, storage: StorageDriver = getStorage()): Promise<boolean> {
+  const store = videoJobStore();
+  let allDeleted = true;
+  for (const job of await discardVideoJobsOf(ownerId)) {
+    allDeleted = (await deleteDiscardedJob(store, storage, job)) && allDeleted;
+  }
+  return allDeleted;
 }
 
 /** Cancels a queued or running job: its encode is killed and its input deleted. */
