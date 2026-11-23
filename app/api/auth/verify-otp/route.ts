@@ -7,6 +7,8 @@ import { buildSessionEntry } from '@/lib/auth/session';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
+import { ClientError } from '@/lib/convert/errors';
+import { readJsonRequest } from '@/lib/http/read-upload';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,14 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
     }
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
-    }
-
-    const { email, code: typedCode } = (body ?? {}) as { email?: unknown; code?: unknown };
+    const { email, code: typedCode } = await readJsonRequest(req, 'Invalid JSON body.');
     const code = parseOtpCode(typedCode);
 
     if (!isValidEmail(email) || !code) {
@@ -86,6 +81,9 @@ export async function POST(req: NextRequest) {
     }, { status: 200 });
 
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error verifying OTP:', error);
     return NextResponse.json({ error: 'Failed to verify OTP.' }, { status: 500 });
   }

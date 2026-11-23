@@ -6,6 +6,8 @@ import { sendWithinOtpLimits } from '@/lib/auth/otpRequestLimit';
 import { createBrowserId, readBrowserId, readKnownDevice, setBrowserId } from '@/lib/auth/signInCookies';
 import { formatOtpCode, isJsonRequest, isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
+import { ClientError } from '@/lib/convert/errors';
+import { readJsonRequest } from '@/lib/http/read-upload';
 
 function isBrevoConfigured() {
   return !!process.env.BREVO_API_KEY && process.env.BREVO_API_KEY !== "YOUR_BREVO_API_KEY";
@@ -46,14 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
     }
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
-    }
-
-    const { email } = (body ?? {}) as { email?: unknown };
+    const { email } = await readJsonRequest(req, 'Invalid JSON body.');
     if (!email) {
       return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
     }
@@ -84,6 +79,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ message: 'OTP sent to your email.' }, { status: 200 });
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error requesting OTP:', error);
     return NextResponse.json({ error: 'Failed to send OTP.' }, { status: 500 });
   }

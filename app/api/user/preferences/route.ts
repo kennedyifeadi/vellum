@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
+import { ClientError } from '@/lib/convert/errors';
+import { readJsonRequest } from '@/lib/http/read-upload';
 
 export async function GET(req: NextRequest) {
   try {
@@ -37,7 +39,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const updateData = await req.json();
+    const updateData = await readJsonRequest(req, 'Failed to update preferences');
 
     // Map payload accurately to the schema structure
     const updatedUser = await User.findByIdAndUpdate(
@@ -48,6 +50,9 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json(updatedUser?.preferences, { status: 200 });
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error updating preferences:', error);
     return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 });
   }
