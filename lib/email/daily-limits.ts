@@ -24,6 +24,10 @@ const usesOf = (key: string) => ({
 
 /** Counts a send of this kind against every limit, or returns false if one has had its share. */
 async function reserve(kind: string, limits: Limit[]): Promise<boolean> {
+  // Mongoose builds the expiry index when the model is compiled, and gives up silently if
+  // the connection is still opening then, as it is when Next loads the routes at startup.
+  // Once it exists, this is a no-op.
+  await EmailAllowance.createIndexes();
   const now = Date.now();
 
   await EmailAllowance.updateOne(

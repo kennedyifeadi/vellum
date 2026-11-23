@@ -39,6 +39,8 @@ function evaluate(expression: unknown, row: Row, self?: Send): unknown {
 export function keepEmailAllowancesInMemory() {
   const rows = new Map<string, Row>();
 
+  jest.spyOn(EmailAllowance, 'createIndexes').mockResolvedValue(undefined as never);
+
   jest.spyOn(EmailAllowance, 'updateOne').mockImplementation((async (filter: Row, update: Row, options?: { upsert?: boolean }) => {
     await Promise.resolve();
     const id = filter._id as string;

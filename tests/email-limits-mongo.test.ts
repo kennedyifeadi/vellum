@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { NextRequest } from 'next/server';
 import SupportTicket from '@/models/supportTicket';
+import { reserveWelcomeEmail } from '@/lib/email/daily-limits';
 import { describeEmailLimitsContract } from './helpers/emailLimitsContract';
 
 jest.mock('@getbrevo/brevo', () => jest.requireActual('./helpers/brevoMock'));
@@ -49,9 +50,14 @@ if (!uri) {
 
   describeEmailLimitsContract('a real MongoDB', () => SupportTicket.countDocuments());
 
-  it('expires rows in emailallowances by their expiresAt', async () => {
-    const indexes = await mongoose.connection.collection('emailallowances').indexes();
+  // Mongoose's own build, when the model is compiled, gives up if the connection is still
+  // opening, as it is when Next loads the routes at startup.
+  it('expires rows in emailallowances by their expiresAt, even without the model build', async () => {
+    const collection = mongoose.connection.collection('emailallowances');
+    await collection.drop().catch(() => undefined);
 
-    expect(indexes).toContainEqual(expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }));
+    expect(await reserveWelcomeEmail()).toBe(true);
+
+    expect(await collection.indexes()).toContainEqual(expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }));
   });
 }
