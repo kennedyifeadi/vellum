@@ -89,6 +89,12 @@ function createModel() {
       const { before } = await update(filter, changes, options?.upsert);
       return { modifiedCount: before ? 1 : 0 };
     },
+    async deleteMany(filter: Row) {
+      await Promise.resolve();
+      const before = rows.length;
+      rows = rows.filter((row) => !matches(row, filter));
+      return { deletedCount: before - rows.length };
+    },
     async deleteOne(filter: Row) {
       await Promise.resolve();
       const row = rows.find((candidate) => matches(candidate, filter));

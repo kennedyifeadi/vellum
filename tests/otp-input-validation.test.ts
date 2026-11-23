@@ -7,14 +7,14 @@ jest.mock('@/lib/db/mongoose', () => ({
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn().mockResolvedValue({
-    get: jest.fn(),
+    get: jest.fn(() => ({ value: 'b'.repeat(43) })),
     set: jest.fn(),
     delete: jest.fn(),
   }),
 }));
 
 jest.mock('@/lib/auth/otp', () => ({
-  generateOtp: jest.fn().mockResolvedValue('123456'),
+  generateOtp: jest.fn().mockResolvedValue('23456789'),
 }));
 
 jest.mock('@/lib/auth/otpRequestLimit', () => ({
@@ -112,7 +112,7 @@ describe('verify-otp input validation (issue #27)', () => {
 
   it('still verifies a well-formed request (happy path unchanged)', async () => {
     const res = await verifyOtp(
-      jsonRequest('/api/auth/verify-otp', { email: 'user@example.com', code: '123456' })
+      jsonRequest('/api/auth/verify-otp', { email: 'user@example.com', code: '2345-6789' })
     );
     expect(res.status).toBe(200);
   });

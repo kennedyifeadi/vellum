@@ -1,12 +1,21 @@
 import Otp from '@/models/otp';
 import crypto from 'crypto';
+import { CODE_ALPHABET, CODE_LENGTH } from '@/lib/auth/signInInput';
 
-export async function generateOtp(email: string) {
-  const code = crypto.randomInt(100000, 999999).toString();
+export function otpKey(browserId: string, email: string) {
+  return crypto.createHash('sha256').update(browserId + email).digest('hex');
+}
+
+function randomCode() {
+  return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join('');
+}
+
+export async function generateOtp(browserId: string, email: string) {
+  const code = randomCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
   await Otp.findOneAndUpdate(
-    { _id: email },
+    { _id: otpKey(browserId, email) },
     { code, expiresAt, attempts: 0 },
     { upsert: true, returnDocument: 'after' }
   );
