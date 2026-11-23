@@ -1,5 +1,5 @@
 import zlib from 'zlib';
-import sharp from 'sharp';
+import sharp, { type Sharp, type Stats } from 'sharp';
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import { compressPdf } from '../lib/pdf/compress';
 
@@ -113,7 +113,7 @@ interface ChannelStat {
   stdev: number;
 }
 
-function toStats(channels: sharp.Stats['channels']): ChannelStat[] {
+function toStats(channels: Stats['channels']): ChannelStat[] {
   return channels.map((c) => ({ mean: c.mean, stdev: c.stdev }));
 }
 
@@ -132,7 +132,7 @@ async function readImage(pdfBuffer: Buffer): Promise<{ filter: string; stats: Ch
   const filter = obj.dict.get(PDFName.of('Filter'))?.toString() ?? '';
   const contents = Buffer.from(obj.contents);
 
-  let pixels: sharp.Sharp;
+  let pixels: Sharp;
   if (filter === '/DCTDecode') {
     pixels = sharp(contents);
   } else {

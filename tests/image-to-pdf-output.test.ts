@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { ClientError } from '@/lib/convert/errors';
 import type { WorkerLimits } from '@/lib/convert/worker-job';
 import { convertImagesToPdf } from '@/lib/image/to-pdf';
@@ -106,9 +106,9 @@ describe('convertImagesToPdf — EXIF orientation', () => {
   });
 
   it.each([
-    ['PNG', (image: sharp.Sharp) => image.png()],
-    ['WebP', (image: sharp.Sharp) => image.webp({ lossless: true })],
-    ['TIFF', (image: sharp.Sharp) => image.tiff()],
+    ['PNG', (image: Sharp) => image.png()],
+    ['WebP', (image: Sharp) => image.webp({ lossless: true })],
+    ['TIFF', (image: Sharp) => image.tiff()],
   ])('shows a %s tagged with each orientation upright', async (_label, encode) => {
     const encoded = await Promise.all(ORIENTATIONS.map((orientation) => encode(orientedPicture(orientation)).toBuffer()));
     const tags = await Promise.all(encoded.map(async (image) => (await sharp(image).metadata()).orientation));
@@ -222,10 +222,10 @@ describe('convertImagesToPdf — formats', () => {
   }
 
   it.each([
-    ['WebP (lossless)', (image: sharp.Sharp) => image.webp({ lossless: true })],
-    ['WebP (lossy)', (image: sharp.Sharp) => image.webp({ quality: 80 })],
-    ['TIFF', (image: sharp.Sharp) => image.tiff({ compression: 'lzw' })],
-    ['AVIF', (image: sharp.Sharp) => image.avif({ quality: 70 })],
+    ['WebP (lossless)', (image: Sharp) => image.webp({ lossless: true })],
+    ['WebP (lossy)', (image: Sharp) => image.webp({ quality: 80 })],
+    ['TIFF', (image: Sharp) => image.tiff({ compression: 'lzw' })],
+    ['AVIF', (image: Sharp) => image.avif({ quality: 70 })],
   ])('converts %s with the pixels its decoder gives', async (_label, encode) => {
     await expectPixelsKept(await encode(photoLikePixels(64, 48)).toBuffer());
   });
@@ -376,9 +376,9 @@ describe('convertImagesToPdf — what is kept exactly', () => {
   });
 
   it.each([
-    ['true-colour', (image: sharp.Sharp) => image.png()],
-    ['palette', (image: sharp.Sharp) => image.png({ palette: true, colours: 16 })],
-    ['interlaced', (image: sharp.Sharp) => image.png({ progressive: true })],
+    ['true-colour', (image: Sharp) => image.png()],
+    ['palette', (image: Sharp) => image.png({ palette: true, colours: 16 })],
+    ['interlaced', (image: Sharp) => image.png({ progressive: true })],
   ])('keeps every pixel of a %s PNG', async (_label, encode) => {
     const encoded = await encode(photoLikePixels(64, 48)).toBuffer();
 
@@ -456,7 +456,7 @@ describe('convertImagesToPdf — colour', () => {
     return placed;
   }
 
-  function quadrants(): sharp.Sharp {
+  function quadrants(): Sharp {
     const width = 80;
     const height = 60;
     const pixels = Buffer.alloc(width * height * 3);
@@ -524,8 +524,8 @@ describe('convertImagesToPdf — colour', () => {
   });
 
   it.each([
-    ['Display P3', (image: sharp.Sharp) => image.withIccProfile('p3').jpeg({ quality: 90 })],
-    ['CMYK', (image: sharp.Sharp) => image.toColourspace('cmyk').jpeg({ quality: 90 })],
+    ['Display P3', (image: Sharp) => image.withIccProfile('p3').jpeg({ quality: 90 })],
+    ['CMYK', (image: Sharp) => image.toColourspace('cmyk').jpeg({ quality: 90 })],
   ])('keeps a %s photograph within twice its size and close to its colour-managed decode', async (_label, encode) => {
     const photo = await encode(photoLikePixels(400, 300).blur(1.2)).toBuffer();
 

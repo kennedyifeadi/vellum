@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { ClientError } from '@/lib/convert/errors';
 import { acceptImageToCompress, compressImage, compressionLevel, type CompressionLevel } from '@/lib/image/compress';
 import {
@@ -199,8 +199,8 @@ describe('compressImage — orientation, colour and metadata', () => {
   });
 
   it.each([
-    ['PNG', (image: sharp.Sharp) => image.png({ compressionLevel: 0 })],
-    ['WebP', (image: sharp.Sharp) => image.webp({ lossless: true })],
+    ['PNG', (image: Sharp) => image.png({ compressionLevel: 0 })],
+    ['WebP', (image: Sharp) => image.webp({ lossless: true })],
   ])('turns a %s with EXIF orientation 6 upright', async (_format, encode) => {
     const input = await encode(orientedPicture(6)).toBuffer();
     expect((await sharp(input).metadata()).orientation).toBe(6);
@@ -215,9 +215,9 @@ describe('compressImage — orientation, colour and metadata', () => {
   // The reference is the sRGB colour the patch was authored in before lcms converted it
   // to Display P3 for the file (the matrix cross-check is in image-to-png.test.ts).
   it.each([
-    ['JPEG', (image: sharp.Sharp) => image.jpeg({ quality: 100, chromaSubsampling: '4:4:4' }), 'medium', 3],
-    ['PNG', (image: sharp.Sharp) => image.png({ compressionLevel: 0 }), 'low', 1],
-    ['WebP', (image: sharp.Sharp) => image.webp({ lossless: true }), 'low', 3],
+    ['JPEG', (image: Sharp) => image.jpeg({ quality: 100, chromaSubsampling: '4:4:4' }), 'medium', 3],
+    ['PNG', (image: Sharp) => image.png({ compressionLevel: 0 }), 'low', 1],
+    ['WebP', (image: Sharp) => image.webp({ lossless: true }), 'low', 3],
   ] as const)('converts a Display P3 %s to sRGB', async (_format, encode, level, tolerance) => {
     const input = await encode(displayP3Patch()).toBuffer();
 

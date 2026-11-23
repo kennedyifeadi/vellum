@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import type { PngOptions, Sharp } from 'sharp';
 import {
   acceptImage,
   damagedImageError,
@@ -17,7 +17,7 @@ const QUALITY: Record<CompressionLevel, number> = { low: 90, medium: 80, high: 6
 // PNG has no lossy mode of its own: `low` re-encodes losslessly, and the other two
 // reduce the image to a palette, which keeps transparency. A palette quality alone
 // barely changes the size of a photo, so `high` also allows fewer colours.
-const PNG_OPTIONS: Record<CompressionLevel, sharp.PngOptions> = {
+const PNG_OPTIONS: Record<CompressionLevel, PngOptions> = {
   low: { compressionLevel: 9, adaptiveFiltering: true },
   medium: { compressionLevel: 9, palette: true, quality: 80 },
   high: { compressionLevel: 9, palette: true, quality: 60, colours: 64 },
@@ -40,7 +40,7 @@ export function acceptImageToCompress(bytes: Buffer, imageNumber: number): Promi
   return acceptImage(bytes, imageNumber, ['jpeg', 'png', 'webp']);
 }
 
-function encodePng(pipeline: sharp.Sharp, image: AcceptedImage, level: CompressionLevel): sharp.Sharp {
+function encodePng(pipeline: Sharp, image: AcceptedImage, level: CompressionLevel): Sharp {
   // Lossless means keeping all 16 bits of a 16-bit PNG, which sharp otherwise reduces to 8.
   if (level === 'low' && image.depth === 'ushort') {
     pipeline.toColourspace(image.space === 'grey16' ? 'grey16' : 'rgb16');
@@ -48,7 +48,7 @@ function encodePng(pipeline: sharp.Sharp, image: AcceptedImage, level: Compressi
   return pipeline.png(PNG_OPTIONS[level]);
 }
 
-function encode(image: AcceptedImage, level: CompressionLevel): sharp.Sharp {
+function encode(image: AcceptedImage, level: CompressionLevel): Sharp {
   const pipeline = openAcceptedImage(image);
   switch (image.format) {
     case 'jpeg':
