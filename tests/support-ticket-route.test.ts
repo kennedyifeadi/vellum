@@ -57,7 +57,7 @@ function streamedRequest(kilobytes: number, headers: Record<string, string> = {}
       controller.enqueue(new Uint8Array(1024).fill(32));
     },
   }, { highWaterMark: 0 });
-  const init = { method: 'POST', headers, body, duplex: 'half' };
+  const init = { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body, duplex: 'half' };
   const request = new NextRequest(ROUTE_URL, init as ConstructorParameters<typeof NextRequest>[1]);
   return { request, bytesRead: () => bytesRead };
 }
@@ -334,6 +334,54 @@ describe('validation', () => {
 
     expect((await POST(request)).status).toBe(400);
     expect(bytesRead()).toBeLessThanOrEqual(MAX_BODY_BYTES + 2 * 1024);
+  });
+});
+
+describe('content type', () => {
+  const NOT_JSON = [
+    ['no content type', null],
+    ['text/plain', 'text/plain'],
+    ['a url-encoded form', 'application/x-www-form-urlencoded'],
+    ['a multipart form', 'multipart/form-data; boundary=x'],
+    ['text/json', 'text/json'],
+    ['a JSON patch', 'application/json-patch+json'],
+    ['a longer name', 'application/jsonx'],
+    ['a list', 'application/json, text/plain'],
+  ] as const;
+
+  function sendAs(contentType: string | null, headers: Record<string, string> = {}) {
+    const { request, bytesRead } = streamedRequest(1, headers);
+    if (contentType === null) request.headers.delete('content-type');
+    else request.headers.set('content-type', contentType);
+    return { response: POST(request), bytesRead };
+  }
+
+  it.each(NOT_JSON)('answers 415 to %s without reading the body', async (_label, contentType) => {
+    const { response, bytesRead } = sendAs(contentType);
+
+    const res = await response;
+
+    expect(res.status).toBe(415);
+    expect((await res.json()).error).toEqual(expect.any(String));
+    expect(bytesRead()).toBe(0);
+    expect(savedTickets).toEqual([]);
+    expect(sendTransacEmail).not.toHaveBeenCalled();
+  });
+
+  it.each(['application/json; charset=utf-8', 'application/json;charset=UTF-8', 'Application/JSON'])(
+    'accepts %s',
+    async (contentType) => {
+      expect((await submit(GUEST, { 'content-type': contentType })).status).toBe(201);
+    },
+  );
+
+  it("does not spend the form's limit", async () => {
+    env.CLIENT_IP_HEADER = 'x-real-ip';
+    for (let i = 0; i < 6; i++) {
+      expect((await sendAs('text/plain', { 'x-real-ip': '203.0.113.1' }).response).status).toBe(415);
+    }
+
+    expect((await submit(GUEST, { 'x-real-ip': '203.0.113.1' })).status).toBe(201);
   });
 });
 

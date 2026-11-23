@@ -16,6 +16,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 const BODY_TOO_LARGE_MESSAGE = 'Your message is too large. Please shorten it and try again.';
 const INVALID_BODY_MESSAGE = 'Invalid JSON body.';
 const UNDELIVERED_MESSAGE = 'Your message could not be delivered. Please try again later.';
+const NOT_JSON_MESSAGE = 'Please send the message as JSON.';
 const SENDER_NAME = 'Vellum Support';
 
 interface Submitter {
@@ -26,6 +27,10 @@ interface Submitter {
 }
 
 const generateTicketId = () => `VEL-${randomBytes(6).toString('hex').toUpperCase()}`;
+
+// Another site's page can post text/plain or a form to this route without asking first;
+// JSON needs a preflight, which the route does not grant.
+const isJson = (req: NextRequest) => /^application\/json\s*(;|$)/i.test(req.headers.get('content-type') ?? '');
 
 async function resolveSubmitter(req: NextRequest, body: Record<string, unknown>): Promise<Submitter> {
   const userId = await getAuthUserId(req);
@@ -85,6 +90,10 @@ async function deliver(ticketId: string, submitter: Submitter, content: TicketCo
 
 export async function POST(req: NextRequest) {
   try {
+    // Before the limit, so another site's posts cannot spend a visitor's allowance.
+    if (!isJson(req)) {
+      return NextResponse.json({ error: NOT_JSON_MESSAGE }, { status: 415 });
+    }
     assertWithinSupportRateLimit(req);
 
     const body = await readJsonObject(
