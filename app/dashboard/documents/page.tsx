@@ -158,7 +158,7 @@ export default function DocumentsPage() {
     if (res.ok) {
       refreshData();
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
-      showToast('File deleted successfully!', 'success');
+      showToast('File removed.', 'success');
     } else {
       showToast('Failed to delete file.', 'error');
     }
@@ -168,7 +168,7 @@ export default function DocumentsPage() {
     await Promise.all(Array.from(selected).map(id => fetch(`/api/documents?id=${id}`, { method: 'DELETE' })));
     refreshData();
     setSelected(new Set());
-    showToast('Selected files deleted.', 'success');
+    showToast('Selected files removed.', 'success');
   };
 
   // ── Quick convert ──

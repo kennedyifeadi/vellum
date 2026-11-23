@@ -338,6 +338,40 @@ describe('the video job worker: outcomes and files', () => {
     expect(storage.keys()).toEqual([]);
   });
 
+  it('records the output of a cancelled job that it cannot delete, and retries in its sweep', async () => {
+    const id = await enqueue();
+    const running = worker();
+    running.start();
+    await settle();
+
+    await cancelVideoJob(store, storage, id, Date.now());
+    storage.failDeletes = true;
+    encoder.encodeOf(id).succeed();
+    await settle();
+    expect(await store.get(id)).toMatchObject({ status: 'cancelled', outputKey: `video-jobs/${id}/output.mp4` });
+
+    storage.failDeletes = false;
+    await running.sweep();
+    expect(storage.keys()).toEqual([]);
+    expect(await store.get(id)).toMatchObject({ status: 'cancelled', outputKey: null });
+  });
+
+  it('deletes an output that was stored although storing it reported a failure', async () => {
+    const id = await enqueue();
+    const put = storage.put.bind(storage);
+    jest.spyOn(storage, 'put').mockImplementation(async (key, data) => {
+      await put(key, data);
+      throw new Error('response lost');
+    });
+    worker().start();
+    await settle();
+    encoder.encodeOf(id).succeed();
+    await settle();
+
+    expect(await status(id)).toBe('failed');
+    expect(storage.keys()).toEqual([]);
+  });
+
   it('deletes a result after 24 hours, in its sweep', async () => {
     const id = await enqueue();
     worker().start();

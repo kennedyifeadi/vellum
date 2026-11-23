@@ -55,8 +55,11 @@ export class LocalDiskStorage implements StorageDriver {
 
   async delete(key: string): Promise<void> {
     const filePath = this.resolve(key);
-    if (fs.existsSync(filePath)) {
+    try {
       fs.unlinkSync(filePath);
+    } catch (error) {
+      // Already gone, perhaps deleted by another process's sweep at the same moment.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
 

@@ -48,6 +48,7 @@ function endedJob(overrides: Partial<VideoJob>): VideoJob {
     claimId: null,
     attempts: 1,
     resultExpiresAt: new Date(),
+    discardedAt: null,
     ...overrides,
   };
 }

@@ -7,6 +7,10 @@ import {
 } from '@aws-sdk/client-s3';
 import type { StorageDriver, StoredFileStream } from './types';
 
+// The client has no request timeout of its own, and one unanswered delete would stall the
+// retention sweep or an account deletion for good.
+const DELETE_TIMEOUT_MS = 30 * 1000;
+
 function isNotFoundError(error: unknown): boolean {
   const name = (error as { name?: string })?.name;
   return name === 'NotFound' || name === 'NoSuchKey';
@@ -75,7 +79,9 @@ export class S3Storage implements StorageDriver {
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }), {
+      abortSignal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
+    });
   }
 
   async exists(key: string): Promise<boolean> {

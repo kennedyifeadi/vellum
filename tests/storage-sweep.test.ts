@@ -80,7 +80,7 @@ describe('local storage sweep', () => {
     expect(stored(conversion!.diskFileName)).toBe(true);
   });
 
-  it('deletes an expired document and an orphaned conversion, keeping live ones', async () => {
+  it('deletes a document and a conversion that no row records, keeping live ones', async () => {
     await putAged('docs/live.pdf', 2 * HOUR_MS);
     await putAged('docs/expired.pdf', 2 * HOUR_MS);
     await putAged('live.pdf', 2 * HOUR_MS);

@@ -5,6 +5,7 @@ import dbConnect from '@/lib/db/mongoose';
 import { getStorage } from '@/lib/storage';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
+import { unexpired } from '@/lib/stored-files';
 
 // A stored document's type is whatever its uploader claimed, so it is only passed on for
 // types a browser will not run as a page or script; anything else is served as bytes.
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     await dbConnect();
     
-    const doc = await UserDocumentModel.findOne({ _id: id, userId });
+    const doc = await UserDocumentModel.findOne({ _id: id, userId, ...unexpired() });
     if (!doc) return NextResponse.json({ error: 'Document not found' }, { status: 404 });
 
     const storage = getStorage();

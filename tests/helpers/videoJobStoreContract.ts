@@ -173,14 +173,14 @@ export function describeVideoJobStoreContract(name: string, makeStore: () => Vid
       await claim(store, 1, 'c');
       await store.finish(job.id, 'c', RESULT, at(2), at(100));
 
-      expect(await store.findExpiredResults(at(99))).toEqual([]);
-      expect((await store.findExpiredResults(at(100))).map((j) => j.id)).toEqual([job.id]);
+      expect(await store.findDeletableOutputs(at(99))).toEqual([]);
+      expect((await store.findDeletableOutputs(at(100))).map((j) => j.id)).toEqual([job.id]);
       expect((await store.findLeftoverInputs()).map((j) => j.id)).toEqual([job.id]);
 
       await store.forgetFiles(job.id, { input: true });
       expect(await store.findLeftoverInputs()).toEqual([]);
       await store.forgetFiles(job.id, { output: true });
-      expect(await store.findExpiredResults(at(200))).toEqual([]);
+      expect(await store.findDeletableOutputs(at(200))).toEqual([]);
       expect(await store.get(job.id)).toMatchObject({ status: 'done', inputKey: null, outputKey: null });
     });
 
@@ -190,6 +190,77 @@ export function describeVideoJobStoreContract(name: string, makeStore: () => Vid
       await claim(store, 2, 'c');
 
       expect(await store.findLeftoverInputs()).toEqual([]);
+    });
+
+    it("discards an owner's jobs in every status, out of the TTL's reach and beyond their workers'", async () => {
+      const [queued, running, done, cancelled] = [newJob(), newJob(), newJob(), newJob()];
+      const guest = newJob({ guest: true });
+      const other = newJob({ ownerId: 'user-2' });
+      await store.create(done, at(0));
+      await store.create(running, at(1));
+      for (const job of [queued, cancelled, guest, other]) await store.create(job, at(2));
+      await claim(store, 3, 'claim-done');
+      await store.finish(done.id, 'claim-done', RESULT, at(4), LATER);
+      await claim(store, 5, 'claim-running');
+      await store.cancel(cancelled.id, at(6), LATER);
+
+      const discarded = await store.discardOwnerJobs('user-1', at(7));
+
+      const byId = (id: string) => discarded.find((job) => job.id === id);
+      expect(discarded.map((job) => job.id).sort()).toEqual([queued, running, done, cancelled].map((job) => job.id).sort());
+      for (const job of discarded) {
+        expect(job).toMatchObject({ discardedAt: at(7), resultExpiresAt: null, claimId: null, leaseUntil: null });
+      }
+      expect(byId(queued.id)).toMatchObject({ status: 'cancelled', finishedAt: at(7) });
+      expect(byId(running.id)).toMatchObject({ status: 'cancelled', finishedAt: at(7) });
+      expect(byId(done.id)).toMatchObject({ status: 'done', outputKey: RESULT.outputKey, finishedAt: at(4) });
+      expect(byId(cancelled.id)).toMatchObject({ status: 'cancelled', finishedAt: at(6) });
+      expect(await store.renewLease(running.id, 'claim-running', at(100))).toBe(false);
+      expect(await store.finish(running.id, 'claim-running', RESULT, at(8), LATER)).toBeNull();
+      expect((await store.findDiscarded()).map((job) => job.id).sort()).toEqual(discarded.map((job) => job.id).sort());
+      expect(await store.get(guest.id)).toMatchObject({ status: 'queued', discardedAt: null });
+      expect(await store.get(other.id)).toMatchObject({ status: 'queued', discardedAt: null });
+    });
+
+    it('removes a discarded job only once it records no file', async () => {
+      const job = newJob();
+      const live = newJob({ ownerId: 'user-2', inputKey: null });
+      await store.create(job, at(0));
+      await store.create(live, at(1));
+      await store.discardOwnerJobs('user-1', at(2));
+
+      await store.removeDiscarded(job.id);
+      expect(await store.get(job.id)).not.toBeNull();
+
+      await store.forgetFiles(job.id, { input: true });
+      await store.removeDiscarded(job.id);
+      await store.removeDiscarded(live.id);
+      expect(await store.get(job.id)).toBeNull();
+      expect(await store.get(live.id)).not.toBeNull();
+    });
+
+    it('records an undeleted file on its job, or on a discarded one when the row is gone', async () => {
+      const cancelled = newJob();
+      const done = newJob();
+      const missing = newJob();
+      await store.create(done, at(0));
+      await claim(store, 1, 'claim-done');
+      await store.finish(done.id, 'claim-done', RESULT, at(2), LATER);
+      await store.create(cancelled, at(3));
+      await store.cancel(cancelled.id, at(4), LATER);
+
+      for (const job of [cancelled, done, missing]) await store.keepUndeleted(job, 'outputKey', `kept-${job.id}`, at(5));
+
+      expect(await store.get(cancelled.id)).toMatchObject({ outputKey: `kept-${cancelled.id}`, discardedAt: null });
+      expect(await store.get(done.id)).toMatchObject({ outputKey: RESULT.outputKey });
+      expect(await store.get(missing.id)).toMatchObject({
+        status: 'cancelled',
+        inputKey: null,
+        outputKey: `kept-${missing.id}`,
+        discardedAt: at(5),
+        resultExpiresAt: null,
+      });
+      expect((await store.findDeletableOutputs(at(6))).map((job) => job.id).sort()).toEqual([cancelled.id, missing.id].sort());
     });
   });
 }

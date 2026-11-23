@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
 import Conversion from '@/models/conversion';
 import UserDocumentModel from '@/models/userDocument';
+import { unexpired } from '@/lib/stored-files';
 
-/** The bytes counted against a user's storage quota: conversion history and stored documents. */
+/** The bytes counted against a user's storage quota: unexpired conversion history and stored documents. */
 export async function usedStorageBytes(userId: string): Promise<number> {
   const totalFileSize = [
-    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+    { $match: { userId: new mongoose.Types.ObjectId(userId), ...unexpired() } },
     { $group: { _id: null, total: { $sum: '$fileSize' } } },
   ];
   const [[conversions], [documents]] = await Promise.all([

@@ -142,6 +142,18 @@ describe('LocalDiskStorage', () => {
     await expect(storage.delete('file.pdf')).resolves.not.toThrow();
   });
 
+  it('is done when another process deleted the file first', async () => {
+    await storage.put('file.pdf', Buffer.from('data'));
+    const unlink = fs.unlinkSync;
+    const spy = jest.spyOn(fs, 'unlinkSync').mockImplementationOnce((target) => {
+      unlink(target);
+      unlink(target);
+    });
+
+    await expect(storage.delete('file.pdf')).resolves.toBeUndefined();
+    spy.mockRestore();
+  });
+
   describe('keys that resolve outside the storage root', () => {
     const escapingKeys = [
       '../outside.pdf',
@@ -342,6 +354,16 @@ describe('S3Storage', () => {
     const storage = new S3Storage();
 
     await expect(storage.put('file.pdf', Buffer.from('data'))).rejects.toThrow('S3 unavailable');
+  });
+
+  it('gives up on a delete that the bucket never answers, so a sweep cannot hang on it', async () => {
+    const timeout = jest.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort(new Error('timed out')));
+    sendMock.mockImplementationOnce((_command, options) =>
+      options?.abortSignal?.aborted ? Promise.reject(options.abortSignal.reason) : Promise.resolve({}),
+    );
+
+    await expect(new S3Storage().delete('file.pdf')).rejects.toThrow('timed out');
+    timeout.mockRestore();
   });
 
   it('sends a DeleteObjectCommand for delete()', async () => {

@@ -20,8 +20,8 @@ const UserDocumentSchema: Schema = new Schema({
   expiresAt:    { type: Date, required: true },
 });
 
-// MongoDB TTL index — auto-deletes expired records
-UserDocumentSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// Not a TTL index: lib/retention-sweep.ts deletes the file, and only then the row.
+UserDocumentSchema.index({ expiresAt: 1 });
 
 const UserDocumentModel =
   mongoose.models.UserDocument ||
