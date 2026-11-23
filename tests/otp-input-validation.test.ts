@@ -18,11 +18,14 @@ jest.mock('@/lib/auth/otp', () => ({
 }));
 
 jest.mock('@/lib/auth/otpRequestLimit', () => ({
-  reserveOtpRequest: jest.fn().mockResolvedValue(true),
+  sendWithinOtpLimits: jest.fn(async (_request: unknown, send: () => Promise<void>) => {
+    await send();
+    return true;
+  }),
 }));
 
 jest.mock('@/lib/auth/verifyOtp', () => ({
-  verifyOtp: jest.fn().mockResolvedValue(true),
+  verifyOtp: jest.fn().mockResolvedValue('device-id'),
 }));
 
 jest.mock('@/lib/auth/jwt', () => ({

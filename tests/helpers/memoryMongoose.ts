@@ -28,6 +28,10 @@ function meets(value: unknown, condition: unknown): boolean {
 const matches = (row: Row, filter: Row) =>
   Object.entries(filter).every(([path, condition]) => meets(valueAt(row, path), condition));
 
+// $pull takes a value, or for a list of objects a filter on their fields.
+const pulls = (item: unknown, condition: unknown) =>
+  isObject(item) && isObject(condition) ? matches(item, condition) : meets(item, condition);
+
 function applyUpdate(row: Row, update: Row) {
   for (const [operator, fields] of Object.entries(update)) {
     if (!operator.startsWith('$')) {
@@ -39,7 +43,7 @@ function applyUpdate(row: Row, update: Row) {
       if (operator === '$set') row[key] = value;
       else if (operator === '$inc') row[key] = Number(row[key] ?? 0) + Number(value);
       else if (operator === '$push') row[key] = [...list, value];
-      else if (operator === '$pull') row[key] = list.filter((item) => !meets(item, value));
+      else if (operator === '$pull') row[key] = list.filter((item) => !pulls(item, value));
       else throw new Error(`memoryMongoose does not support ${operator}`);
     }
   }

@@ -9,11 +9,14 @@ import User from '@/models/user';
 import {
   ALPHABET,
   Browser,
+  DAY_MS,
   EMAILED_CODE,
+  KNOWN_BROWSER_SECONDS,
   MINUTE_MS,
   codesSentTo,
   controlClock,
   installBrowsers,
+  knownBrowser,
   newEmail,
   post,
   receiveCode,
@@ -24,6 +27,7 @@ import {
   sentCount,
   signIn,
 } from './signInBrowsers';
+import { describeSendLimits } from './signInLimitsContract';
 
 // The cases email-code sign-in must pass on any database. The test file that calls this
 // mocks next/headers, @/lib/db/mongoose and @/lib/auth/jwt, and provides the database.
@@ -171,10 +175,10 @@ function describeInput() {
       const code = await receiveCode(browser, email);
       const browserId = browser.cookieLasting(BROWSER_SECONDS)!.value;
 
-      expect(await verifyOtp(browserId, email, 23456789)).toBe(false);
-      expect(await verifyOtp(browserId, {}, code)).toBe(false);
-      expect(await verifyOtp({}, email, code)).toBe(false);
-      expect(await verifyOtp(browserId, email, code)).toBe(true);
+      expect(await verifyOtp(browserId, email, 23456789)).toBeNull();
+      expect(await verifyOtp(browserId, {}, code)).toBeNull();
+      expect(await verifyOtp({}, email, code)).toBeNull();
+      expect(await verifyOtp(browserId, email, code)).toEqual(expect.any(String));
     });
 
     it('accepts an email of 254 characters', async () => {
@@ -324,7 +328,7 @@ function describeCodes() {
       const [browser, email] = [new Browser(), newEmail()];
       await receiveCode(browser, newEmail());
       const expiresAt = new Date(Date.now() + 10 * MINUTE_MS);
-      await Otp.create({ _id: email, code: '23456789', attempts: 0, expiresAt });
+      await Otp.create({ _id: email, code: '23456789', deviceId: 'device', attempts: 0, expiresAt });
 
       expect((await signIn(browser, email, VALID_CODE)).status).toBe(401);
     });
@@ -456,47 +460,142 @@ function describeBrowserBinding() {
   });
 }
 
-function describeCodeRequests() {
-  describe('code requests', () => {
-    it('sends five codes to an address, then refuses without replacing the last', async () => {
-      const [browser, email] = [new Browser(), newEmail()];
-      let code = '';
-      for (let i = 0; i < 5; i++) code = await receiveCode(browser, email);
+function describeKnownBrowser() {
+  describe('known browser', () => {
+    it.each([
+      ['test', false],
+      ['production', true],
+    ])('is remembered for 90 days in %s, with secure %p', async (env, secure) => {
+      setNodeEnv(env);
+      const browser = await knownBrowser(newEmail());
 
-      expect((await requestCode(browser, email)).status).toBe(429);
-      expect(codesSentTo(email)).toHaveLength(5);
-      expect((await signIn(browser, email, code)).status).toBe(200);
+      expect(browser.cookieLasting(KNOWN_BROWSER_SECONDS)!.options).toEqual({
+        httpOnly: true,
+        secure,
+        sameSite: 'lax',
+        path: '/api/auth',
+        maxAge: KNOWN_BROWSER_SECONDS,
+      });
     });
 
-    it('sends five codes when twelve requests race', async () => {
+    it('is not remembered before a successful sign-in', async () => {
       const [browser, email] = [new Browser(), newEmail()];
+      const code = await receiveCode(browser, email);
+      await enterWrongCodes(browser, email, code, 1);
 
-      expect(await requestAtOnce(12, () => requestCode(browser, email))).toEqual([
-        ...repeated(5, 200),
-        ...repeated(7, 429),
-      ]);
-      expect(sentCount()).toBe(5);
+      expect(browser.cookieLasting(KNOWN_BROWSER_SECONDS)).toBeUndefined();
     });
 
-    it('counts an address once whatever its letter case', async () => {
-      const [browser, email] = [new Browser(), newEmail()];
-      for (let i = 0; i < 5; i++) await receiveCode(browser, email);
+    it('does not show the email', async () => {
+      const email = newEmail();
+      const { name, value } = (await knownBrowser(email)).cookieLasting(KNOWN_BROWSER_SECONDS)!;
 
-      expect((await requestCode(browser, email.toUpperCase())).status).toBe(429);
+      const readable = [name, value, ...value.split('.').map((part) => Buffer.from(part, 'base64url').toString())];
+      const hashes = (['hex', 'base64url'] as const).map((encoding) =>
+        createHash('sha256').update(email).digest(encoding).slice(0, 16),
+      );
+      for (const part of readable) {
+        for (const giveaway of [email.split('@')[0], 'example.com', ...hashes]) expect(part).not.toContain(giveaway);
+      }
     });
 
-    it('allows five in any 15 minutes', async () => {
+    it('has a random id for each browser', async () => {
+      const email = newEmail();
+      const [first, second] = [await knownBrowser(email), await knownBrowser(email)];
+
+      const deviceOf = (browser: Browser) => browser.cookieLasting(KNOWN_BROWSER_SECONDS)!.value.split('.')[0];
+
+      expect(deviceOf(first)).not.toBe(deviceOf(second));
+    });
+
+    it('stays known for several emails at once', async () => {
+      const [browser, first, second] = [new Browser(), newEmail(), newEmail()];
+      for (const email of [first, second]) await signIn(browser, email, await receiveCode(browser, email));
+
+      for (const email of [first, second]) {
+        expect(await requestInTurn(5, () => requestCode(browser, email))).toEqual(repeated(5, 200));
+      }
+    });
+
+    const altered: [string, (value: string) => string][] = [
+      ['an altered device id', (value) => (value[0] === 'a' ? 'b' : 'a') + value.slice(1)],
+      ['a later expiry', (value) => value.replace(/\.(\d+)\./, (_, at) => `.${Number(at) + DAY_MS}.`)],
+      ['an altered signature', (value) => value.replace(/[^.]+$/, (mac) => [...mac].reverse().join(''))],
+      ['no signature', (value) => value.slice(0, value.lastIndexOf('.'))],
+      ['an extra part', (value) => `${value}.x`],
+      ['nothing in it', () => ''],
+      ['a session token in it', () => 'test-token'],
+    ];
+
+    it.each(altered)('is not known with %s', async (_kind, alter) => {
+      const email = newEmail();
+      const browser = await knownBrowser(email);
+      const { name, value, options } = browser.cookieLasting(KNOWN_BROWSER_SECONDS)!;
+      browser.jar.set(name, { value: alter(value), options });
+
+      expect(await requestInTurn(4, () => requestCode(browser, email))).toEqual([200, 200, 200, 429]);
+    });
+
+    it('is not known with the cookie of another email', async () => {
+      const [email, other] = [newEmail(), newEmail()];
+      const browser = await knownBrowser(email);
+      const { name, options } = browser.cookieLasting(KNOWN_BROWSER_SECONDS)!;
+      const { value } = (await knownBrowser(other)).cookieLasting(KNOWN_BROWSER_SECONDS)!;
+      browser.jar.set(name, { value, options });
+
+      expect(await requestInTurn(4, () => requestCode(browser, email))).toEqual([200, 200, 200, 429]);
+    });
+
+    it('is not known under another secret', async () => {
+      const email = newEmail();
+      const browser = await knownBrowser(email);
+      process.env.JWT_SECRET = 'another-test-secret';
+
+      expect(await requestInTurn(4, () => requestCode(browser, email))).toEqual([200, 200, 200, 429]);
+    });
+
+    it.each([
+      ['just before', 90 * DAY_MS - 1, [200, 200, 200, 200]],
+      ['when', 90 * DAY_MS, [200, 200, 200, 429]],
+    ])('%s its 90 days end, answers four requests with %p', async (_kind, at, expected) => {
       const moveTo = controlClock();
-      const [browser, email] = [new Browser(), newEmail()];
-      await receiveCode(browser, email);
-      moveTo(14 * MINUTE_MS);
-      for (let i = 0; i < 4; i++) await receiveCode(browser, email);
+      const email = newEmail();
+      const browser = await knownBrowser(email);
 
-      moveTo(15 * MINUTE_MS - 1);
-      expect((await requestCode(browser, email)).status).toBe(429);
+      moveTo(at as number);
 
-      moveTo(15 * MINUTE_MS);
-      expect(await requestInTurn(2, () => requestCode(browser, email))).toEqual([200, 429]);
+      expect(await requestInTurn(4, () => requestCode(browser, email))).toEqual(expected);
+    });
+
+    it('starts another 90 days with each sign-in', async () => {
+      const moveTo = controlClock();
+      const email = newEmail();
+      const browser = await knownBrowser(email);
+      moveTo(60 * DAY_MS);
+      await signIn(browser, email, await receiveCode(browser, email));
+
+      moveTo(120 * DAY_MS);
+
+      expect(await requestInTurn(4, () => requestCode(browser, email))).toEqual(repeated(4, 200));
+    });
+
+    it('cannot sign in without a code', async () => {
+      const email = newEmail();
+      const browser = await knownBrowser(email);
+      browser.jar.delete('auth-token');
+
+      expect((await signIn(browser, email, VALID_CODE)).status).toBe(401);
+      expect(browser.signedIn).toBe(false);
+    });
+
+    it('cannot use a code another browser asked for', async () => {
+      const [first, email] = [new Browser(), newEmail()];
+      const second = await knownBrowser(email);
+      second.jar.delete('auth-token');
+      const code = await receiveCode(first, email);
+
+      expect((await signIn(second, email, code)).status).toBe(401);
+      expect(second.signedIn).toBe(false);
     });
   });
 }
@@ -551,7 +650,7 @@ function describeDelivery() {
 
 export function describeSignInContract(database: string) {
   describe(`email-code sign-in on ${database}`, () => {
-    const { NODE_ENV, BREVO_API_KEY, EMAIL_USER } = process.env;
+    const { NODE_ENV, BREVO_API_KEY, EMAIL_USER, JWT_SECRET, CLIENT_IP_HEADER, CLIENT_IP_HEADER_ENTRY } = process.env;
 
     beforeEach(async () => {
       // The site-wide count is shared, so no test may inherit another's sends.
@@ -560,13 +659,16 @@ export function describeSignInContract(database: string) {
       installBrowsers();
       process.env.BREVO_API_KEY = 'test-placeholder';
       process.env.EMAIL_USER = 'no-reply@example.com';
+      process.env.JWT_SECRET = 'test-secret-for-sign-in';
+      process.env.CLIENT_IP_HEADER = 'x-real-ip';
+      delete process.env.CLIENT_IP_HEADER_ENTRY;
     });
 
     afterEach(() => {
       jest.useRealTimers();
       jest.restoreAllMocks();
       setNodeEnv(NODE_ENV);
-      const restored = { BREVO_API_KEY, EMAIL_USER };
+      const restored = { BREVO_API_KEY, EMAIL_USER, JWT_SECRET, CLIENT_IP_HEADER, CLIENT_IP_HEADER_ENTRY };
       for (const [name, value] of Object.entries(restored)) {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
@@ -576,7 +678,8 @@ export function describeSignInContract(database: string) {
     describeInput();
     describeCodes();
     describeBrowserBinding();
-    describeCodeRequests();
+    describeKnownBrowser();
+    describeSendLimits();
     describeDelivery();
   });
 }

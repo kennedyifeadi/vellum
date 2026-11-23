@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/auth/verifyOtp';
-import { readBrowserId } from '@/lib/auth/signInCookies';
+import { readBrowserId, setKnownDevice } from '@/lib/auth/signInCookies';
 import { isJsonRequest, isValidEmail, parseOtpCode } from '@/lib/auth/signInInput';
 import { createToken } from '@/lib/auth/jwt';
 import { buildSessionEntry } from '@/lib/auth/session';
@@ -38,9 +38,9 @@ export async function POST(req: NextRequest) {
     }
 
     await dbConnect();
-    const isValid = await verifyOtp(browserId, email, code);
+    const deviceId = await verifyOtp(browserId, email, code);
 
-    if (!isValid) {
+    if (!deviceId) {
       return NextResponse.json({ error: 'Invalid or expired OTP.' }, { status: 401 });
     }
 
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       $push: { activeSessions: buildSessionEntry(req) },
     });
 
+    setKnownDevice(cookieStore, email, deviceId);
     cookieStore.set('auth-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

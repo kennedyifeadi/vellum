@@ -5,6 +5,8 @@ const OtpSchema = new mongoose.Schema({
   // address, and only one even when its requests race.
   _id: { type: String, required: true },
   code: { type: String, required: true },
+  // The device the browser becomes known as if the code signs it in.
+  deviceId: { type: String, required: true },
   expiresAt: { type: Date, required: true },
   attempts: { type: Number, required: true },
 });

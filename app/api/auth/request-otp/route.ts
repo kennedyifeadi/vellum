@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { signInAddress } from '@/lib/auth/clientAddress';
 import { generateOtp } from '@/lib/auth/otp';
-import { reserveOtpRequest } from '@/lib/auth/otpRequestLimit';
-import { createBrowserId, readBrowserId, setBrowserId } from '@/lib/auth/signInCookies';
+import { sendWithinOtpLimits } from '@/lib/auth/otpRequestLimit';
+import { createBrowserId, readBrowserId, readKnownDevice, setBrowserId } from '@/lib/auth/signInCookies';
 import { formatOtpCode, isJsonRequest, isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
 
@@ -68,13 +69,17 @@ export async function POST(req: NextRequest) {
 
     const cookieStore = await cookies();
     const browserId = readBrowserId(cookieStore) ?? createBrowserId();
+    const knownDeviceId = readKnownDevice(cookieStore, email);
 
     await dbConnect();
-    if (!(await reserveOtpRequest(email))) {
+    const sender = { email, address: signInAddress(req.headers), knownDeviceId };
+    const sent = await sendWithinOtpLimits(sender, async () => {
+      const code = await generateOtp(browserId, email, knownDeviceId);
+      await deliverCode(email, formatOtpCode(code), canSendEmail);
+    });
+    if (!sent) {
       return NextResponse.json({ error: 'Too many codes requested. Please try again later.' }, { status: 429 });
     }
-    const code = await generateOtp(browserId, email);
-    await deliverCode(email, formatOtpCode(code), canSendEmail);
     setBrowserId(cookieStore, browserId);
 
     return NextResponse.json({ message: 'OTP sent to your email.' }, { status: 200 });

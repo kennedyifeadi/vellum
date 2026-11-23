@@ -42,7 +42,7 @@ jest.mock('next/headers', () => ({
 }));
 
 jest.mock('@/lib/auth/verifyOtp', () => ({
-  verifyOtp: jest.fn().mockResolvedValue(true),
+  verifyOtp: jest.fn().mockResolvedValue('device-id'),
 }));
 
 // jose ships ESM-only with no CJS build, which ts-jest's default CommonJS

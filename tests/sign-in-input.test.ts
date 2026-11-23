@@ -19,11 +19,11 @@ describeSignInContract('an in-memory database');
 it('counts an attempt before comparing its code', async () => {
   const email = 'ordered@example.com';
   const browserId = 'b'.repeat(43);
-  const code = await generateOtp(browserId, email);
+  const code = await generateOtp(browserId, email, null);
   const last = ALPHABET.indexOf(code.slice(-1));
   const wrong = Array.from({ length: 5 }, (_, i) => code.slice(0, -1) + ALPHABET[(last + i + 1) % ALPHABET.length]);
 
   const results = await Promise.all([...wrong, code].map((attempt) => verifyOtp(browserId, email, attempt)));
 
-  expect(results).toEqual(Array(6).fill(false));
+  expect(results).toEqual(Array(6).fill(null));
 });
