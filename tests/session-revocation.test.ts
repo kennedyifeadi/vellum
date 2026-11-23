@@ -42,7 +42,7 @@ jest.mock('next/headers', () => ({
 }));
 
 jest.mock('@/lib/auth/verifyOtp', () => ({
-  verifyOtp: jest.fn().mockResolvedValue(true),
+  verifyOtp: jest.fn().mockResolvedValue('device-id'),
 }));
 
 // jose ships ESM-only with no CJS build, which ts-jest's default CommonJS
@@ -136,7 +136,7 @@ describe('Session revocation (issue #26)', () => {
     mockUsers = {};
     mockAuthUserId = null;
     mockCookieStore = {
-      get: jest.fn(),
+      get: jest.fn(() => ({ value: 'b'.repeat(43) })),
       set: jest.fn(),
       delete: jest.fn(),
     };
@@ -200,8 +200,8 @@ describe('Session revocation (issue #26)', () => {
 
     const req = new NextRequest('http://localhost/api/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ email: 'u4@example.com', code: '123456' }),
-      headers: { 'user-agent': 'jest-test-agent' },
+      body: JSON.stringify({ email: 'u4@example.com', code: '2345-6789' }),
+      headers: { 'content-type': 'application/json', 'user-agent': 'jest-test-agent' },
     });
 
     const res = await verifyOtpRoute(req);
@@ -215,7 +215,8 @@ describe('Session revocation (issue #26)', () => {
 
     const req = new NextRequest('http://localhost/api/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ email: 'u5@example.com', code: '123456' }),
+      body: JSON.stringify({ email: 'u5@example.com', code: '2345-6789' }),
+      headers: { 'content-type': 'application/json' },
     });
 
     await verifyOtpRoute(req);

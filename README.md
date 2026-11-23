@@ -54,6 +54,25 @@ need a missing one fail with an error that names it. For production you need at 
 variables for the R2 bucket) and `CLIENT_IP_HEADER`. Without `STORAGE_DRIVER`, production
 refuses to store files (`STORAGE_DRIVER=local` is allowed, but a redeploy deletes them).
 
+### Email-code sign-in
+
+A code works only in the browser that requested it. A browser that has signed in with an
+email is known for it for 90 days, which only gives it a send allowance of its own. The send
+limits are sliding windows kept in MongoDB (`lib/auth/otpRequestLimit.ts`):
+
+| Counted per | Known browser | Any other browser |
+| --- | --- | --- |
+| Device and email | 5 in 15 min, 20 in 24 h | - |
+| Client address and email | - | 3 in 15 min, 10 in 24 h |
+| Email | - | 50 in 24 h |
+| Whole site | - | 220 in 24 h (the app's other emails need part of Brevo's 300 a day) |
+| Client address | 40 in 24 h | 40 in 24 h |
+
+The client address comes from `CLIENT_IP_HEADER`, with IPv6 counted by /64. Without a trusted
+address the per-address limit is skipped and the address-and-email limit counts by email
+alone, so everyone requesting a code for that email then shares it: set the header in
+production. The server logs a warning once per window when the site-wide limit is reached.
+
 ### Client IP (`CLIENT_IP_HEADER`)
 
 The per-IP rate limit (30 requests a minute on the convert, documents and OTP routes) and

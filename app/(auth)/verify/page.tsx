@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { 
   AuthLayout, 
@@ -8,49 +8,26 @@ import {
   AuthButton, 
   VellumLogo 
 } from "@/components/auth/AuthComponents";
+import { CodeInput } from "@/components/auth/CodeInput";
+import { CODE_LENGTH } from "@/lib/auth/signInInput";
 
 function VerifyPageContent() {
-  const [otp, setOtp] = useState<string[]>(new Array(6).fill(""));
+  const [otp, setOtp] = useState<string[]>(new Array(CODE_LENGTH).fill(""));
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     if (!email) {
       router.push("/login");
-      return;
-    }
-    // Focus first input on mount
-    if (inputRefs.current[0]) {
-      inputRefs.current[0].focus();
     }
   }, [email, router]);
 
-  const handleChange = (element: HTMLInputElement, index: number) => {
-    if (isNaN(Number(element.value))) return false;
-
-    const newOtp = [...otp];
-    newOtp[index] = element.value;
-    setOtp(newOtp);
-
-    // Focus next input
-    if (element.value !== "" && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
   const handleVerify = async () => {
     const code = otp.join("");
-    if (code.length !== 6) return;
+    if (code.length !== CODE_LENGTH) return;
 
     setIsLoading(true);
     try {
@@ -90,10 +67,12 @@ function VerifyPageContent() {
       if (response.ok) {
         alert("Verification code resent!");
       } else {
-        alert("Failed to resend code.");
+        const data = await response.json();
+        alert(data.error || "Failed to resend code.");
       }
     } catch (error) {
       console.error("Error resending OTP:", error);
+      alert("An unexpected error occurred.");
     } finally {
       setIsResending(false);
     }
@@ -112,24 +91,11 @@ function VerifyPageContent() {
 
         <h1 className="text-2xl font-bold text-[#111827] mb-2 text-center">Check your email</h1>
         <p className="text-[#6b7280] text-sm mb-8 text-center max-w-[280px]">
-          We&apos;ve sent a 6-digit code to <br />
+          We&apos;ve sent an {CODE_LENGTH}-character code to <br />
           <span className="font-semibold text-[#374151]">{email}</span>
         </p>
 
-        <div className="flex gap-2 mb-8 justify-center">
-          {otp.map((data, index) => (
-            <input
-              key={index}
-              type="text"
-              maxLength={1}
-              ref={(el) => { inputRefs.current[index] = el }}
-              value={data}
-              onChange={(e) => handleChange(e.target, index)}
-              onKeyDown={(e) => handleKeyDown(e, index)}
-              className="w-10 h-12 md:w-12 md:h-14 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl text-center text-lg md:text-xl font-bold text-[#111827] outline-none transition-all focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10"
-            />
-          ))}
-        </div>
+        <CodeInput value={otp} onChange={setOtp} />
 
         <AuthButton onClick={handleVerify} disabled={isLoading || otp.some(v => v === "")}>
           {isLoading ? "Verifying..." : "Verify & Continue →"}

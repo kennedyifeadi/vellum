@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/auth/verifyOtp';
-import { isValidEmail, isValidOtpCode } from '@/lib/auth/signInInput';
+import { readBrowserId, setKnownDevice } from '@/lib/auth/signInCookies';
+import { isJsonRequest, isValidEmail, parseOtpCode } from '@/lib/auth/signInInput';
 import { createToken } from '@/lib/auth/jwt';
 import { buildSessionEntry } from '@/lib/auth/session';
 import User from '@/models/user';
@@ -9,6 +10,10 @@ import dbConnect from '@/lib/db/mongoose';
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isJsonRequest(req)) {
+      return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+    }
+
     let body: unknown;
     try {
       body = await req.json();
@@ -16,16 +21,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
     }
 
-    const { email, code } = (body ?? {}) as { email?: unknown; code?: unknown };
+    const { email, code: typedCode } = (body ?? {}) as { email?: unknown; code?: unknown };
+    const code = parseOtpCode(typedCode);
 
-    if (!isValidEmail(email) || !isValidOtpCode(code)) {
-      return NextResponse.json({ error: 'A valid email address and six-digit OTP are required.' }, { status: 400 });
+    if (!isValidEmail(email) || !code) {
+      return NextResponse.json({ error: 'A valid email address and eight-character code are required.' }, { status: 400 });
+    }
+
+    const cookieStore = await cookies();
+    const browserId = readBrowserId(cookieStore);
+    if (!browserId) {
+      return NextResponse.json(
+        { error: 'Enter the code in the browser that requested it, or request a new code.' },
+        { status: 401 },
+      );
     }
 
     await dbConnect();
-    const isValid = await verifyOtp(email, code);
+    const deviceId = await verifyOtp(browserId, email, code);
 
-    if (!isValid) {
+    if (!deviceId) {
       return NextResponse.json({ error: 'Invalid or expired OTP.' }, { status: 401 });
     }
 
@@ -52,7 +67,7 @@ export async function POST(req: NextRequest) {
       $push: { activeSessions: buildSessionEntry(req) },
     });
 
-    const cookieStore = await cookies();
+    setKnownDevice(cookieStore, email, deviceId);
     cookieStore.set('auth-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
