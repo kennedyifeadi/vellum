@@ -50,8 +50,9 @@ Every environment variable the app reads is listed and explained in
 [`.env.example`](.env.example). The app builds and starts without any of them; requests that
 need a missing one fail with an error that names it. For production you need at least
 `MONGODB_URI`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, the Google sign-in pair,
-`BREVO_API_KEY` and `EMAIL_USER`, the storage settings (`STORAGE_DRIVER=s3` and the `S3_*`
-variables for the R2 bucket) and `CLIENT_IP_HEADER`. Without `STORAGE_DRIVER`, production
+`BREVO_API_KEY`, `EMAIL_USER` and `SUPPORT_INBOX_EMAIL` (the inbox the contact and help forms
+deliver to; they show an error without it), the storage settings (`STORAGE_DRIVER=s3` and
+the `S3_*` variables for the R2 bucket) and `CLIENT_IP_HEADER`. Without `STORAGE_DRIVER`, production
 refuses to store files (`STORAGE_DRIVER=local` is allowed, but a redeploy deletes them).
 
 ### Email-code sign-in
@@ -87,7 +88,10 @@ trusted. Next.js does not give the app the connection's own address, so then eve
 shares one rate-limit bucket: the limit becomes 30 requests a minute for the whole site.
 That is safe but will refuse legitimate traffic, so set it in production. It also makes every
 guest one caller for the per-caller job limit below, so guests can then run only one heavy
-job at a time between them.
+job at a time between them. The contact and help forms have their own limit on the same key
+(5 submissions per 10 minutes), which is then site-wide too. Their daily limit of 5 tickets
+per address is skipped then, leaving 5 per account and the site-wide 12 from guests and 8
+from accounts in any 24 hours (`lib/email/daily-limits.ts`, counted in MongoDB).
 
 ### Heavy jobs per caller
 
@@ -415,3 +419,6 @@ Watch the memory graph during the first weeks and adjust.
 12. Confirm the 2-day lifecycle rule for the `video-jobs/` prefix exists (step 7 above),
     that a `video-jobs/` object left behind is gone after 2 days rather than 8, and that a
     compressed video can be downloaded from R2 through its job.
+13. With `SUPPORT_INBOX_EMAIL` set, send a message from the contact form and from the help
+    form. Check that both arrive in that inbox and that replying goes to the visitor (for
+    the help form, to the account's email).

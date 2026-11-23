@@ -72,6 +72,27 @@ export async function readBoundedBody(
   return new Blob(chunks as BlobPart[]);
 }
 
+/** The JSON object in a body of up to `maxBytes`; any other body is refused with `invalidMessage`. */
+export async function readJsonObject(
+  req: Request,
+  maxBytes: number,
+  tooLarge: () => ClientError,
+  invalidMessage: string,
+): Promise<Record<string, unknown>> {
+  const text = await (await readBoundedBody(req, maxBytes, tooLarge)).text();
+
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (error) {
+    throw new ClientError(invalidMessage, 400, { cause: error });
+  }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ClientError(invalidMessage);
+  }
+  return body as Record<string, unknown>;
+}
+
 /**
  * Reads a multipart upload within `budget`, for a route that has already resolved the
  * caller's plan. A request whose Content-Length is over the budget is refused before any

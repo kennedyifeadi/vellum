@@ -1,3 +1,5 @@
+import { escapeHtml } from '@/lib/email/escape-html';
+
 export const getWelcomeEmailHtml = (name: string, dashboardUrl: string) => `
 <!DOCTYPE html>
 <html>
@@ -128,7 +130,7 @@ export const getWelcomeEmailHtml = (name: string, dashboardUrl: string) => `
             <h1>VELLUM</h1>
         </div>
         <div class="content">
-            <p class="greeting">Welcome to the family, ${name}! 👋</p>
+            <p class="greeting">Welcome to the family, ${escapeHtml(name)}! 👋</p>
             <p>I'm <span class="highlight">JFK</span>, and I'm thrilled to have you join Vellum.</p>
             
             <div class="mission">

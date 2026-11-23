@@ -10,7 +10,7 @@ import { TOOL_LIMITS } from '@/lib/tool-limits';
 import { ClientError, handleConvertError } from '@/lib/convert/errors';
 import { busyResponse } from '@/lib/convert/pdf-worker-limits';
 import { BrowserToolBusyError, HTML_TO_PDF_BUSY_MESSAGE, runRenderJob } from '@/lib/puppeteer/render-jobs';
-import { readBoundedBody, readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
+import { readJsonObject, readMultipartForm, uploadBudget } from '@/lib/http/read-upload';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
@@ -19,23 +19,6 @@ const HTML_REQUEST_MESSAGE = 'Send an HTML file as multipart/form-data, or JSON 
 // URL mode's body is `{ "url": ... }`; browsers cap URLs at a few tens of kilobytes.
 const MAX_URL_REQUEST_BYTES = 64 * 1024;
 const URL_REQUEST_TOO_LARGE_MESSAGE = 'The request is too large. Send JSON with just a "url".';
-
-async function readJsonObject(req: NextRequest): Promise<Record<string, unknown>> {
-  const text = await (
-    await readBoundedBody(req, MAX_URL_REQUEST_BYTES, () => new ClientError(URL_REQUEST_TOO_LARGE_MESSAGE))
-  ).text();
-
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch (error) {
-    throw new ClientError(HTML_REQUEST_MESSAGE, 400, { cause: error });
-  }
-  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ClientError(HTML_REQUEST_MESSAGE);
-  }
-  return body as Record<string, unknown>;
-}
 
 async function convertRequest(req: NextRequest, { userId, plan }: Caller, job: CallerJob): Promise<NextResponse> {
   const maxSize = resolvePlanLimit(plan, TOOL_LIMITS['html-to-pdf'].maxBytes);
@@ -64,7 +47,12 @@ async function convertRequest(req: NextRequest, { userId, plan }: Caller, job: C
     outputFileName = file.name.replace(/\.html?$/i, '.pdf');
   } else {
     // URL mode
-    const body = await readJsonObject(req);
+    const body = await readJsonObject(
+      req,
+      MAX_URL_REQUEST_BYTES,
+      () => new ClientError(URL_REQUEST_TOO_LARGE_MESSAGE),
+      HTML_REQUEST_MESSAGE,
+    );
     url = typeof body.url === 'string' ? body.url : undefined;
     if (!url) {
       return NextResponse.json({ error: 'No URL provided.' }, { status: 400 });
