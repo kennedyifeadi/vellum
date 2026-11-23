@@ -90,10 +90,12 @@ function VerifyPageContent() {
       if (response.ok) {
         alert("Verification code resent!");
       } else {
-        alert("Failed to resend code.");
+        const data = await response.json();
+        alert(data.error || "Failed to resend code.");
       }
     } catch (error) {
       console.error("Error resending OTP:", error);
+      alert("An unexpected error occurred.");
     } finally {
       setIsResending(false);
     }
