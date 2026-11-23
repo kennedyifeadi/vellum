@@ -4,6 +4,7 @@ import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
 import { ClientError } from '@/lib/convert/errors';
+import { reserveWelcomeEmail } from '@/lib/email/daily-limits';
 import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send';
 import { getWelcomeEmailHtml } from '@/lib/email/templates/welcomeEmail';
 import { MAX_NAME_LENGTH, requiredLine } from '@/lib/http/text-input';
@@ -17,6 +18,10 @@ async function sendWelcomeEmail(userId: string, name: string, email: string) {
 
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
   try {
+    if (!(await reserveWelcomeEmail())) {
+      console.log(`[WELCOME] Not sending a welcome email to user ${userId}: today's are used up.`);
+      return;
+    }
     await sendEmail({
       senderName: 'JFK from Vellum',
       to: email,

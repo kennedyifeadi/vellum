@@ -68,7 +68,9 @@ shares one rate-limit bucket: the limit becomes 30 requests a minute for the who
 That is safe but will refuse legitimate traffic, so set it in production. It also makes every
 guest one caller for the per-caller job limit below, so guests can then run only one heavy
 job at a time between them. The contact and help forms have their own limit on the same key
-(5 submissions per 10 minutes), which is then site-wide too.
+(5 submissions per 10 minutes), which is then site-wide too. Their daily limit of 5 tickets
+per address is skipped then, leaving 5 per account and the site-wide 12 from guests and 8
+from accounts in any 24 hours (`lib/email/daily-limits.ts`, counted in MongoDB).
 
 ### Heavy jobs per caller
 

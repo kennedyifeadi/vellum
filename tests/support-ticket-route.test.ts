@@ -10,7 +10,9 @@ import { isRateLimited } from '@/lib/http/rate-limit';
 import SupportTicket from '@/models/supportTicket';
 import User from '@/models/user';
 import { POST } from '../app/api/support/ticket/route';
+import * as dailyLimits from '@/lib/email/daily-limits';
 import type * as BrevoMock from './helpers/brevoMock';
+import { keepEmailAllowancesInMemory } from './helpers/memoryEmailAllowances';
 
 const { sendTransacEmail, sentEmails, visibleText, BrevoError } = brevo as unknown as typeof BrevoMock;
 
@@ -105,7 +107,8 @@ beforeEach(() => {
     return ticket;
   }) as never);
   jest.spyOn(User, 'findById').mockResolvedValue(null);
-  logged = (['log', 'warn', 'error'] as const).map((level) => jest.spyOn(console, level).mockImplementation(() => {}));
+  keepEmailAllowancesInMemory();
+  logged =(['log', 'warn', 'error'] as const).map((level) => jest.spyOn(console, level).mockImplementation(() => {}));
 });
 
 afterEach(() => {
@@ -480,6 +483,25 @@ describe('delivery', () => {
     expect(logOutput()).not.toContain(GUEST.guestEmail);
   });
 
+  it('answers 500, saving and sending nothing, when the daily count cannot be kept', async () => {
+    jest.spyOn(dailyLimits, 'reserveTicket').mockRejectedValue(new Error('database down'));
+
+    expect((await submit(GUEST)).status).toBe(500);
+    expect(savedTickets).toEqual([]);
+    expect(sendTransacEmail).not.toHaveBeenCalled();
+  });
+
+  it('skips the acknowledgement when its daily count cannot be kept', async () => {
+    signIn();
+    jest.spyOn(dailyLimits, 'reserveAcknowledgement').mockRejectedValue(new Error('database down'));
+
+    expect((await submit(GUEST)).status).toBe(201);
+
+    expect(emailsTo(INBOX)).toHaveLength(1);
+    expect(emailsTo(ACCOUNT.email)).toEqual([]);
+    expect(logOutput()).toContain('database down');
+  });
+
   it('answers 500 and sends nothing when the ticket cannot be saved', async () => {
     jest.mocked(SupportTicket.create).mockRejectedValue(new Error('database down') as never);
 
@@ -557,7 +579,10 @@ describe('rate limit', () => {
   it('holds for ten minutes, then opens again', async () => {
     let now = Date.now();
     jest.spyOn(Date, 'now').mockImplementation(() => now);
-    await spendFormBudget('203.0.113.1');
+    // Invalid submissions, so the address keeps its daily allowance.
+    for (let i = 0; i < 5; i++) {
+      expect((await submit('not json', from('203.0.113.1'))).status).toBe(400);
+    }
 
     now += TEN_MINUTES_MS;
     expect((await submit(GUEST, from('203.0.113.1'))).status).toBe(429);

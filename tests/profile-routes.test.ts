@@ -13,7 +13,9 @@ import { createToken, verifyToken } from '@/lib/auth/jwt';
 import User from '@/models/user';
 import { POST as completeProfile } from '../app/api/auth/complete-profile/route';
 import { PATCH as updateProfile } from '../app/api/user/profile/route';
+import * as dailyLimits from '@/lib/email/daily-limits';
 import type * as BrevoMock from './helpers/brevoMock';
+import { keepEmailAllowancesInMemory } from './helpers/memoryEmailAllowances';
 
 const { sendTransacEmail, sentEmails, visibleText, BrevoError } = brevo as unknown as typeof BrevoMock;
 
@@ -69,7 +71,8 @@ beforeEach(() => {
 
   stored = { _id: USER_ID, email: 'ada@account.test', isProfileComplete: false, tokenVersion: 1 };
   storeOneUser();
-  logged = (['log', 'error'] as const).map((level) => jest.spyOn(console, level).mockImplementation(() => {}));
+  keepEmailAllowancesInMemory();
+  logged =(['log', 'error'] as const).map((level) => jest.spyOn(console, level).mockImplementation(() => {}));
 });
 
 afterEach(() => {
@@ -135,6 +138,14 @@ describe('welcome email', () => {
     sendTransacEmail.mockRejectedValue(new BrevoError({ statusCode: 500 }));
 
     expect((await complete()).status).toBe(200);
+    expect(stored!.isProfileComplete).toBe(true);
+  });
+
+  it('is skipped, and completion still succeeds, when its daily count cannot be kept', async () => {
+    jest.spyOn(dailyLimits, 'reserveWelcomeEmail').mockRejectedValue(new Error('database down'));
+
+    expect((await complete()).status).toBe(200);
+    expect(sendTransacEmail).not.toHaveBeenCalled();
     expect(stored!.isProfileComplete).toBe(true);
   });
 

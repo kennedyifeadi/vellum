@@ -5,9 +5,11 @@ import SupportTicket from '@/models/supportTicket';
 import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { ClientError } from '@/lib/convert/errors';
+import { reserveAcknowledgement, reserveTicket } from '@/lib/email/daily-limits';
 import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send';
 import { getSupportInboxEmailHtml } from '@/lib/email/templates/supportInboxEmail';
 import { getSupportTicketEmailHtml } from '@/lib/email/templates/supportTicketEmail';
+import { getClientIp } from '@/lib/http/client-ip';
 import { assertWithinSupportRateLimit } from '@/lib/http/rate-limit';
 import { readJsonObject } from '@/lib/http/read-upload';
 import { guestContact, ticketContent, type TicketContent } from '@/lib/support/ticket-input';
@@ -17,6 +19,7 @@ const BODY_TOO_LARGE_MESSAGE = 'Your message is too large. Please shorten it and
 const INVALID_BODY_MESSAGE = 'Invalid JSON body.';
 const UNDELIVERED_MESSAGE = 'Your message could not be delivered. Please try again later.';
 const NOT_JSON_MESSAGE = 'Please send the message as JSON.';
+const DAILY_LIMIT_MESSAGE = 'Too many messages have been sent today. Please try again tomorrow.';
 const SENDER_NAME = 'Vellum Support';
 
 interface Submitter {
@@ -54,9 +57,13 @@ async function sendToInbox(ticketId: string, submitter: Submitter, content: Tick
 }
 
 // Only for an account's own address: one a guest typed could be anybody's.
-async function acknowledge(ticketId: string, { name, email }: Submitter) {
+async function acknowledge(ticketId: string, userId: string, { name, email }: Submitter) {
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
   try {
+    if (!(await reserveAcknowledgement(userId))) {
+      console.log(`[SUPPORT] Not acknowledging ticket ${ticketId}: today's acknowledgements are used up.`);
+      return;
+    }
     await sendEmail({
       senderName: SENDER_NAME,
       to: email,
@@ -83,7 +90,7 @@ async function deliver(ticketId: string, submitter: Submitter, content: TicketCo
   }
 
   if (submitter.userId) {
-    await acknowledge(ticketId, submitter);
+    await acknowledge(ticketId, submitter.userId, submitter);
   }
   return true;
 }
@@ -106,6 +113,10 @@ export async function POST(req: NextRequest) {
 
     await dbConnect();
     const submitter = await resolveSubmitter(req, body);
+    // Counted once the ticket is known to be valid, and kept even if delivery fails.
+    if (!(await reserveTicket({ userId: submitter.userId, address: getClientIp(req.headers) }))) {
+      throw new ClientError(DAILY_LIMIT_MESSAGE, 429);
+    }
     const ticketId = generateTicketId();
 
     await SupportTicket.create({
