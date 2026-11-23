@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOtp } from '@/lib/auth/verifyOtp';
-import { isValidEmail, isValidOtpCode } from '@/lib/auth/signInInput';
+import { isJsonRequest, isValidEmail, isValidOtpCode } from '@/lib/auth/signInInput';
 import { createToken } from '@/lib/auth/jwt';
 import { buildSessionEntry } from '@/lib/auth/session';
 import User from '@/models/user';
@@ -9,6 +9,10 @@ import dbConnect from '@/lib/db/mongoose';
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isJsonRequest(req)) {
+      return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+    }
+
     let body: unknown;
     try {
       body = await req.json();

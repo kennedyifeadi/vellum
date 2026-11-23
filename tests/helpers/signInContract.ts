@@ -16,14 +16,12 @@ const newEmail = () => `person${++addresses}@example.com`;
 const setCookie = jest.fn();
 let sentCodes: { email: string; code: string }[] = [];
 
-function post(route: (req: NextRequest) => Promise<Response>, body: unknown) {
-  return route(
-    new NextRequest('http://localhost/api/auth', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
+function post(route: (req: NextRequest) => Promise<Response>, body: unknown, contentType: string | null = 'application/json') {
+  const headers = new Headers();
+  if (contentType !== null) headers.set('content-type', contentType);
+  // Bytes, unlike a string, get no content type of their own.
+  const bytes = new TextEncoder().encode(JSON.stringify(body));
+  return route(new NextRequest('http://localhost/api/auth', { method: 'POST', headers, body: bytes }));
 }
 
 const requestCode = (email: string) => post(requestRoute, { email });
@@ -158,6 +156,33 @@ export function describeSignInContract(database: string) {
         expect((await post(verifyRoute, body)).status).toBe(400);
         expect(dbConnect).not.toHaveBeenCalled();
       });
+
+      it.each([
+        null,
+        '',
+        'text/plain',
+        'text/plain; application/json',
+        'application/x-www-form-urlencoded',
+        'multipart/form-data; boundary=x',
+        'application/jsonp',
+        'application/json-patch+json',
+        'application/json, text/plain',
+      ])('answers 415 to the content type %p', async (contentType) => {
+        expect((await post(requestRoute, { email: newEmail() }, contentType)).status).toBe(415);
+        expect((await post(verifyRoute, { email: newEmail(), code: '123456' }, contentType)).status).toBe(415);
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(sentCodes).toEqual([]);
+      });
+
+      it.each(['application/json; charset=utf-8', 'Application/JSON', 'application/json ;charset=UTF-8'])(
+        'accepts the content type %p',
+        async (contentType) => {
+          const email = newEmail();
+          expect((await post(requestRoute, { email }, contentType)).status).toBe(200);
+
+          expect((await post(verifyRoute, { email, code: sentCodes[0].code }, contentType)).status).toBe(200);
+        },
+      );
 
       it('validates in verifyOtp itself', async () => {
         const email = newEmail();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateOtp } from '@/lib/auth/otp';
 import { reserveOtpRequest } from '@/lib/auth/otpRequestLimit';
-import { isValidEmail } from '@/lib/auth/signInInput';
+import { isJsonRequest, isValidEmail } from '@/lib/auth/signInInput';
 import dbConnect from '@/lib/db/mongoose';
 
 function isBrevoConfigured() {
@@ -10,6 +10,10 @@ function isBrevoConfigured() {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isJsonRequest(req)) {
+      return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+    }
+
     let body: unknown;
     try {
       body = await req.json();

@@ -201,7 +201,7 @@ describe('Session revocation (issue #26)', () => {
     const req = new NextRequest('http://localhost/api/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ email: 'u4@example.com', code: '123456' }),
-      headers: { 'user-agent': 'jest-test-agent' },
+      headers: { 'content-type': 'application/json', 'user-agent': 'jest-test-agent' },
     });
 
     const res = await verifyOtpRoute(req);
@@ -216,6 +216,7 @@ describe('Session revocation (issue #26)', () => {
     const req = new NextRequest('http://localhost/api/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ email: 'u5@example.com', code: '123456' }),
+      headers: { 'content-type': 'application/json' },
     });
 
     await verifyOtpRoute(req);
