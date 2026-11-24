@@ -15,7 +15,7 @@ const OPEN_WITH_PASSWORDS = `
   const results = [];
   for (const password of passwords) {
     try {
-      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(Buffer.from(pdf, 'base64')), password, isEvalSupported: false });
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(Buffer.from(pdf, 'base64')), password });
       const doc = await loadingTask.promise;
       const pageTexts = [];
       for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
