@@ -136,7 +136,10 @@ jobs:
           wait
           echo "Stopped in $(( $(date +%s) - started ))s with exit code $(docker inspect app --format '{{.State.ExitCode}}')"
           echo "In-flight request finished with HTTP $(cat in-flight.status)"
-          test "$(docker inspect app --format '{{.State.ExitCode}}')" = 0
+          # Since Next 16.4, next start exits with 128 + 15 = 143 once it has drained after
+          # SIGTERM (it exited 0 before). A server killed outright by SIGTERM would also show
+          # 143, so the finished in-flight render below is what shows it drained.
+          case "$(docker inspect app --format '{{.State.ExitCode}}')" in 0|143) ;; *) exit 1 ;; esac
           test "$(cat in-flight.status)" = 200
           head -c 5 in-flight.pdf | grep -q '%PDF-'
 
