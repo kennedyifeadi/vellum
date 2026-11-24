@@ -12,7 +12,7 @@ const RENDER_PAGES = `
   console.warn = () => {};
 
   const scale = Number(process.argv[1]);
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await buffer(process.stdin)), isEvalSupported: false }).promise;
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await buffer(process.stdin)) }).promise;
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
     const page = await pdf.getPage(pageNumber);

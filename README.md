@@ -13,7 +13,7 @@ worker threads for PDF work.
 
 ## Running locally
 
-Requires Node.js 22.3 or later (`process.getBuiltinModule` is used).
+Requires Node.js 22.13 or later (pdfjs-dist 6 needs it).
 
 ```bash
 npm ci

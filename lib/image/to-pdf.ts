@@ -1,5 +1,5 @@
 import path from 'path';
-import sharp from 'sharp';
+import sharp, { type JpegOptions, type OutputInfo, type PngOptions, type Sharp } from 'sharp';
 import { MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 import { runWorkerJob, WorkerJobError, type WorkerLimits } from '@/lib/convert/worker-job';
 import { BmpDecodeTimeoutError, decodeBmp, readBmpHeader } from '@/lib/image/bmp';
@@ -16,12 +16,12 @@ type PdfImage = AcceptedImage<(typeof ACCEPTED_FORMATS)[number]>;
 // Re-encoded images are stored losslessly, as PNG-filtered Flate streams. Level 1 with
 // adaptive filtering was the fastest setting that compresses: 10.6s for a 48-megapixel
 // photograph against 28s at level 3, at about the size pdf-lib's own PNG embedding gave.
-const PNG_ENCODING: sharp.PngOptions = { compressionLevel: 1, adaptiveFiltering: true };
+const PNG_ENCODING: PngOptions = { compressionLevel: 1, adaptiveFiltering: true };
 
 // A JPEG re-encoded only to convert its colours (CMYK, or a Display P3 or Adobe RGB
 // profile) stays a JPEG: stored losslessly, a phone photo's PDF was 12 times the upload.
 // At quality 95 without chroma subsampling it is about the size of the upload.
-const CONVERTED_JPEG_ENCODING: sharp.JpegOptions = { quality: 95, chromaSubsampling: '4:4:4' };
+const CONVERTED_JPEG_ENCODING: JpegOptions = { quality: 95, chromaSubsampling: '4:4:4' };
 
 interface ImageToPdfOptions {
   imageBuffers: Buffer[];
@@ -54,7 +54,7 @@ interface PixelsPage {
 
 type PreparedPage = JpegPage | PixelsPage;
 
-type RawPixels = { data: Buffer; info: sharp.OutputInfo; sixteenBit: boolean };
+type RawPixels = { data: Buffer; info: OutputInfo; sixteenBit: boolean };
 
 const DEADLINE_MESSAGE = 'Image to PDF conversion exceeded its deadline';
 
@@ -132,7 +132,7 @@ async function assertJpegDecodes({ bytes, imageNumber }: PdfImage): Promise<void
   }
 }
 
-async function openForDecoding(image: PdfImage, colourConversion: boolean, deadline: number): Promise<sharp.Sharp> {
+async function openForDecoding(image: PdfImage, colourConversion: boolean, deadline: number): Promise<Sharp> {
   if (image.format !== 'bmp') {
     return sharp(image.bytes, { limitInputPixels: MAX_IMAGE_PIXELS, ignoreIcc: !colourConversion }).rotate();
   }
@@ -235,7 +235,7 @@ async function encodeStreams(pixels: RawPixels): Promise<Pick<PixelsPage, 'colou
 // Upright and in sRGB (grey stays grey), with no metadata, so it needs no transform.
 async function convertJpegColours(image: PdfImage, deadline: number): Promise<JpegPage> {
   const pipeline = await openForDecoding(image, true, deadline);
-  let converted: { data: Buffer; info: sharp.OutputInfo };
+  let converted: { data: Buffer; info: OutputInfo };
   try {
     converted = await pipeline
       .toColourspace(colourspaceFor(isGrey(image), false))

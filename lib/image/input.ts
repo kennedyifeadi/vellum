@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Metadata, type Sharp } from 'sharp';
 import { ClientError } from '@/lib/convert/errors';
 import { assertPixelCountWithinLimit, MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
 import { readBmpHeader } from '@/lib/image/bmp';
@@ -142,7 +142,7 @@ function isAnimated(bytes: Buffer, format: DetectedImageFormat): boolean {
  * as unreadable. Only call this on bytes `detectImageFormat` has identified as a
  * format sharp reads, which BMP is not.
  */
-export function readImageHeader(bytes: Buffer): Promise<sharp.Metadata> {
+export function readImageHeader(bytes: Buffer): Promise<Metadata> {
   return sharp(bytes, { limitInputPixels: false }).metadata();
 }
 
@@ -152,8 +152,8 @@ export interface ImageHeader {
   width: number;
   height: number;
   /** How the file stores its pixels. */
-  space: sharp.Metadata['space'];
-  depth: sharp.Metadata['depth'];
+  space: Metadata['space'];
+  depth: Metadata['depth'];
   hasAlpha: boolean;
   /** The EXIF orientation, 1 to 8; 1 when the file has none. */
   orientation: number;
@@ -201,7 +201,7 @@ function listFormats(formats: readonly DetectedImageFormat[]): string {
  * stays greyscale, where by default sharp would write it out as RGB, three times the
  * samples for the same picture. No metadata is carried over.
  */
-export function openAcceptedImage({ bytes, space }: AcceptedImage<DetectedImageFormat>): sharp.Sharp {
+export function openAcceptedImage({ bytes, space }: AcceptedImage<DetectedImageFormat>): Sharp {
   const upright = sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
   return space === 'b-w' ? upright.toColourspace('b-w') : upright;
 }
@@ -228,7 +228,7 @@ async function readSharpImageHeader(
   format: Exclude<DetectedImageFormat, 'bmp'>,
   imageNumber: number,
 ): Promise<ImageHeader> {
-  let header: sharp.Metadata;
+  let header: Metadata;
   try {
     header = await readImageHeader(bytes);
   } catch (error) {

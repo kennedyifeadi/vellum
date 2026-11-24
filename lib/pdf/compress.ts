@@ -1,6 +1,8 @@
 import { PDFDocument, PDFName, PDFRawStream, PDFArray, PDFDict } from 'pdf-lib';
 import sharp from 'sharp';
 import zlib from 'zlib';
+import { MAX_IMAGE_PIXELS } from '@/lib/convert/image-limits';
+import { detectImageFormat } from '@/lib/image/input';
 import { loadPdf } from '@/lib/pdf/loadPdf';
 
 interface CompressPdfOptions {
@@ -143,8 +145,14 @@ async function maxChannelStdev(
   input: Buffer,
   raw?: { width: number; height: number; channels: 1 | 2 | 3 | 4 },
 ): Promise<number> {
-  const { channels } = await (raw ? sharp(input, { raw }) : sharp(input)).stats();
+  const { channels } = await sharp(input, { raw, limitInputPixels: MAX_IMAGE_PIXELS }).stats();
   return Math.max(...channels.map((c) => c.stdev));
+}
+
+function isDctEncoded(dict: PDFDict): boolean {
+  const filter = dict.get(PDFName.of('Filter'));
+  const names = filter instanceof PDFArray ? filter.asArray().map(String) : [String(filter)];
+  return names.length === 1 && (names[0] === '/DCTDecode' || names[0] === '/DCT');
 }
 
 async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<void> {
@@ -217,9 +225,14 @@ async function recompressImages(pdfDoc: PDFDocument, level: string): Promise<voi
         }
 
         rawInfo = { width, height, channels };
-        pipeline = sharp(decoded, { raw: rawInfo });
+        pipeline = sharp(decoded, { raw: rawInfo, limitInputPixels: MAX_IMAGE_PIXELS });
+      } else if (isDctEncoded(dict) && detectImageFormat(decoded) === 'jpeg') {
+        pipeline = sharp(decoded, { limitInputPixels: MAX_IMAGE_PIXELS });
       } else {
-        pipeline = sharp(decoded); // e.g. DCTDecode (JPEG passes through normally)
+        // sharp picks its decoder from the bytes, not from the PDF filter, so a stream
+        // marked DCTDecode that holds anything but a JPEG is left as it is.
+        processedRefs.add(refKey);
+        continue;
       }
 
       const metadata = await pipeline.metadata();

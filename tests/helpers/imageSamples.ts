@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 
 /** The format an encoded image really is, read from its first bytes. */
 export function magicFormat(bytes: Buffer): 'png' | 'jpeg' | 'webp' | 'other' {
@@ -34,7 +34,7 @@ export function pngHasChunk(png: Buffer, type: string): boolean {
  * Smooth gradients with a little deterministic noise, so that it has tens of thousands
  * of colours and compresses like a photograph rather than like flat artwork.
  */
-export function photoLikePixels(width: number, height: number): sharp.Sharp {
+export function photoLikePixels(width: number, height: number): Sharp {
   const pixels = Buffer.alloc(width * height * 3);
   let seed = 7;
   for (let y = 0; y < height; y++) {
@@ -67,12 +67,12 @@ export function createGradientJpeg(width = 320, height = 240): Promise<Buffer> {
   return sharp(pixels, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
 }
 
-export function flatImage(width = 40, height = 40, background = { r: 200, g: 30, b: 30 }): sharp.Sharp {
+export function flatImage(width = 40, height = 40, background = { r: 200, g: 30, b: 30 }): Sharp {
   return sharp({ create: { width, height, channels: 3, background } });
 }
 
 /** Decoded 8-bit RGB pixels, to compare two images by what they show. */
-export async function rgbPixels(image: Buffer | sharp.Sharp): Promise<Buffer> {
+export async function rgbPixels(image: Buffer | Sharp): Promise<Buffer> {
   const pipeline = Buffer.isBuffer(image) ? sharp(image) : image;
   return pipeline.removeAlpha().toColourspace('srgb').raw().toBuffer();
 }
@@ -120,7 +120,7 @@ const DISPLAYED_AT: Record<number, (x: number, y: number) => [number, number]> =
  * EXIF orientation, with that orientation tagged, so only a viewer that honours the tag
  * shows it upright.
  */
-export function orientedPicture(orientation: number): sharp.Sharp {
+export function orientedPicture(orientation: number): Sharp {
   const sideways = orientation >= 5;
   const width = sideways ? UPRIGHT_HEIGHT : UPRIGHT_WIDTH;
   const height = sideways ? UPRIGHT_WIDTH : UPRIGHT_HEIGHT;
@@ -162,7 +162,7 @@ export const AUTHORED_SRGB: [number, number, number] = [200, 60, 30];
  * profile, so the numbers stored in the file differ from what a colour-managed viewer
  * shows.
  */
-export function displayP3Patch(): sharp.Sharp {
+export function displayP3Patch(): Sharp {
   return flatImage(32, 32, { r: AUTHORED_SRGB[0], g: AUTHORED_SRGB[1], b: AUTHORED_SRGB[2] }).withIccProfile('p3');
 }
 

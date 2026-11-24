@@ -44,6 +44,9 @@ const nextConfig: NextConfig = {
   },
   // Required to suppress "webpack config with Turbopack" error in Next.js 16
   turbopack: {},
+  // Otherwise `next dev` writes an AGENTS.md into the repository whenever an AI coding
+  // agent runs it, a file that is not part of the project and is easy to commit by mistake.
+  agentRules: false,
   images: {
     remotePatterns: [
       {

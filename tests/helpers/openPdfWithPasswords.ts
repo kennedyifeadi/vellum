@@ -15,13 +15,14 @@ const OPEN_WITH_PASSWORDS = `
   const results = [];
   for (const password of passwords) {
     try {
-      const doc = await pdfjs.getDocument({ data: new Uint8Array(Buffer.from(pdf, 'base64')), password, isEvalSupported: false }).promise;
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(Buffer.from(pdf, 'base64')), password });
+      const doc = await loadingTask.promise;
       const pageTexts = [];
       for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
         const { items } = await (await doc.getPage(pageNumber)).getTextContent();
         pageTexts.push(items.map((item) => item.str ?? '').join(''));
       }
-      await doc.destroy();
+      await loadingTask.destroy();
       results.push({ pageTexts });
     } catch (error) {
       results.push({ error: error.name });
