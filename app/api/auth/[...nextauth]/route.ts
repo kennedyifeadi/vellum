@@ -1,10 +1,15 @@
 import NextAuth, { AuthOptions } from "next-auth";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import GoogleProvider from "next-auth/providers/google";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import { getMongoClient } from "@/lib/db/mongodb";
 import { buildSessionEntry } from "@/lib/auth/session";
+import { ClientError } from "@/lib/convert/errors";
+import { readBoundedBody, requestTooLarge } from "@/lib/http/read-upload";
 import User from "@/models/user"; // Your existing User model
+
+// Sign-in and sign-out forms carry a CSRF token and a callback URL.
+const AUTH_BODY_LIMIT_BYTES = 64 * 1024;
 
 type Adapter = NonNullable<AuthOptions["adapter"]>;
 let cachedAdapter: { client: ReturnType<typeof getMongoClient>; adapter: Adapter } | undefined;
@@ -79,8 +84,24 @@ interface RouteContext {
   params: Promise<{ nextauth: string[] }>;
 }
 
-function handler(req: NextRequest, ctx: RouteContext) {
-  return NextAuth(req, ctx, authOptionsFor(req));
+// NextAuth reads a POST body whole, so it is handed a copy read within the limit instead.
+async function withBoundedBody(req: NextRequest): Promise<NextRequest> {
+  if (req.method !== "POST" || !req.body) return req;
+  const body = await readBoundedBody(req, AUTH_BODY_LIMIT_BYTES, requestTooLarge);
+  return new NextRequest(req.url, { method: req.method, headers: req.headers, body });
+}
+
+async function handler(req: NextRequest, ctx: RouteContext) {
+  let bounded: NextRequest;
+  try {
+    bounded = await withBoundedBody(req);
+  } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
+  return NextAuth(bounded, ctx, authOptionsFor(req));
 }
 
 export { handler as GET, handler as POST };

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserId } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
+import { ClientError } from '@/lib/convert/errors';
+import { readJsonRequest } from '@/lib/http/read-upload';
 
 // GET — return the user's starred tool IDs
 export async function GET(req: NextRequest) {
@@ -25,7 +27,7 @@ export async function PATCH(req: NextRequest) {
     const userId = await getAuthUserId(req);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { toolId } = await req.json();
+    const { toolId } = await readJsonRequest(req, 'Internal server error');
     if (!toolId || typeof toolId !== 'string') {
       return NextResponse.json({ error: 'toolId is required' }, { status: 400 });
     }
@@ -46,6 +48,9 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ starredTools: updatedUser?.starredTools ?? [] });
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('PATCH /api/user/starred error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

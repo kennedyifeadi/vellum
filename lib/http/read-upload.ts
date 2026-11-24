@@ -93,6 +93,21 @@ export async function readJsonObject(
   return body as Record<string, unknown>;
 }
 
+/** The most a route reading a small JSON object accepts, unless its body needs more. */
+export const JSON_BODY_LIMIT_BYTES = 16 * 1024;
+export const REQUEST_TOO_LARGE_MESSAGE = 'The request is too large.';
+
+export const requestTooLarge = () => new ClientError(REQUEST_TOO_LARGE_MESSAGE, 413);
+
+/** The JSON object in a body of up to `maxBytes`, refused with a 413 past that. */
+export function readJsonRequest(
+  req: Request,
+  invalidMessage: string,
+  maxBytes = JSON_BODY_LIMIT_BYTES,
+): Promise<Record<string, unknown>> {
+  return readJsonObject(req, maxBytes, requestTooLarge, invalidMessage);
+}
+
 /**
  * Reads a multipart upload within `budget`, for a route that has already resolved the
  * caller's plan. A request whose Content-Length is over the budget is refused before any

@@ -5,6 +5,7 @@ import { verifyToken } from "@/lib/auth/jwt";
 import { getToken } from "next-auth/jwt";
 import User from "@/models/user";
 import { ClientError } from "@/lib/convert/errors";
+import { readJsonRequest } from "@/lib/http/read-upload";
 import { optionalName } from "@/lib/http/text-input";
 
 export async function PATCH(req: NextRequest) {
@@ -37,7 +38,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name: submittedName, currentGoal } = await req.json();
+    const { name: submittedName, currentGoal } = await readJsonRequest(req, 'Internal Server Error');
     const name = optionalName(submittedName);
 
     const user = await User.findById(userId);
