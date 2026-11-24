@@ -7,6 +7,7 @@ import { ClientError } from '@/lib/convert/errors';
 import { reserveWelcomeEmail } from '@/lib/email/daily-limits';
 import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send';
 import { getWelcomeEmailHtml } from '@/lib/email/templates/welcomeEmail';
+import { readJsonRequest } from '@/lib/http/read-upload';
 import { MAX_NAME_LENGTH, requiredLine } from '@/lib/http/text-input';
 import { getToken } from 'next-auth/jwt';
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name: submittedName, role, currentGoal } = await req.json();
+    const { name: submittedName, role, currentGoal } = await readJsonRequest(req, 'Failed to complete profile');
 
     if (!submittedName || !role) {
       return NextResponse.json({ error: 'Name and role are required' }, { status: 400 });

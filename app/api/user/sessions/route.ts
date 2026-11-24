@@ -3,6 +3,8 @@ import { getAuthUserId, invalidateTokenVersionCache } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
+import { ClientError } from '@/lib/convert/errors';
+import { readJsonRequest } from '@/lib/http/read-upload';
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,7 +36,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { sessionId, all } = await req.json();
+    const { sessionId, all } = await readJsonRequest(req, 'Failed to revoke sessions');
 
     if (all) {
       // Revoke all other sessions by bumping token version and clearing active sessions list
@@ -61,6 +63,9 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('Error revoking sessions:', error);
     return NextResponse.json({ error: 'Failed to revoke sessions' }, { status: 500 });
   }
