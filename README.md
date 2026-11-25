@@ -211,6 +211,39 @@ refused URL answers 400 "That URL can't be converted. It must be a public http o
 address." DOCX to PDF renders have no network at all: JavaScript is off and every request
 other than `data:`, `blob:` and `about:` is refused.
 
+### Security headers
+
+`next.config.ts` sends these on every response, pages, API routes and static files alike:
+
+- `Content-Security-Policy`, enforced. Each directive lists exactly what the pages load: the
+  app itself, the Google hosts the Drive picker needs (Identity Services under
+  `accounts.google.com/gsi/`, gapi on `apis.google.com`, the picker's frame on
+  `docs.google.com`), `images.unsplash.com` and `assets.mixkit.co` for the carousel on the
+  pricing and contact pages, `data:` and `blob:` for avatars, file previews and results, and
+  `/pdfjs` for the pdf.js worker. Scripts and styles allow `'unsafe-inline'` because
+  statically rendered pages carry no nonce; `'unsafe-eval'` is added in development only.
+  `frame-ancestors 'none'` stops other sites from framing the app.
+- `X-Frame-Options: DENY`, for browsers that ignore `frame-ancestors`.
+- `X-Content-Type-Options: nosniff`.
+- `Referrer-Policy: strict-origin-when-cross-origin`.
+- `Permissions-Policy`, turning off camera, microphone, geolocation, payment, sensors and
+  device APIs (USB, serial, HID, Bluetooth, MIDI) and screen capture.
+- `Strict-Transport-Security: max-age=31536000`, in production builds only. It has no
+  `includeSubDomains` or `preload` because the production domain is not chosen yet: both
+  would bind every subdomain of it to HTTPS, and a preload listing is slow to undo. Add them
+  once the domain is settled and every subdomain serves HTTPS.
+
+`X-Powered-By` is turned off.
+
+There is no CSP report endpoint, so a blocked load shows only in the browser console
+("violates the following Content Security Policy directive"). To load something from a new
+host (a script, image, video, frame or `fetch`), add the host to the matching directive in
+`contentSecurityPolicy` in `next.config.ts` with a comment saying what needs it, update
+`tests/security-headers.test.ts`, and check the page in a production build
+(`npm run build && npm start`) with the console open. Images that go through `next/image`
+without `unoptimized` are served by the app and need no CSP change, only an entry in
+`images.remotePatterns`.
+
 ## Building and running the container
 
 ```bash
@@ -422,3 +455,6 @@ Watch the memory graph during the first weeks and adjust.
 13. With `SUPPORT_INBOX_EMAIL` set, send a message from the contact form and from the help
     form. Check that both arrive in that inbox and that replying goes to the visitor (for
     the help form, to the account's email).
+14. Google Drive import works: with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` and
+    `NEXT_PUBLIC_GOOGLE_API_KEY` set, open Browse Drive, grant access, pick a file and
+    convert it, with the browser console showing no Content Security Policy violations.
