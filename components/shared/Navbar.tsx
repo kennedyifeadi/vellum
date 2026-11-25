@@ -73,8 +73,8 @@ function MegaNav({ onClose, scrolled }: { onClose: () => void; scrolled: boolean
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={`absolute top-full left-0 w-full mt-3 bg-white overflow-hidden z-50 ${
-        scrolled ? 'rounded-2xl border border-gray-100' : 'border-b border-gray-100'
+      className={`absolute top-full left-0 w-full mt-3 bg-surface overflow-hidden z-50 ${
+        scrolled ? 'rounded-panel border border-gray-100' : 'border-b border-gray-100'
       }`}
       onMouseLeave={onClose}
     >
@@ -94,9 +94,9 @@ function MegaNav({ onClose, scrolled }: { onClose: () => void; scrolled: boolean
                   <Link
                     href={tool.href}
                     onClick={onClose}
-                    className="group flex flex-col gap-0.5 rounded-lg px-2 py-2 hover:bg-gray-50 transition-colors"
+                    className="group flex flex-col gap-0.5 rounded-control px-2 py-2 hover:bg-gray-50 transition-colors"
                   >
-                    <span className="text-sm font-medium text-gray-800 group-hover:text-indigo-600 transition-colors">
+                    <span className="text-sm font-medium text-gray-800 group-hover:text-brand-strong transition-colors">
                       {tool.name}
                     </span>
                     <span className="text-[11px] text-gray-400 leading-tight">{tool.desc}</span>
@@ -116,7 +116,7 @@ function MegaNav({ onClose, scrolled }: { onClose: () => void; scrolled: boolean
         <Link
           href="/dashboard"
           onClick={onClose}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1"
+          className="text-xs font-semibold text-brand-strong hover:text-brand-hover transition-colors flex items-center gap-1"
         >
           View all tools
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -183,7 +183,7 @@ export default function Navbar() {
             relative mx-auto flex items-center justify-between
             transition-all duration-500 ease-out
             ${scrolled
-              ? 'max-w-5xl rounded-full bg-white/90 border border-gray-200/60 px-5 h-14'
+              ? 'max-w-5xl rounded-full bg-surface/90 border border-gray-200/60 px-5 h-14'
               : 'max-w-500 bg-transparent border border-transparent px-6 lg:px-12 h-20'
             }
           `}
@@ -205,13 +205,13 @@ export default function Navbar() {
             >
               <button
                 className={`
-                  flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium
+                  flex items-center gap-1.5 px-3.5 py-2 rounded-control text-sm font-medium
                   transition-all duration-150
                   ${scrolled
-                    ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    ? 'text-gray-600 hover:text-gray-900 hover:bg-surface-sunken'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }
-                  ${megaOpen ? (scrolled ? 'text-gray-900 bg-gray-100' : 'text-gray-900 bg-gray-50') : ''}
+                  ${megaOpen ? (scrolled ? 'text-gray-900 bg-surface-sunken' : 'text-gray-900 bg-gray-50') : ''}
                 `}
                 aria-expanded={megaOpen}
                 onClick={() => setMegaOpen((p) => !p)}
@@ -235,11 +235,11 @@ export default function Navbar() {
                 key={item.name}
                 href={item.href}
                 className={`
-                  px-3.5 py-2 rounded-lg text-sm font-medium
+                  px-3.5 py-2 rounded-control text-sm font-medium
                   transition-all duration-150
                   ${scrolled
-                    ? 'text-gray-600 hover:text-indigo-600'
-                    : 'text-gray-600 hover:text-indigo-600'
+                    ? 'text-gray-600 hover:text-brand-strong'
+                    : 'text-gray-600 hover:text-brand-strong'
                   }
                 `}
               >
@@ -253,10 +253,10 @@ export default function Navbar() {
             <Link
               href="/login"
               className={`
-                px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
+                px-4 py-2 rounded-control text-sm font-medium transition-all duration-150
                 ${scrolled
-                  ? 'text-gray-600 hover:text-indigo-600'
-                  : 'text-gray-600 hover:text-indigo-600'
+                  ? 'text-gray-600 hover:text-brand-strong'
+                  : 'text-gray-600 hover:text-brand-strong'
                 }
               `}
             >
@@ -264,7 +264,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/sign-up"
-              className="px-4 py-2 rounded-full text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+              className="px-4 py-2 rounded-full text-sm font-semibold bg-brand-strong text-on-brand hover:bg-brand-hover transition-colors shadow-sm"
             >
               Get Started
             </Link>
@@ -272,7 +272,7 @@ export default function Navbar() {
 
           {/* ── Mobile hamburger ── */}
           <button
-            className="md:hidden p-2 rounded-lg transition-colors text-gray-700 hover:bg-gray-100"
+            className="md:hidden p-2 rounded-control transition-colors text-gray-700 hover:bg-surface-sunken"
             onClick={() => setMobileOpen((p) => !p)}
             aria-label="Toggle menu"
           >
@@ -294,14 +294,14 @@ export default function Navbar() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.18 }}
               className={`
-                md:hidden mx-4 mt-2 rounded-2xl bg-white border border-gray-100 shadow-xl overflow-hidden
+                md:hidden mx-4 mt-2 rounded-panel bg-surface border border-gray-100 shadow-xl overflow-hidden
               `}
             >
               <div className="p-4 space-y-1">
                 {/* Solutions accordion */}
                 <button
                   onClick={() => setMegaOpen((p) => !p)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-control text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Solutions <ChevronDown open={megaOpen} />
                 </button>
@@ -322,7 +322,7 @@ export default function Navbar() {
                                 key={t.name}
                                 href={t.href}
                                 onClick={() => setMobileOpen(false)}
-                                className="block px-2 py-1.5 text-sm text-gray-700 hover:text-indigo-600 rounded-lg hover:bg-gray-50"
+                                className="block px-2 py-1.5 text-sm text-gray-700 hover:text-brand-strong rounded-control hover:bg-gray-50"
                               >
                                 {t.name}
                               </Link>
@@ -339,7 +339,7 @@ export default function Navbar() {
                     key={item}
                     href={`/${item.toLowerCase()}`}
                     onClick={() => setMobileOpen(false)}
-                    className="block px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="block px-3 py-2.5 rounded-control text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     {item}
                   </Link>
@@ -350,14 +350,14 @@ export default function Navbar() {
                 <Link
                   href="/sign-in"
                   onClick={() => setMobileOpen(false)}
-                  className="flex-1 text-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50"
+                  className="flex-1 text-center px-4 py-2.5 rounded-control text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50"
                 >
                   Login
                 </Link>
                 <Link
                   href="/sign-up"
                   onClick={() => setMobileOpen(false)}
-                  className="flex-1 text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
+                  className="flex-1 text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-brand-strong text-on-brand hover:bg-brand-hover"
                 >
                   Get Started
                 </Link>
