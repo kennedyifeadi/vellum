@@ -1,15 +1,18 @@
 import { NextRequest } from 'next/server';
 import { MB, streamedUpload } from './helpers/uploadRequests';
+import { streamedBody } from './helpers/streamedBody';
 
 jest.mock('@/lib/auth/jwt', () => ({
   getAuthUserId: jest.fn().mockResolvedValue(null),
-  getAuthSession: jest.fn().mockResolvedValue(null),
+  createToken: jest.fn(),
 }));
 
-import { proxy } from '../proxy';
 import { POST as compressPdf } from '../app/api/convert/compress-pdf/route';
 import { POST as htmlToPdf } from '../app/api/convert/html-to-pdf/route';
 import { POST as uploadDocuments } from '../app/api/documents/upload/route';
+import { GET as listDocuments } from '../app/api/documents/route';
+import { POST as requestOtp } from '../app/api/auth/request-otp/route';
+import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
 import { RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 const LIMIT = 30;
@@ -53,11 +56,11 @@ describe('upload routes outside proxy.ts', () => {
     expect(over.bytesRead()).toBe(0);
   });
 
-  it("counts against the same budget as the proxy's routes", async () => {
+  it("counts against the same budget as the other API routes", async () => {
     const ip = freshIp();
     for (let i = 0; i < LIMIT; i++) {
-      const proxied = new NextRequest('http://localhost:3000/api/documents/abc', { headers: { 'x-real-ip': ip } });
-      expect((await proxy(proxied)).status).not.toBe(429);
+      const listed = new NextRequest('http://localhost:3000/api/documents', { headers: { 'x-real-ip': ip } });
+      expect((await listDocuments(listed)).status).not.toBe(429);
     }
 
     await expectRateLimited(await compressPdf(upload('/api/convert/compress-pdf', ip).request));
@@ -68,6 +71,26 @@ describe('upload routes outside proxy.ts', () => {
     for (let i = 0; i <= LIMIT; i++) await compressPdf(upload('/api/convert/compress-pdf', limited).request);
 
     expect((await compressPdf(upload('/api/convert/compress-pdf', freshIp()).request)).status).not.toBe(429);
+  });
+});
+
+describe('sign-in routes outside proxy.ts', () => {
+  it.each([
+    ['request-otp', '/api/auth/request-otp', requestOtp],
+    ['verify-otp', '/api/auth/verify-otp', verifyOtp],
+  ] as const)('refuse the %s request over the limit before reading its body', async (_name, path, handler) => {
+    const ip = freshIp();
+    for (let i = 0; i < LIMIT; i++) {
+      const plain = new NextRequest(`http://localhost:3000${path}`, { method: 'POST', headers: { 'x-real-ip': ip } });
+      expect((await handler(plain)).status).not.toBe(429);
+    }
+
+    const over = streamedBody(`http://localhost:3000${path}`, 400 * MB, {
+      contentType: 'application/json',
+      headers: { 'x-real-ip': ip },
+    });
+    await expectRateLimited(await handler(over.request));
+    expect(over.bytesRead()).toBe(0);
   });
 });
 

@@ -18,8 +18,8 @@ interface RateLimitRecord {
   timestamp: number;
 }
 
-// proxy.ts and the upload routes are bundled separately but run in one server process, so
-// the counts live on globalThis for both to share one budget per caller.
+// The routes that count requests are bundled separately but run in one server process, so
+// the counts live on globalThis for them to share one budget per caller.
 const globalForRateLimits = globalThis as typeof globalThis & {
   vellumRateLimits?: Map<string, RateLimitRecord>;
   vellumSupportRateLimits?: Map<string, RateLimitRecord>;
@@ -70,7 +70,7 @@ export function assertWithinSupportRateLimit(req: Request): void {
   }
 }
 
-/** For a route proxy.ts does not match, so it is rate limited before reading its body. */
+/** Rate limits a route before it reads its body: proxy.ts matches no API route. */
 export function assertWithinRateLimit(req: Request): void {
   if (isRateLimited(req.headers)) {
     throw new ClientError(RATE_LIMITED_MESSAGE, 429);

@@ -6,6 +6,8 @@ import { getStorage } from '@/lib/storage';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
 import { unexpired } from '@/lib/stored-files';
+import { ClientError } from '@/lib/convert/errors';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 // A stored document's type is whatever its uploader claimed, so it is only passed on for
 // types a browser will not run as a page or script; anything else is served as bytes.
@@ -34,6 +36,8 @@ function servedContentType(claimedType: unknown): string {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    assertWithinRateLimit(req);
+
     const userId = await getAuthUserId(req);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -56,6 +60,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }, `Library document ${doc.diskFileName}`);
 
   } catch (error) {
+    if (error instanceof ClientError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error('[API/Documents/Download] Error:', error);
     return NextResponse.json({ error: 'Failed to download document' }, { status: 500 });
   }

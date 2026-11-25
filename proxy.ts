@@ -1,17 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAuthSession } from '@/lib/auth/jwt';
-import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // Rate Limiting for API routes
-  if (pathname.startsWith('/api/convert/') || pathname.startsWith('/api/documents/') || pathname.startsWith('/api/auth/verify-otp') || pathname.startsWith('/api/auth/request-otp')) {
-    if (isRateLimited(request.headers)) {
-      return NextResponse.json({ error: RATE_LIMITED_MESSAGE }, { status: 429 });
-    }
-  }
 
   // 1. Get Authentication State
   const session = await getAuthSession(request);
@@ -61,18 +53,14 @@ export async function proxy(request: NextRequest) {
 }
 
 // Next reads and holds the whole body of every request it matches before the route runs,
-// whatever the proxy answers, so the upload routes (all of /api/convert/* and
-// /api/documents/upload) are left out: they rate limit and size-check themselves before
-// reading a byte (lib/http/read-upload.ts).
+// whatever the proxy answers, so no API route is matched: each one checks its own session,
+// and those that read a body rate limit and size-check it before reading a byte
+// (lib/http/read-upload.ts).
 export const config = {
   matcher: [
     '/dashboard/:path*',
     '/login',
     '/verify',
     '/signup-details',
-    '/api/documents',
-    '/api/documents/((?!upload$).*)',
-    '/api/auth/verify-otp',
-    '/api/auth/request-otp',
   ],
 };
