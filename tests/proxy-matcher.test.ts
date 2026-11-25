@@ -1,7 +1,6 @@
 import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 
-jest.mock('next-auth/jwt', () => ({ getToken: jest.fn().mockResolvedValue(null) }));
-jest.mock('@/lib/auth/jwt', () => ({ verifyToken: jest.fn().mockResolvedValue(null) }));
+jest.mock('@/lib/auth/jwt', () => ({ getAuthSession: jest.fn().mockResolvedValue(null) }));
 
 import { config } from '../proxy';
 import nextConfig from '../next.config';

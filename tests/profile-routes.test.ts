@@ -2,14 +2,13 @@ import { NextRequest } from 'next/server';
 
 jest.mock('@getbrevo/brevo', () => jest.requireActual('./helpers/brevoMock'));
 jest.mock('@/lib/db/mongoose', () => ({ __esModule: true, default: jest.fn() }));
-jest.mock('next-auth/jwt', () => ({ getToken: jest.fn() }));
-jest.mock('@/lib/auth/jwt', () => ({ verifyToken: jest.fn(), createToken: jest.fn() }));
+jest.mock('@/lib/auth/jwt', () => ({ getAuthSession: jest.fn(), getAuthUserId: jest.fn(), createToken: jest.fn() }));
 jest.mock('next/headers', () => ({
   cookies: async () => ({ get: () => ({ value: 'session' }), set: () => undefined }),
 }));
 
 import * as brevo from '@getbrevo/brevo';
-import { createToken, verifyToken } from '@/lib/auth/jwt';
+import { createToken, getAuthSession, getAuthUserId } from '@/lib/auth/jwt';
 import User from '@/models/user';
 import { POST as completeProfile } from '../app/api/auth/complete-profile/route';
 import { PATCH as updateProfile } from '../app/api/user/profile/route';
@@ -66,7 +65,8 @@ beforeEach(() => {
   env.BREVO_API_KEY = 'test-key';
   env.EMAIL_USER = 'no-reply@vellum.test';
   sendTransacEmail.mockReset().mockResolvedValue({ messageId: 'test' });
-  jest.mocked(verifyToken).mockResolvedValue({ userId: USER_ID });
+  jest.mocked(getAuthSession).mockResolvedValue({ userId: USER_ID, sessionId: 'test-session', isProfileComplete: false });
+  jest.mocked(getAuthUserId).mockResolvedValue(USER_ID);
   jest.mocked(createToken).mockResolvedValue('new-session');
 
   stored = { _id: USER_ID, email: 'ada@account.test', isProfileComplete: false, tokenVersion: 1 };

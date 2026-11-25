@@ -175,7 +175,9 @@ describe.each(STORAGE_DRIVERS)('DELETE /api/user/delete on %s', (_name, createDr
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ message: DELETED_MESSAGE });
-    expect(mockDeleteCookie).toHaveBeenCalledWith('auth-token');
+    for (const name of ['auth-token', 'next-auth.session-token', '__Secure-next-auth.session-token']) {
+      expect(mockDeleteCookie).toHaveBeenCalledWith(expect.objectContaining({ name }));
+    }
     expect(ownedBy(conversions, USER)).toEqual([]);
     expect(ownedBy(documents, USER)).toEqual([]);
     expect(users.all().map((user) => user._id)).toEqual([OTHER_USER]);

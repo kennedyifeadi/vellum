@@ -1,12 +1,10 @@
 import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/db/mongoose', () => ({ __esModule: true, default: jest.fn() }));
-jest.mock('next-auth/jwt', () => ({ getToken: jest.fn() }));
 jest.mock('@/lib/auth/jwt', () => ({
   getAuthUserId: jest.fn(),
-  verifyToken: jest.fn(),
+  getAuthSession: jest.fn(),
   createToken: jest.fn(),
-  invalidateTokenVersionCache: jest.fn(),
 }));
 jest.mock('next/headers', () => ({
   cookies: async () => ({ get: () => ({ value: 'b'.repeat(43) }), set: () => undefined, delete: () => undefined }),
@@ -21,7 +19,7 @@ jest.mock('@/lib/auth/otpRequestLimit', () => ({
 jest.mock('@/lib/auth/verifyOtp', () => ({ verifyOtp: jest.fn().mockResolvedValue('device-id') }));
 jest.mock('@/lib/notifications', () => ({ pushNotification: jest.fn(async (_id: string, fields: object) => fields) }));
 
-import { createToken, getAuthUserId, verifyToken } from '@/lib/auth/jwt';
+import { createToken, getAuthSession, getAuthUserId } from '@/lib/auth/jwt';
 import { REQUEST_TOO_LARGE_MESSAGE } from '@/lib/http/read-upload';
 import User from '@/models/user';
 import { POST as completeProfile } from '../app/api/auth/complete-profile/route';
@@ -138,7 +136,7 @@ function sendStreamed({ path, method, handler }: JsonRoute, sizeBytes: number, d
 beforeEach(() => {
   delete process.env.BREVO_API_KEY;
   jest.mocked(getAuthUserId).mockResolvedValue(USER_ID);
-  jest.mocked(verifyToken).mockResolvedValue({ userId: USER_ID });
+  jest.mocked(getAuthSession).mockResolvedValue({ userId: USER_ID, sessionId: 'test-session', isProfileComplete: false });
   jest.mocked(createToken).mockResolvedValue('new-session');
   jest.spyOn(User, 'findById').mockImplementation((() => query(storedUser())) as never);
   jest.spyOn(User, 'findOne').mockImplementation((() => query(storedUser())) as never);
@@ -211,9 +209,7 @@ describe('authenticated routes', () => {
     '%s refuses a signed-out caller without reading the body',
     async (_name, route) => {
       jest.mocked(getAuthUserId).mockResolvedValue(null);
-      jest.mocked(verifyToken).mockResolvedValue(null);
-      const { getToken } = jest.requireMock('next-auth/jwt') as { getToken: jest.Mock };
-      getToken.mockResolvedValue(null);
+      jest.mocked(getAuthSession).mockResolvedValue(null);
 
       const { response, bytesRead } = sendStreamed(route, 4 * route.limit);
 

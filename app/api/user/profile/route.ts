@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import dbConnect from "@/lib/db/mongoose";
-import { verifyToken } from "@/lib/auth/jwt";
-import { getToken } from "next-auth/jwt";
+import { getAuthUserId } from "@/lib/auth/jwt";
 import User from "@/models/user";
 import { ClientError } from "@/lib/convert/errors";
 import { readJsonRequest } from "@/lib/http/read-upload";
@@ -11,29 +9,7 @@ import { optionalName } from "@/lib/http/text-input";
 export async function PATCH(req: NextRequest) {
   try {
     await dbConnect();
-    const cookieStore = await cookies();
-    const customToken = cookieStore.get('auth-token')?.value;
-    let userId: string | null = null;
-
-    // 1. Try custom JWT auth (OTP flow)
-    if (customToken) {
-      const payload = await verifyToken(customToken);
-      if (payload?.userId) {
-        userId = payload.userId as string;
-      }
-    }
-
-    // 2. Fallback: NextAuth session (Google OAuth)
-    if (!userId) {
-      const nextAuthToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-      if (nextAuthToken?.email) {
-        const existingUser = await User.findOne({ email: nextAuthToken.email });
-        if (existingUser) {
-          userId = existingUser._id.toString();
-        }
-      }
-    }
-
+    const userId = await getAuthUserId(req);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

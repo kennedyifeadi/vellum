@@ -16,12 +16,13 @@ jest.mock('next-auth', () => ({
 }));
 
 jest.mock('@/lib/db/mongodb', () => ({ getMongoClient: jest.fn() }));
+jest.mock('@/lib/db/mongoose', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(true) }));
 
 jest.mock('@next-auth/mongodb-adapter', () => ({ MongoDBAdapter: () => ({}) }));
 
 jest.mock('@/models/user', () => ({
   __esModule: true,
-  default: { findByIdAndUpdate: jest.fn() },
+  default: { findByIdAndUpdate: jest.fn(async () => ({ tokenVersion: 4 })) },
 }));
 
 import User from '@/models/user';
@@ -40,7 +41,7 @@ async function signInWithGoogle(headers: Record<string, string>) {
 }
 
 function recordedSessionEntry(call = 0) {
-  return (User.findByIdAndUpdate as jest.Mock).mock.calls[call][1].$push.activeSessions;
+  return (User.findByIdAndUpdate as jest.Mock).mock.calls[call][1].$push.activeSessions.$each[0];
 }
 
 beforeEach(() => {
@@ -58,8 +59,17 @@ describe('a Google sign-in', () => {
 
     await issueToken();
 
-    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(USER_ID, { $push: { activeSessions: expect.any(Object) } });
+    expect(jest.mocked(User.findByIdAndUpdate).mock.calls[0][0]).toBe(USER_ID);
     expect(recordedSessionEntry()).toMatchObject({ device: 'Test Browser/1.0', location: '203.0.113.7' });
+  });
+
+  it('puts the session it records, and the account’s tokenVersion, in the token', async () => {
+    const issueToken = await signInWithGoogle({ 'user-agent': 'Test Browser/1.0' });
+
+    const token = await issueToken();
+
+    expect(token.sessionId).toBe(recordedSessionEntry().id);
+    expect(token.tokenVersion).toBe(4);
   });
 
   it('records each sign-in against its own request', async () => {

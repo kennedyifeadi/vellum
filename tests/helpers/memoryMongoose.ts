@@ -32,6 +32,13 @@ const matches = (row: Row, filter: Row) =>
 const pulls = (item: unknown, condition: unknown) =>
   isObject(item) && isObject(condition) ? matches(item, condition) : meets(item, condition);
 
+// $push takes a value, or { $each, $slice } to add several and keep only the last ones.
+function pushed(list: unknown[], value: unknown): unknown[] {
+  if (!isObject(value) || !('$each' in value)) return [...list, value];
+  const all = [...list, ...(value.$each as unknown[])];
+  return value.$slice === undefined ? all : all.slice(value.$slice as number);
+}
+
 function applyUpdate(row: Row, update: Row) {
   for (const [operator, fields] of Object.entries(update)) {
     if (!operator.startsWith('$')) {
@@ -42,7 +49,7 @@ function applyUpdate(row: Row, update: Row) {
       const list = (row[key] ?? []) as unknown[];
       if (operator === '$set') row[key] = value;
       else if (operator === '$inc') row[key] = Number(row[key] ?? 0) + Number(value);
-      else if (operator === '$push') row[key] = [...list, value];
+      else if (operator === '$push') row[key] = pushed(list, value);
       else if (operator === '$pull') row[key] = list.filter((item) => !pulls(item, value));
       else throw new Error(`memoryMongoose does not support ${operator}`);
     }

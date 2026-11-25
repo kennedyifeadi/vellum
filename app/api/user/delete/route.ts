@@ -3,6 +3,7 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import dbConnect from '@/lib/db/mongoose';
 import { cookies } from 'next/headers';
 import { deleteAccount } from '@/lib/account-deletion';
+import { clearSessionCookies } from '@/lib/auth/session';
 
 const DELETED_MESSAGE = 'Account deleted, with its conversion history, stored documents and compressed videos';
 const FILES_PENDING_MESSAGE =
@@ -19,9 +20,7 @@ export async function DELETE(req: NextRequest) {
 
     const { filesPending } = await deleteAccount(userId);
 
-    // Destroy active session cookie
-    const cookieStore = await cookies();
-    cookieStore.delete('auth-token');
+    clearSessionCookies(await cookies());
 
     const body = filesPending ? { message: FILES_PENDING_MESSAGE, filesPending } : { message: DELETED_MESSAGE };
     return NextResponse.json(body, { status: 200 });

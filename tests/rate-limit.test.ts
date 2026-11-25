@@ -1,12 +1,8 @@
 import { NextRequest } from 'next/server';
 import { proxy } from '../proxy';
 
-jest.mock('next-auth/jwt', () => ({
-  getToken: jest.fn().mockResolvedValue(null),
-}));
-
 jest.mock('@/lib/auth/jwt', () => ({
-  verifyToken: jest.fn().mockResolvedValue(null),
+  getAuthSession: jest.fn().mockResolvedValue(null),
 }));
 
 describe('Rate Limiting System Tests (proxy.ts)', () => {

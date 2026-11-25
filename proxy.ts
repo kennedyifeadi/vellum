@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth/jwt';
-import { getToken } from 'next-auth/jwt';
+import { getAuthSession } from '@/lib/auth/jwt';
 import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
 
 export async function proxy(request: NextRequest) {
@@ -15,22 +14,9 @@ export async function proxy(request: NextRequest) {
   }
 
   // 1. Get Authentication State
-  const token = request.cookies.get('auth-token')?.value;
-  const nextAuthToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-
-  let isProfileComplete = false;
-  let isAuthenticated = false;
-
-  if (token) {
-    const payload = await verifyToken(token);
-    if (payload) {
-      isAuthenticated = true;
-      isProfileComplete = !!payload.isProfileComplete;
-    }
-  } else if (nextAuthToken) {
-    isAuthenticated = true;
-    isProfileComplete = !!nextAuthToken.isProfileComplete;
-  }
+  const session = await getAuthSession(request);
+  const isAuthenticated = session !== null;
+  const isProfileComplete = !!session?.isProfileComplete;
 
   // 2. Redirection Logic
 

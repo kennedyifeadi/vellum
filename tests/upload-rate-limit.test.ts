@@ -1,11 +1,9 @@
 import { NextRequest } from 'next/server';
 import { MB, streamedUpload } from './helpers/uploadRequests';
 
-jest.mock('next-auth/jwt', () => ({ getToken: jest.fn().mockResolvedValue(null) }));
-
 jest.mock('@/lib/auth/jwt', () => ({
   getAuthUserId: jest.fn().mockResolvedValue(null),
-  verifyToken: jest.fn().mockResolvedValue(null),
+  getAuthSession: jest.fn().mockResolvedValue(null),
 }));
 
 import { proxy } from '../proxy';

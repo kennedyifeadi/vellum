@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import GoogleProvider from "next-auth/providers/google";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import { getMongoClient } from "@/lib/db/mongodb";
-import { buildSessionEntry } from "@/lib/auth/session";
+import { buildSessionEntry, recordSession } from "@/lib/auth/session";
 import { ClientError } from "@/lib/convert/errors";
 import { readBoundedBody, requestTooLarge } from "@/lib/http/read-upload";
 import User from "@/models/user"; // Your existing User model
@@ -51,9 +51,9 @@ export function authOptionsFor(req: NextRequest): AuthOptions {
 
           // This only runs on the initial sign-in (user is only present then),
           // not on every session refresh, so it records one entry per login.
-          await User.findByIdAndUpdate(user.id, {
-            $push: { activeSessions: buildSessionEntry(req) },
-          });
+          const session = buildSessionEntry(req);
+          token.tokenVersion = await recordSession(user.id, session);
+          token.sessionId = session.id;
         }
         return token;
       },
