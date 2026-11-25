@@ -69,7 +69,7 @@ export default function ContactFormSection() {
           </div>
           <div>
             <h4 className="font-bold text-gray-900 mb-2">Email</h4>
-            <a href="mailto:support@vellum.com" className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline">
+            <a href="mailto:support@vellum.com" className="text-sm text-brand-strong hover:text-brand-hover hover:underline">
               support@vellum.com
             </a>
           </div>
@@ -101,7 +101,7 @@ export default function ContactFormSection() {
             <p className="text-sm">We&apos;ve received your message and will be in touch shortly.</p>
             <button 
               onClick={() => setStatus('idle')}
-              className="mt-6 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+              className="mt-6 text-sm font-semibold text-brand-strong hover:text-brand-hover"
             >
               Send another message
             </button>
@@ -136,7 +136,7 @@ export default function ContactFormSection() {
               rows={5}
               value={formData.message}
               onChange={(e) => setFormData({...formData, message: e.target.value})}
-              className="w-full p-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl text-[#111827] placeholder-[#9ca3af] outline-none transition-all duration-200 focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 hover:border-[#d1d5db] resize-none"
+              className="w-full p-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl text-ink placeholder-ink-disabled outline-none transition-all duration-200 focus:border-brand focus:ring-2 focus:ring-brand/10 hover:border-border-strong resize-none"
             ></textarea>
 
             {status === 'error' && (
@@ -146,10 +146,10 @@ export default function ContactFormSection() {
             <button 
               type="submit" 
               disabled={status === 'loading'}
-              className="mt-4 flex items-center justify-center rounded-xl bg-indigo-600 px-8 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70 gap-2"
+              className="mt-4 flex items-center justify-center rounded-xl bg-brand-strong px-8 py-3.5 text-sm font-semibold text-on-brand hover:bg-brand-hover transition-colors shadow-sm disabled:opacity-70 gap-2"
             >
               {status === 'loading' && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-on-brand border-t-transparent rounded-full animate-spin" />
               )}
               Send a message
             </button>

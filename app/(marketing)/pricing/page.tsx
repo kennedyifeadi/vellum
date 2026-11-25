@@ -102,7 +102,7 @@ export default function PricingPage() {
         </div>
 
         {/* Pricing Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-0 border border-gray-200 rounded-2xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-0 border border-gray-200 rounded-panel">
           {plans.map((plan, index) => (
             <motion.div 
               key={plan.name}
@@ -128,7 +128,7 @@ export default function PricingPage() {
               </div>
 
               {/* Limits Box */}
-              <div className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2.5 px-4 mb-8 text-sm font-medium text-gray-700 text-center">
+              <div className="w-full bg-gray-50 border border-gray-200 rounded-control py-2.5 px-4 mb-8 text-sm font-medium text-gray-700 text-center">
                 {plan.limitLabel}
               </div>
 
@@ -149,8 +149,8 @@ export default function PricingPage() {
                 href={plan.buttonLink}
                 className={`w-full py-3 px-4 rounded-xl text-sm font-semibold text-center transition-all ${
                   plan.isPrimary 
-                    ? "bg-indigo-600 text-white hover:bg-indigo-700" 
-                    : "bg-gray-100 text-gray-900 hover:bg-gray-200"
+                    ? "bg-brand-strong text-on-brand hover:bg-brand-hover" 
+                    : "bg-surface-sunken text-gray-900 hover:bg-gray-200"
                 }`}
               >
                 {plan.buttonText}

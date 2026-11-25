@@ -204,7 +204,7 @@ const SmallNode = ({
   direction?: number;
 }) => (
   <motion.div
-    className={`absolute flex items-center justify-center bg-[#F3F4F6] text-gray-400 z-10 rounded-full`}
+    className={`absolute flex items-center justify-center bg-surface-sunken text-gray-400 z-10 rounded-full`}
     style={{
       left: x,
       top: y,
@@ -231,7 +231,7 @@ export default function HeroSection() {
   }, []);
 
   return (
-    <section className="relative w-full min-h-screen flex flex-col items-center justify-center font-sans bg-white hero-section-container">
+    <section className="relative w-full min-h-screen flex flex-col items-center justify-center font-sans bg-surface hero-section-container">
       <div className="absolute inset-0 z-0 overflow-hidden">
         <Antigravity
           count={100}
@@ -360,7 +360,7 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 12 }}
           animate={mounted ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6 }}
-          className="text-sm font-bold tracking-widest uppercase text-indigo-600 mb-6"
+          className="text-sm font-bold tracking-widest uppercase text-brand-strong mb-6"
         >
           Vellum Tools
         </motion.p>
@@ -403,7 +403,7 @@ export default function HeroSection() {
         >
           <Link
             href="/sign-up"
-            className="px-8 py-4 rounded-full bg-indigo-600 text-white text-[15px] font-semibold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-500/30 flex items-center gap-2"
+            className="px-8 py-4 rounded-full bg-brand-strong text-on-brand text-[15px] font-semibold hover:bg-brand-hover transition-all shadow-lg hover:shadow-indigo-500/30 flex items-center gap-2"
           >
             Get Started Free
             <svg
@@ -422,7 +422,7 @@ export default function HeroSection() {
 
           <Link
             href="/dashboard"
-            className="px-8 py-4 rounded-full bg-white text-gray-900 text-[15px] font-semibold hover:bg-gray-50 border border-gray-200 transition-all shadow-sm flex items-center gap-2"
+            className="px-8 py-4 rounded-full bg-surface text-gray-900 text-[15px] font-semibold hover:bg-gray-50 border border-gray-200 transition-all shadow-sm flex items-center gap-2"
           >
             Explore tools
           </Link>
