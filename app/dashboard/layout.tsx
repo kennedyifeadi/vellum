@@ -30,6 +30,7 @@ const DashboardContext = createContext<{
   addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => void;
   markAllAsRead: () => void;
   unreadCount: number;
+  signOut: () => Promise<void>;
   // Mobile nav
   openMobileNav: () => void;
   mobileNavOpen: boolean;
@@ -47,6 +48,7 @@ const DashboardContext = createContext<{
   addNotification: () => {},
   markAllAsRead: () => {},
   unreadCount: 0,
+  signOut: async () => {},
   openMobileNav: () => {},
   mobileNavOpen: false,
   closeMobileNav: () => {},
@@ -232,6 +234,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       addNotification,
       markAllAsRead,
       unreadCount,
+      signOut: handleSignOut,
       openMobileNav: () => setMobileNavOpen(true),
       mobileNavOpen,
       closeMobileNav: () => setMobileNavOpen(false),
