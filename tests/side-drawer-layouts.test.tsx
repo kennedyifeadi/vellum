@@ -8,8 +8,8 @@ import { BUSY_RETRY_POLICY } from '@/lib/busy-retry';
 const mockShowToast = jest.fn();
 const mockAddNotification = jest.fn();
 
-jest.mock('@/app/dashboard/layout', () => ({
-  useDashboard: () => ({
+jest.mock('@/components/shared/ToolHost', () => ({
+  useToolHost: () => ({
     showToast: mockShowToast,
     addNotification: mockAddNotification,
     user: { plan: 'Basic' },

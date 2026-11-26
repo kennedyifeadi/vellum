@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
-import { useDashboard } from '@/app/dashboard/layout';
+import { useToolHost } from '@/components/shared/ToolHost';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import Image from 'next/image';
@@ -124,7 +124,7 @@ const availableTools = [
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
-  const { showToast, addNotification, user } = useDashboard();
+  const { showToast, addNotification, user } = useToolHost();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-file state array
