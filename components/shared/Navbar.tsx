@@ -14,7 +14,7 @@ const MEGA_NAV_CATEGORIES = [
     tools: [
       { name: 'Merge PDF',      desc: 'Combine multiple PDFs into one',   href: '/solutions/merge-pdf' },
       { name: 'Split PDF',      desc: 'Extract or separate PDF pages',    href: '/solutions/split-pdf' },
-      { name: 'Compress PDF',   desc: 'Reduce PDF file size instantly',   href: '/solutions/compress-pdf' },
+      { name: 'Compress PDF',   desc: 'Reduce PDF file size',             href: '/solutions/compress-pdf' },
       { name: 'Lock PDF',       desc: 'Password-protect your PDFs',       href: '/solutions/lock-pdf' },
       { name: 'Find in PDF',    desc: 'Search text across PDF documents', href: '/solutions/find-pdf' },
     ],
@@ -25,14 +25,14 @@ const MEGA_NAV_CATEGORIES = [
     tools: [
       { name: 'Image to PDF',   desc: 'Convert JPG/PNG to a PDF',        href: '/solutions/image-to-pdf' },
       { name: 'JPEG to PNG',    desc: 'Swap image formats with ease',     href: '/solutions/jpg-to-png' },
-      { name: 'Compress Image', desc: 'Shrink images without quality loss', href: '/solutions/image-compress' },
+      { name: 'Compress Image', desc: 'Reduce image file size',           href: '/solutions/image-compress' },
     ],
   },
   {
     label: 'Video Solutions',
     description: 'Optimise and process video files',
     tools: [
-      { name: 'Compress Video', desc: 'Reduce video size while preserving quality', href: '/solutions/video-compress' },
+      { name: 'Compress Video', desc: 'Reduce video file size',           href: '/solutions/video-compress' },
     ],
   },
   {

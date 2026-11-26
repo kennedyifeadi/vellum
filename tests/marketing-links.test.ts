@@ -220,6 +220,9 @@ describe('marketing copy', () => {
     ['links to terms that do not exist', /terms of service/i],
     ['links to a privacy policy that does not exist', /privacy policy/i],
     ['a setup guide that does not exist', /read our guide/i],
+    ['lossless image compression, which is lossy', /without quality loss/i],
+    ['video compression that keeps the quality', /while preserving quality/i],
+    ['instant PDF compression', /file size instantly/i],
   ])('no longer claims %s', (_claim, pattern) => {
     expect(filesContaining(pattern)).toEqual([]);
   });
