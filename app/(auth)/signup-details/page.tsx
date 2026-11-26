@@ -136,10 +136,6 @@ export default function SignupDetailsPage() {
             </div>
         </div>
       </AuthCard>
-
-      <div className="mt-8 text-center text-xs text-[#6b7280]">
-        Need help setting up? <a href="#" className="text-[#6366f1] hover:underline font-medium">Read our guide</a>
-      </div>
     </AuthLayout>
   );
 }

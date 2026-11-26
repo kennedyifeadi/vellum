@@ -86,6 +86,10 @@ describe('retentionAnswer', () => {
   it("states each plan's retention", () => {
     expect(retentionAnswer()).toContain('after 3 days on Basic, 5 days on Pro and 7 days on Enterprise');
   });
+
+  it('says guests keep a compressed video for 24 hours, the one guest result that is stored', () => {
+    expect(retentionAnswer()).toContain('Free (guest) conversions are not stored, except Compress Video results, which can be downloaded for 24 hours.');
+  });
 });
 
 describe('storageNotice', () => {

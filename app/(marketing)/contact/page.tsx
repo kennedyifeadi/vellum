@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import ContactFormSection from "@/components/marketing/ContactFormSection";
 import ToolsCarousel from "@/components/marketing/ToolsCarousel";
+
+export const metadata: Metadata = {
+  title: "Contact | Vellum",
+  description: "Ask a question, report a bug or suggest a feature, and the Vellum team will reply by email.",
+};
 
 export default function ContactPage() {
   return (
@@ -45,12 +51,6 @@ export default function ContactPage() {
                 >
                   Contact Support &rarr;
                 </Link>
-                <div className="flex items-center gap-2 text-sm text-gray-500 font-medium justify-end">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                  </span>
-                  All systems operational
-                </div>
               </div>
             </div>
           </div>
@@ -71,7 +71,7 @@ export default function ContactPage() {
               </p>
             </div>
             <Link
-              href="mailto:support@vellum.com?subject=Feature Request"
+              href="/contact#get-in-touch"
               className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Share an idea &rarr;
@@ -89,7 +89,7 @@ export default function ContactPage() {
               </p>
             </div>
             <Link
-              href="mailto:support@vellum.com?subject=Bug Report"
+              href="/contact#get-in-touch"
               className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Report a bug &rarr;
@@ -101,15 +101,13 @@ export default function ContactPage() {
             <div className="flex-1">
               <h3 className="text-lg font-bold text-gray-900 mb-3">Business</h3>
               <p className="text-sm text-gray-600 leading-relaxed mb-8">
-                Interested in partnerships,
-                <br className="hidden sm:block" />
-                API access,
+                Interested in partnerships
                 <br className="hidden sm:block" />
                 or enterprise solutions?
               </p>
             </div>
             <Link
-              href="mailto:support@vellum.com?subject=Business Inquiry"
+              href="/contact#get-in-touch"
               className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Let&apos;s talk &rarr;

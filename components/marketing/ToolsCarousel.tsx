@@ -9,45 +9,33 @@ const tools = [
   {
     id: 'pdf-to-doc',
     logoText: 'Vellum PDF',
-    stats: [
-      { value: '100%', label: 'Formatting retention across all doc types' },
-      { value: '< 5s', label: 'Average time to convert a 50-page PDF' }
-    ],
     title: 'Transform the way you handle documents',
-    quote: '"Transform your static PDFs into fully editable Word documents in seconds. Preserve your original layout, formatting, and fonts without the hassle of manual retyping. Focus on what matters—your content."',
+    quote: '"Turn your PDFs into Word documents you can edit, so you can change the text without retyping it."',
     mediaType: 'image',
     mediaUrl: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=2072&auto=format&fit=crop',
     cta: 'Try Converter',
-    link: '/tools/pdf-to-word',
+    link: '/solutions/pdf-to-docx',
   },
   {
     id: 'video-compression',
     logoText: 'Vellum Video',
-    stats: [
-      { value: '80%', label: 'Reduction in file size on average' },
-      { value: '4K', label: 'Resolution support with no quality loss' }
-    ],
-    title: 'Crystal clear quality, fraction of the size',
-    quote: '"Reduce video file sizes dramatically without compromising on visual quality. Our intelligent compression algorithms make your videos easy to share, upload, and store while keeping every frame crystal clear."',
+    title: 'Smaller videos, easier to share',
+    quote: '"Compress your videos so they are easier to share, upload and store, with a quality setting you choose."',
     mediaType: 'video',
     mediaUrl: 'https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-4171-large.mp4',
     posterUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=2071&auto=format&fit=crop',
     cta: 'Compress Video',
-    link: '/tools/compress-video',
+    link: '/solutions/video-compress',
   },
   {
     id: 'merge-pdf',
     logoText: 'Vellum Merge',
-    stats: [
-      { value: '∞', label: 'Unlimited files per merge operation' },
-      { value: '1-Click', label: 'Simple drag and drop interface' }
-    ],
     title: 'The ultimate tool for document organization',
     quote: '"Combine multiple PDF files into a single, organized document. Whether you\'re assembling reports, portfolios, or invoices, our intuitive merge tool keeps everything perfectly structured and accessible."',
     mediaType: 'image',
     mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
     cta: 'Merge Files',
-    link: '/tools/merge-pdf',
+    link: '/solutions/merge-pdf',
   }
 ];
 
@@ -171,23 +159,6 @@ export default function ToolsCarousel() {
                 className="flex flex-col flex-1 justify-between"
               >
                 <div>
-                  {/* Stats Row */}
-                  <div className="flex items-start mb-4 pb-4">
-                    <div className="flex-1 pr-4">
-                      <div className="text-3xl font-bold text-gray-900 mb-2">{currentTool.stats[0].value}</div>
-                      <div className="text-xs text-gray-500 leading-relaxed pr-2">
-                        {currentTool.stats[0].label}
-                      </div>
-                    </div>
-                    <div className="w-px bg-gray-200 h-16 self-center"></div>
-                    <div className="flex-1 pl-6">
-                      <div className="text-3xl font-bold text-gray-900 mb-2">{currentTool.stats[1].value}</div>
-                      <div className="text-xs text-gray-500 leading-relaxed pr-2">
-                        {currentTool.stats[1].label}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Content Body */}
                   <div className="flex-1 mb-4">
                     <h3 className="text-base font-bold text-gray-900 mb-3">

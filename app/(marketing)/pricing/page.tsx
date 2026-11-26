@@ -24,12 +24,12 @@ export default function PricingPage() {
         "No Cloud Storage"
       ],
       buttonText: "Start for Free",
-      buttonLink: "/login",
+      buttonLink: "/solutions",
       isPrimary: false,
     },
     {
       name: "Basic",
-      description: "Creative personal sites and workflows",
+      description: "For personal use",
       priceMonthly: 10,
       priceYearly: 8, // $96/yr
       limitLabel: "Increased usage limits",
@@ -38,12 +38,12 @@ export default function PricingPage() {
         ...storageFeatures("Basic"),
       ],
       buttonText: "Start with Basic",
-      buttonLink: "/signup",
+      buttonLink: "/login",
       isPrimary: false,
     },
     {
       name: "Pro",
-      description: "Growing professional sites and workflows",
+      description: "More storage and longer retention",
       priceMonthly: 30,
       priceYearly: 24, // $288/yr
       limitLabel: "Professional limits",
@@ -52,23 +52,21 @@ export default function PricingPage() {
         ...storageFeatures("Pro"),
       ],
       buttonText: "Start with Pro",
-      buttonLink: "/signup?plan=pro",
+      buttonLink: "/login",
       isPrimary: true,
     },
     {
       name: "Enterprise",
-      description: "Mission critical workflows and high volume",
+      description: "The highest limits, for heavy use",
       priceMonthly: "Custom",
       priceYearly: "Custom",
       limitLabel: "Highest usage limits",
       features: [
         ...headlineFeatures("Enterprise"),
         ...storageFeatures("Enterprise"),
-        "Uptime Guarantee",
-        "Dedicated Support"
       ],
       buttonText: "Contact Us",
-      buttonLink: "mailto:contact@vellum.com",
+      buttonLink: "/contact",
       isPrimary: false,
     }
   ];
@@ -167,7 +165,7 @@ export default function PricingPage() {
           <ToolsCarousel />
         </div>
         <div className="mt-12 text-center text-sm text-gray-500">
-          <p>Enterprise custom workflows require individual setup. <a href="mailto:contact@vellum.com" className="text-blue-600 hover:underline">Contact sales</a> to learn more.</p>
+          <p>Enterprise custom workflows require individual setup. <Link href="/contact" className="text-blue-600 hover:underline">Contact sales</Link> to learn more.</p>
         </div>
 
       </div>

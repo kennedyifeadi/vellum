@@ -402,7 +402,7 @@ export default function HeroSection() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           <Link
-            href="/sign-up"
+            href="/login"
             className="px-8 py-4 rounded-full bg-brand-strong text-on-brand text-[15px] font-semibold hover:bg-brand-hover transition-all shadow-lg hover:shadow-indigo-500/30 flex items-center gap-2"
           >
             Get Started Free
@@ -421,7 +421,7 @@ export default function HeroSection() {
           </Link>
 
           <Link
-            href="/dashboard"
+            href="/solutions"
             className="px-8 py-4 rounded-full bg-surface text-gray-900 text-[15px] font-semibold hover:bg-gray-50 border border-gray-200 transition-all shadow-sm flex items-center gap-2"
           >
             Explore tools

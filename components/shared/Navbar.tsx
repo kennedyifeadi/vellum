@@ -114,7 +114,7 @@ function MegaNav({ onClose, scrolled }: { onClose: () => void; scrolled: boolean
           Explore all <span className="font-semibold text-gray-700">12 tools</span> across every category
         </p>
         <Link
-          href="/dashboard"
+          href="/solutions"
           onClick={onClose}
           className="text-xs font-semibold text-brand-strong hover:text-brand-hover transition-colors flex items-center gap-1"
         >
@@ -263,7 +263,7 @@ export default function Navbar() {
               Login
             </Link>
             <Link
-              href="/sign-up"
+              href="/login"
               className="px-4 py-2 rounded-full text-sm font-semibold bg-brand-strong text-on-brand hover:bg-brand-hover transition-colors shadow-sm"
             >
               Get Started
@@ -334,28 +334,33 @@ export default function Navbar() {
                   )}
                 </AnimatePresence>
 
-                {['About', 'Pricing', 'Security', 'Contact'].map((item) => (
+                {[
+                  { name: 'About', href: '/about' },
+                  { name: 'Pricing', href: '/pricing' },
+                  { name: 'Security', href: '/security' },
+                  { name: 'Contact', href: '/contact' },
+                ].map((item) => (
                   <Link
-                    key={item}
-                    href={`/${item.toLowerCase()}`}
+                    key={item.name}
+                    href={item.href}
                     onClick={() => setMobileOpen(false)}
                     className="block px-3 py-2.5 rounded-control text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    {item}
+                    {item.name}
                   </Link>
                 ))}
               </div>
 
               <div className="border-t border-gray-100 p-4 flex gap-2">
                 <Link
-                  href="/sign-in"
+                  href="/login"
                   onClick={() => setMobileOpen(false)}
                   className="flex-1 text-center px-4 py-2.5 rounded-control text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50"
                 >
                   Login
                 </Link>
                 <Link
-                  href="/sign-up"
+                  href="/login"
                   onClick={() => setMobileOpen(false)}
                   className="flex-1 text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-brand-strong text-on-brand hover:bg-brand-hover"
                 >

@@ -102,6 +102,6 @@ export function retentionAnswer(): string {
   return (
     'To protect your privacy and manage storage, stored documents and conversion history are deleted ' +
     `automatically after ${basic} days on Basic, ${pro} days on Pro and ${enterprise} days on Enterprise. ` +
-    'Free (guest) conversions are not stored.'
+    'Free (guest) conversions are not stored, except Compress Video results, which can be downloaded for 24 hours.'
   );
 }
