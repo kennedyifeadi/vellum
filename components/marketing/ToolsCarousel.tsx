@@ -117,7 +117,7 @@ export default function ToolsCarousel() {
 
           {/* Floating Card */}
           <div 
-            className="absolute top-4 right-4 bottom-4 md:top-8 md:right-8 md:bottom-8 w-full max-w-95 bg-white rounded-3xl md:rounded-4xl p-6 md:p-8 flex flex-col justify-between z-10 overflow-y-auto"
+            className="absolute top-4 right-4 bottom-4 md:top-8 md:right-8 md:bottom-8 w-full max-w-95 bg-surface rounded-3xl md:rounded-4xl p-6 md:p-8 flex flex-col justify-between z-10 overflow-y-auto"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             
@@ -202,7 +202,7 @@ export default function ToolsCarousel() {
                 <div className="flex flex-col gap-6">
                   <Link 
                     href={currentTool.link}
-                    className="text-sm font-semibold text-gray-900 hover:text-indigo-600 transition-colors flex items-center gap-1 group w-fit"
+                    className="text-sm font-semibold text-gray-900 hover:text-brand-strong transition-colors flex items-center gap-1 group w-fit"
                   >
                     {currentTool.cta} 
                     <span className="group-hover:translate-x-1 transition-transform inline-block">

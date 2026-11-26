@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ALL_TOOLS } from '../lib/tools';
+import { ALL_TOOLS, TOOL_CATEGORY_COLORS } from '../lib/tools';
 
 let mockFindByIdResult: any = { plan: 'Basic', preferences: { autoDelete: false } };
 let mockValidConversions: any[] = [];
@@ -84,7 +84,7 @@ describe('Features & Conversion Lifecycle System Tests', () => {
         expect(tool.id).toBeTruthy();
         expect(tool.title).toBeTruthy();
         expect(tool.desc).toBeTruthy();
-        expect(tool.color).toBeTruthy();
+        expect(TOOL_CATEGORY_COLORS[tool.category]).toBeDefined();
         expect(tool.icon).toBeDefined();
       });
     });

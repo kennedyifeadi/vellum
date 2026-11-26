@@ -1,5 +1,5 @@
 import React from 'react';
-import { ALL_TOOLS } from '@/lib/tools';
+import { ALL_TOOLS, TOOL_CATEGORY_COLORS } from '@/lib/tools';
 
 type ToolIconProps = {
   toolName: string;
@@ -14,8 +14,9 @@ export default function ToolIcon({
 }: ToolIconProps) {
   const tool = ALL_TOOLS.find(t => t.title === toolName);
   
-  const bg = tool?.bgColor || 'bg-[#f3f4f6]';
-  const color = tool?.iconColor || 'text-[#6b7280]';
+  const colors = tool
+    ? TOOL_CATEGORY_COLORS[tool.category]
+    : { well: 'bg-surface-sunken', icon: 'text-ink-muted' };
   
   const defaultIcon = (
     <svg className={iconClassName} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -34,7 +35,7 @@ export default function ToolIcon({
   ) : defaultIcon;
 
   return (
-    <div className={`${containerClassName} ${bg} ${color}`}>
+    <div className={`${containerClassName} ${colors.well} ${colors.icon}`}>
       {iconToRender}
     </div>
   );

@@ -1,6 +1,66 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+  Vellum design tokens (project/tokens.json of the "blend" design system).
+  Light values only: the marketing pages, nav bar and footer are light-only, so
+  nothing here may flip under .dark. Dark values arrive with the dashboard.
+*/
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-surface-sunken: #f3f4f6;
+  --color-border: #eaedf3;
+  --color-border-strong: #d1d5db;
+  --color-ink: #111827;
+  --color-ink-secondary: #4b5563;
+  --color-ink-muted: #6b7280;
+  --color-ink-disabled: #9ca3af;
+  --color-brand: #6366f1;
+  /* What the site renders today (Tailwind indigo-600/700), not the design system's
+     #4f46e5/#4338ca, until the owner approves the colour change. */
+  --color-brand-strong: var(--color-indigo-600);
+  --color-brand-hover: var(--color-indigo-700);
+  --color-on-brand: #ffffff;
+  --color-brand-tint: #eef2ff;
+  --color-brand-tint-strong: #e0e7ff;
+  --color-focus-ring: #4f46e5;
+  --color-cat-pdf: #ea580c;
+  --color-cat-pdf-tint: #ffedd5;
+  --color-cat-image: #2563eb;
+  --color-cat-image-tint: #eff6ff;
+  --color-cat-video: #db2777;
+  --color-cat-video-tint: #fdf2f8;
+  --color-cat-doc: #16a34a;
+  --color-cat-doc-tint: #f0fdf4;
+  --color-success: #059669;
+  --color-danger: #ef4444;
+  --color-danger-ink: #dc2626;
+  --color-warning: #fbbf24;
+
+  /* The design system's space-N is Tailwind's N step (4px base), so p-4 is space-4. */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-20: 5rem;
+  --spacing-32: 8rem;
+
+  /* New names: Tailwind's own sm/md/lg/xl radii (4/6/8/12px) stay as they are. */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-panel: 1rem;
+  --radius-frame: 1.5rem;
+
+  --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.06);
+  --shadow-raised: 0 -8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-cta: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+}
+
+
 *, *::before, *::after {
   box-sizing: border-box;
 }

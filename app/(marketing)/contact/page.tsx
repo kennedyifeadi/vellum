@@ -23,7 +23,7 @@ export default function ContactPage() {
       </div>
 
       {/* ── Contact Grid ── */}
-      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white">
+      <div className="border border-gray-200 rounded-panel overflow-hidden bg-surface">
         {/* Top Section */}
         <div className="p-8 sm:p-10 border-b border-gray-200 relative overflow-hidden">
           <div className="relative z-10">
@@ -41,7 +41,7 @@ export default function ContactPage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                 <Link
                   href="/dashboard/help"
-                  className="inline-flex items-center justify-center rounded-lg  bg-indigo-600 text-white hover:bg-indigo-700 px-6 py-3 text-sm font-semibold transition-all w-fit"
+                  className="inline-flex items-center justify-center rounded-control  bg-brand-strong text-on-brand hover:bg-brand-hover px-6 py-3 text-sm font-semibold transition-all w-fit"
                 >
                   Contact Support &rarr;
                 </Link>
@@ -57,9 +57,9 @@ export default function ContactPage() {
         </div>
 
         {/* Bottom Section - 3 columns */}
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-200 bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-200 bg-surface">
           {/* Col 1 */}
-          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-white">
+          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-surface">
             <div className="flex-1">
               <h3 className="text-lg font-bold text-gray-900 mb-3">
                 Feature Request
@@ -72,14 +72,14 @@ export default function ContactPage() {
             </div>
             <Link
               href="mailto:support@vellum.com?subject=Feature Request"
-              className="inline-flex items-center justify-center rounded-lg bg-white border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Share an idea &rarr;
             </Link>
           </div>
 
           {/* Col 2 */}
-          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-white">
+          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-surface">
             <div className="flex-1">
               <h3 className="text-lg font-bold text-gray-900 mb-3">
                 Bug Report
@@ -90,14 +90,14 @@ export default function ContactPage() {
             </div>
             <Link
               href="mailto:support@vellum.com?subject=Bug Report"
-              className="inline-flex items-center justify-center rounded-lg bg-white border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Report a bug &rarr;
             </Link>
           </div>
 
           {/* Col 3 */}
-          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-white">
+          <div className="p-8 sm:p-10 flex flex-col items-start transition-colors hover:bg-surface">
             <div className="flex-1">
               <h3 className="text-lg font-bold text-gray-900 mb-3">Business</h3>
               <p className="text-sm text-gray-600 leading-relaxed mb-8">
@@ -110,7 +110,7 @@ export default function ContactPage() {
             </div>
             <Link
               href="mailto:support@vellum.com?subject=Business Inquiry"
-              className="inline-flex items-center justify-center rounded-lg bg-white border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              className="inline-flex items-center justify-center rounded-control bg-surface border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Let&apos;s talk &rarr;
             </Link>
