@@ -55,6 +55,10 @@ Blob.prototype.arrayBuffer ??= function (this: Blob) {
 
 const MOBILE_QUERY = '(max-width: 767px)';
 
+// jsdom has no PointerEvent, and the Event it falls back to drops clientY.
+class TestPointerEvent extends MouseEvent {}
+(window as unknown as { PointerEvent: typeof TestPointerEvent }).PointerEvent ??= TestPointerEvent;
+
 type FakeAnswer = {
   status?: number;
   headers?: Record<string, string>;
@@ -230,6 +234,28 @@ describe('SideDrawer at mobile width', () => {
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
     expect(screen.getByText('report.pdf')).toBeTruthy();
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('goes from full to half, and from half to closed, when dragged down, even while processing', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const onClose = jest.fn();
+    const { container } = render(<SideDrawer isOpen onClose={onClose} file={null} toolId="compress-pdf" />);
+    const drag = (by: number) => {
+      fireEvent.pointerDown(screen.getByTestId('sheet-drag-handle'), { clientY: 300 });
+      fireEvent.pointerMove(window, { clientY: 300 + by });
+      fireEvent.pointerUp(window, { clientY: 300 + by });
+    };
+    chooseFiles(container, [pdf()]);
+    fireEvent.click(processButton());
+    expect(await screen.findByText('Processing...')).toBeTruthy();
+
+    drag(-120);
+    expect(screen.getByTitle('Collapse')).toBeTruthy();
+    drag(200);
+    expect(screen.getByTitle('Expand')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    drag(200);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows the Find in PDF matches', async () => {

@@ -1,8 +1,9 @@
 "use client";
 
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { useToolHost } from '@/components/shared/ToolHost';
+import { useDialogFocus } from '@/components/shared/useDialogFocus';
 import { ALL_TOOLS, TOOL_CATEGORY_COLORS } from '@/lib/tools';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
@@ -104,9 +105,14 @@ type SideDrawerProps = {
   file: File | null;
   toolId: string | null;
   options?: { startWithGooglePicker?: boolean };
+  // 'panel' is the dashboard's: a side panel on desktop and a bottom sheet on mobile, which can
+  // be closed at any time. 'sheet' is Solutions': a bottom sheet on every width that stays open
+  // while a file is processing.
+  presentation?: 'panel' | 'sheet';
+  onBusyChange?: (busy: boolean) => void;
 };
 
-export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
+export default function SideDrawer({ isOpen, onClose, file, toolId, presentation = 'panel', onBusyChange }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [prevToolId, setPrevToolId] = useState<string | null>(null);
   const { showToast, addNotification, user } = useToolHost();
@@ -132,8 +138,31 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
-  // 'half' = 50vh, 'full' = 100vh
-  const [mobileSheetSize, setMobileSheetSize] = useState<'half' | 'full'>('half');
+  const asSheet = presentation === 'sheet' || isMobile;
+  const [sheetSize, setSheetSize] = useState<'half' | 'full'>('half');
+  const [sheetDragOffset, setSheetDragOffset] = useState<number | null>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  const dismissLocked = presentation === 'sheet' && isProcessing;
+  const requestDismiss = () => {
+    if (!dismissLocked) onClose();
+  };
+  const isModalSheet = presentation === 'sheet' && isOpen;
+  useDialogFocus(sheetRef, isModalSheet, requestDismiss);
+
+  useEffect(() => {
+    onBusyChange?.(isProcessing);
+  }, [isProcessing, onBusyChange]);
+
+  useEffect(() => {
+    if (!isModalSheet) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = overflow;
+    };
+  }, [isModalSheet]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -143,10 +172,9 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Reset sheet to half when drawer opens on mobile
   useEffect(() => {
-    if (isOpen && isMobile) setMobileSheetSize('half');
-  }, [isOpen, isMobile]);
+    if (isOpen && asSheet) setSheetSize('half');
+  }, [isOpen, asSheet]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -253,6 +281,39 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
       videoJob.controller.abort();
     }
   }, [isOpen, user, showToast]);
+
+  // Dragged down far enough, the sheet goes from full to half, or from half to closed; dragged
+  // up, it goes to full. The drag follows the pointer on the window so a release anywhere ends it.
+  const settleSheetDrag = (offset: number) => {
+    if (offset > 100) {
+      if (sheetSize === 'full') setSheetSize('half');
+      else requestDismiss();
+    } else if (offset < -60) {
+      setSheetSize('full');
+    }
+  };
+
+  const startSheetDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const startY = e.clientY;
+    let offset = 0;
+    const onMove = (event: PointerEvent) => {
+      offset = event.clientY - startY;
+      setSheetDragOffset(offset);
+    };
+    const finish = (settle: boolean) => () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      setSheetDragOffset(null);
+      if (settle) settleSheetDrag(offset);
+    };
+    const onUp = finish(true);
+    const onCancel = finish(false);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  };
 
   const sendWithBusyRetry = async (send: () => Promise<Response>) => {
     const controller = new AbortController();
@@ -1063,7 +1124,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
         </svg>
       </div>
       <div>
-        <h2 className="text-sm font-bold text-[#111827]">
+        <h2 id={titleId} className="text-sm font-bold text-[#111827]">
           {currentToolInfo ? `${currentToolInfo.title}` : 'Process File'}
         </h2>
         <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
@@ -1111,6 +1172,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     <input
       type="file"
       ref={fileInputRef}
+      tabIndex={-1}
       className="hidden"
       onChange={handleFileChange}
       accept={getAcceptAttribute()}
@@ -1168,6 +1230,12 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
   );
 
   const isProcessDisabled = isActionDisabled() || isProcessing;
+  // The sheet stays open while the job runs, so it does not offer a signed-in user to close it.
+  const videoJobNote = !user
+    ? 'Keep this panel open: as a guest, closing it loses your compressed video.'
+    : presentation === 'panel'
+      ? "You can close this panel. We'll notify you when your video is ready."
+      : null;
 
   const renderProcessControls = (layout: 'mobile' | 'desktop') => (
     <>
@@ -1212,11 +1280,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           >
             Cancel
           </button>
-          <p className="text-[10px] text-[#6b7280] text-center px-1">
-            {user
-              ? "You can close this panel. We'll notify you when your video is ready."
-              : 'Keep this panel open: as a guest, closing it loses your compressed video.'}
-          </p>
+          {videoJobNote && <p className="text-[10px] text-[#6b7280] text-center px-1">{videoJobNote}</p>}
         </>
       )}
     </>
@@ -1233,36 +1297,41 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.25 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black z-40 cursor-pointer"
+            onClick={requestDismiss}
+            data-testid="sheet-backdrop"
+            className={`${presentation === 'sheet' ? 'fixed z-50' : 'absolute z-40'} inset-0 bg-black cursor-pointer`}
           />
 
           {/* Desktop: Slide from right | Mobile: Slide from bottom */}
-          {isMobile ? (
+          {asSheet ? (
             <motion.div
               key="mobile-sheet"
+              ref={sheetRef}
+              {...(presentation === 'sheet' && {
+                role: 'dialog',
+                'aria-modal': true,
+                'aria-labelledby': titleId,
+                tabIndex: -1,
+              })}
+              data-size={sheetSize}
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={0.15}
-              onDragEnd={(_, info) => {
-                if (info.offset.y > 100) {
-                  // Dragged down — if half, close; if full, go back to half
-                  if (mobileSheetSize === 'full') setMobileSheetSize('half');
-                  else onClose();
-                } else if (info.offset.y < -60) {
-                  // Dragged up — expand to full
-                  setMobileSheetSize('full');
-                }
+              style={{
+                height: sheetSize === 'full' ? '100dvh' : '55dvh',
+                translate: sheetDragOffset === null ? undefined : `0 ${sheetDragOffset > 0 ? sheetDragOffset : sheetDragOffset * 0.15}px`,
               }}
-              style={{ height: mobileSheetSize === 'full' ? '100dvh' : '55dvh' }}
-              className="fixed bottom-0 left-0 right-0 bg-white z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] flex flex-col rounded-t-3xl border-t border-x border-[#eaedf3] transition-[height] duration-300"
+              className={`fixed bottom-0 left-0 right-0 mx-auto md:max-w-3xl bg-white ${presentation === 'sheet' ? 'z-60' : 'z-50'} shadow-[0_-8px_30px_rgba(0,0,0,0.12)] flex flex-col rounded-t-3xl border-t border-x border-[#eaedf3] focus:outline-none ${
+                sheetDragOffset === null ? 'transition-[height] duration-300' : ''
+              }`}
             >
-              {/* Mobile drag pill */}
-              <div className="shrink-0 pt-3 pb-1 flex flex-col items-center gap-3">
+              {/* Drag handle: the pill and the header */}
+              <div
+                data-testid="sheet-drag-handle"
+                onPointerDown={startSheetDrag}
+                className="shrink-0 pt-3 pb-1 flex flex-col items-center gap-3 touch-none cursor-grab active:cursor-grabbing"
+              >
                 <div className="w-10 h-1 bg-[#cbd5e1] rounded-full" />
                 <div className={`w-full px-5 pb-3 border-b border-[#eaedf3] ${
                   currentToolInfo ? 'bg-linear-to-b from-[#f8fafc] to-white' : 'bg-white'
@@ -1271,22 +1340,24 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
                     {renderToolTitle()}
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setMobileSheetSize(mobileSheetSize === 'half' ? 'full' : 'half')}
+                        onClick={() => setSheetSize(sheetSize === 'half' ? 'full' : 'half')}
                         className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]"
-                        title={mobileSheetSize === 'half' ? 'Expand' : 'Collapse'}
+                        title={sheetSize === 'half' ? 'Expand' : 'Collapse'}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          {mobileSheetSize === 'half'
+                          {sheetSize === 'half'
                             ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
                             : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                           }
                         </svg>
                       </button>
-                      <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      {!dismissLocked && (
+                        <button onClick={requestDismiss} aria-label="Close" className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1388,7 +1459,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               }`}>
                 <div className="flex justify-between items-center">
                   {renderToolTitle()}
-                  <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
+                  <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-[#f3f4f6] text-[#6b7280]">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
