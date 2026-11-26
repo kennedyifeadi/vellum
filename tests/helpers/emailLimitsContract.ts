@@ -7,9 +7,9 @@ import { POST as completeProfile } from '@/app/api/auth/complete-profile/route';
 import type * as BrevoMock from './brevoMock';
 
 // The cases the daily email limits must pass on any database. The test file that calls this
-// mocks @getbrevo/brevo with ./brevoMock, @/lib/db/mongoose, next/headers (no session cookie),
-// next-auth/jwt (getToken reads x-test-email) and @/lib/auth/jwt (getAuthUserId reads
-// x-test-account), and provides the database.
+// mocks @getbrevo/brevo with ./brevoMock, @/lib/db/mongoose, next/headers (no session cookie)
+// and @/lib/auth/jwt (getAuthUserId and getAuthSession read x-test-account), and provides the
+// database.
 
 const { sendTransacEmail, sentEmails } = brevo as unknown as typeof BrevoMock;
 
@@ -57,11 +57,11 @@ function ticket({ account, address, contentType = 'application/json', body = TIC
   );
 }
 
-const complete = (email: string) =>
+const complete = (account: string) =>
   completeProfile(
     new NextRequest('http://localhost/api/auth/complete-profile', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-test-email': email },
+      headers: { 'content-type': 'application/json', 'x-test-account': account },
       body: JSON.stringify({ name: 'New Member', role: 'Student' }),
     }),
   );
@@ -354,7 +354,7 @@ export function describeEmailLimitsContract(database: string, savedTickets: () =
 
     describe('welcome emails', () => {
       it('sends twenty a day, then completes without one', async () => {
-        for (let i = 0; i < 21; i++) expect((await complete((await newAccount(false)).email)).status).toBe(200);
+        for (let i = 0; i < 21; i++) expect((await complete((await newAccount(false)).id)).status).toBe(200);
 
         expect(welcomeEmails()).toBe(20);
       });
@@ -362,28 +362,28 @@ export function describeEmailLimitsContract(database: string, savedTickets: () =
       it('sends twenty when thirty completions race', async () => {
         const fresh = await Promise.all(Array.from({ length: 30 }, () => newAccount(false)));
 
-        await expectStatuses(fresh.map(({ email }) => complete(email)), { 200: 30 });
+        await expectStatuses(fresh.map(({ id }) => complete(id)), { 200: 30 });
         expect(welcomeEmails()).toBe(20);
       });
 
       it('sends again 24 hours after the oldest', async () => {
         const moveTo = controlClock();
-        for (let i = 0; i < 20; i++) await complete((await newAccount(false)).email);
+        for (let i = 0; i < 20; i++) await complete((await newAccount(false)).id);
 
         moveTo(DAY_MS - 1);
-        await complete((await newAccount(false)).email);
+        await complete((await newAccount(false)).id);
         moveTo(DAY_MS);
-        await complete((await newAccount(false)).email);
+        await complete((await newAccount(false)).id);
 
         expect(welcomeEmails()).toBe(21);
       });
 
       it('counts none while Brevo is not set up', async () => {
         delete env.BREVO_API_KEY;
-        for (let i = 0; i < 21; i++) await complete((await newAccount(false)).email);
+        for (let i = 0; i < 21; i++) await complete((await newAccount(false)).id);
         env.BREVO_API_KEY = 'test-key';
 
-        await complete((await newAccount(false)).email);
+        await complete((await newAccount(false)).id);
 
         expect(welcomeEmails()).toBe(1);
       });

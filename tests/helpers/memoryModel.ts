@@ -1,5 +1,5 @@
 // A Mongoose model on an array: the queries, updates and indexes the app uses on stored
-// files and users. tests/file-retention-mongo.test.ts runs the same flows on a real MongoDB.
+// files and users, including their sign-in sessions. tests/file-retention-mongo.test.ts runs the same flows on a real MongoDB.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row = Record<string, any>;
@@ -25,6 +25,8 @@ function meets(value: unknown, condition: unknown): boolean {
     switch (operator) {
       case '$exists':
         return (value !== undefined) === expected;
+      case '$ne':
+        return comparable(value) !== comparable(expected);
       case '$in':
         return (expected as unknown[]).some((item) => comparable(item) === comparable(value));
       case '$gt':
@@ -39,6 +41,30 @@ function meets(value: unknown, condition: unknown): boolean {
 
 function matches(row: Row, filter: Row = {}): boolean {
   return Object.entries(filter).every(([field, condition]) => meets(row[field], condition));
+}
+
+// $push takes a value, or { $each, $slice } to add several and keep only the last ones.
+function pushed(list: unknown[] = [], value: unknown): unknown[] {
+  const each = value !== null && typeof value === 'object' && '$each' in value ? (value as Row) : null;
+  if (!each) return [...list, value];
+  const all = [...list, ...each.$each];
+  return each.$slice === undefined ? all : all.slice(each.$slice);
+}
+
+function applyUpdate(row: Row, update: Row) {
+  for (const [operator, fields] of Object.entries(update)) {
+    if (!operator.startsWith('$')) {
+      row[operator] = fields;
+      continue;
+    }
+    for (const [field, value] of Object.entries(fields as Row)) {
+      if (operator === '$set') row[field] = value;
+      else if (operator === '$inc') row[field] = (row[field] ?? 0) + value;
+      else if (operator === '$push') row[field] = pushed(row[field], value);
+      else if (operator === '$pull') row[field] = (row[field] ?? []).filter((item: Row) => !matches(item, value));
+      else throw new Error(`memoryModel does not support ${operator}`);
+    }
+  }
 }
 
 function query<Result>(run: () => Result) {
@@ -63,8 +89,18 @@ export function createMemoryModel() {
   }
 
   function apply(targets: Row[], update: Row) {
-    for (const row of targets) Object.assign(row, update.$set);
+    for (const row of targets) applyUpdate(row, update);
     return { matchedCount: targets.length };
+  }
+
+  type UpdateOptions = { new?: boolean; returnDocument?: 'before' | 'after' };
+  function updateFirst(filter: Row, update: Row, options: UpdateOptions = {}) {
+    return query(() => {
+      const found = select(filter)[0];
+      const before = copy(found);
+      if (found) applyUpdate(found, update);
+      return options.new || options.returnDocument === 'after' ? copy(found) : before;
+    });
   }
 
   function seed(row: Row): Row {
@@ -112,6 +148,8 @@ export function createMemoryModel() {
     },
     findOne: (filter?: Row) => query(() => copy(select(filter)[0])),
     findById: (_id: unknown) => query(() => copy(select({ _id })[0])),
+    findOneAndUpdate: (filter: Row, update: Row, options?: UpdateOptions) => updateFirst(filter, update, options),
+    findByIdAndUpdate: (_id: unknown, update: Row, options?: UpdateOptions) => updateFirst({ _id }, update, options),
     findByIdAndDelete: (_id: unknown) =>
       query(() => {
         const found = select({ _id })[0];

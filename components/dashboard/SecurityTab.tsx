@@ -9,10 +9,11 @@ interface SessionInfo {
   device: string;
   location: string;
   lastActive: string;
+  current: boolean;
 }
 
 export default function SecurityTab() {
-  const { user, showToast } = useDashboard();
+  const { user, showToast, signOut } = useDashboard();
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -157,17 +158,33 @@ export default function SecurityTab() {
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-[#111827] dark:text-white">{session.device || 'Unknown Device'}</p>
+                      <p className="text-[13px] font-bold text-[#111827] dark:text-white">
+                        {session.device || 'Unknown Device'}
+                        {session.current && (
+                          <span className="ml-2 px-2 py-0.5 bg-[#dcfce7] text-[#166534] text-[10px] font-bold rounded-full border border-[#bbf7d0]">
+                            This device
+                          </span>
+                        )}
+                      </p>
                       <p className="text-[11px] text-[#6b7280] dark:text-gray-400">{session.location || 'Unknown Location'} • {new Date(session.lastActive).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => handleRevokeSession(session.id)}
-                    className="w-8 h-8 rounded-lg text-[#94a3b8] hover:bg-[#f1f5f9] dark:hover:bg-gray-800 hover:text-[#ef4444] transition-colors flex items-center justify-center"
-                    title="Revoke session"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                  </button>
+                  {session.current ? (
+                    <button
+                      onClick={signOut}
+                      className="text-[12px] font-bold text-[#ef4444] hover:text-[#b91c1c] transition-colors"
+                    >
+                      Sign out
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => handleRevokeSession(session.id)}
+                      className="w-8 h-8 rounded-lg text-[#94a3b8] hover:bg-[#f1f5f9] dark:hover:bg-gray-800 hover:text-[#ef4444] transition-colors flex items-center justify-center"
+                      title="Revoke session"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  )}
                 </div>
               ))
             )}

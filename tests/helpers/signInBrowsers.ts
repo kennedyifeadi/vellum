@@ -93,6 +93,8 @@ export function post(
   // Bytes, unlike a string, get no content type of their own.
   const bytes = new TextEncoder().encode(JSON.stringify(body));
   const req = new NextRequest('http://localhost/api/auth', { method: 'POST', headers, body: bytes });
+  // The 30-per-minute limit is tested on its own; here it would refuse before the daily ones.
+  (globalThis as { vellumRateLimits?: Map<string, unknown> }).vellumRateLimits?.clear();
 
   return requesting.run(browser, () => route(req));
 }

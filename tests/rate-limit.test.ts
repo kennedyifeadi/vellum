@@ -1,15 +1,24 @@
 import { NextRequest } from 'next/server';
-import { proxy } from '../proxy';
-
-jest.mock('next-auth/jwt', () => ({
-  getToken: jest.fn().mockResolvedValue(null),
-}));
 
 jest.mock('@/lib/auth/jwt', () => ({
-  verifyToken: jest.fn().mockResolvedValue(null),
+  createToken: jest.fn(),
+  getAuthUserId: jest.fn().mockResolvedValue(null),
 }));
 
-describe('Rate Limiting System Tests (proxy.ts)', () => {
+import { POST as requestOtp } from '../app/api/auth/request-otp/route';
+import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
+import { GET as listDocuments } from '../app/api/documents/route';
+
+// Each of these routes counts a request against its caller's budget before anything else.
+const ROUTES: Record<string, (req: NextRequest) => Promise<Response>> = {
+  '/api/auth/request-otp': requestOtp,
+  '/api/auth/verify-otp': verifyOtp,
+  '/api/documents': listDocuments,
+};
+
+const send = (request: NextRequest) => ROUTES[request.nextUrl.pathname](request);
+
+describe('rate limiting of the routes that read a body', () => {
   beforeEach(() => {
     process.env.CLIENT_IP_HEADER = 'x-real-ip';
     delete process.env.CLIENT_IP_HEADER_ENTRY;
@@ -20,7 +29,7 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     delete process.env.CLIENT_IP_HEADER_ENTRY;
   });
 
-  function createApiRequest(ip: string, path = '/api/convert/compress-pdf', spoofedForwardedFor?: string) {
+  function createApiRequest(ip: string, path = '/api/auth/request-otp', spoofedForwardedFor?: string, method = 'POST') {
     const url = `http://localhost:3000${path}`;
     const headers: Record<string, string> = {
       'x-real-ip': ip,
@@ -28,13 +37,10 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     if (spoofedForwardedFor !== undefined) {
       headers['x-forwarded-for'] = spoofedForwardedFor;
     }
-    return new NextRequest(url, {
-      method: 'POST',
-      headers,
-    });
+    return new NextRequest(url, { method, headers });
   }
 
-  function createForwardedForOnlyRequest(forwardedFor: string, path = '/api/convert/compress-pdf') {
+  function createForwardedForOnlyRequest(forwardedFor: string, path = '/api/auth/request-otp') {
     return new NextRequest(`http://localhost:3000${path}`, {
       method: 'POST',
       headers: { 'x-forwarded-for': forwardedFor },
@@ -44,7 +50,7 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
   it('should allow up to 30 consecutive requests from the same IP without rate limiting', async () => {
     const testIp = '192.168.1.100';
     for (let i = 1; i <= 30; i++) {
-      const res = await proxy(createApiRequest(testIp));
+      const res = await send(createApiRequest(testIp));
       expect(res.status).not.toBe(429);
     }
   });
@@ -52,9 +58,9 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
   it('should block the 31st request within the 1-minute window with 429 Too Many Requests', async () => {
     const testIp = '192.168.1.101';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createApiRequest(testIp));
+      await send(createApiRequest(testIp));
     }
-    const res31 = await proxy(createApiRequest(testIp));
+    const res31 = await send(createApiRequest(testIp));
     expect(res31.status).toBe(429);
     const data = await res31.json();
     expect(data.error).toBe('Too many requests. Please try again later.');
@@ -64,24 +70,24 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     const blockedIp = '10.0.0.1';
     const allowedIp = '10.0.0.2';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createApiRequest(blockedIp));
+      await send(createApiRequest(blockedIp));
     }
-    expect((await proxy(createApiRequest(blockedIp))).status).toBe(429);
-    expect((await proxy(createApiRequest(allowedIp))).status).not.toBe(429);
+    expect((await send(createApiRequest(blockedIp))).status).toBe(429);
+    expect((await send(createApiRequest(allowedIp))).status).not.toBe(429);
   });
 
   it('should reset the rate limit after the 60-second window expires', async () => {
     jest.useFakeTimers();
     const timerIp = '172.16.0.5';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createApiRequest(timerIp));
+      await send(createApiRequest(timerIp));
     }
-    expect((await proxy(createApiRequest(timerIp))).status).toBe(429);
+    expect((await send(createApiRequest(timerIp))).status).toBe(429);
 
     // Advance time by 61 seconds
     jest.advanceTimersByTime(61 * 1000);
 
-    const resAfterReset = await proxy(createApiRequest(timerIp));
+    const resAfterReset = await send(createApiRequest(timerIp));
     expect(resAfterReset.status).not.toBe(429);
 
     jest.useRealTimers();
@@ -90,9 +96,9 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
   it('should not reset the rate-limit bucket when the untrusted x-forwarded-for header is spoofed per request', async () => {
     const realIp = '203.0.113.7';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createApiRequest(realIp, '/api/auth/verify-otp', `10.0.0.${i}`));
+      await send(createApiRequest(realIp, '/api/auth/verify-otp', `10.0.0.${i}`));
     }
-    const blocked = await proxy(createApiRequest(realIp, '/api/auth/verify-otp', '10.0.0.250'));
+    const blocked = await send(createApiRequest(realIp, '/api/auth/verify-otp', '10.0.0.250'));
     expect(blocked.status).toBe(429);
   });
 
@@ -101,9 +107,9 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     process.env.CLIENT_IP_HEADER_ENTRY = 'rightmost';
     const trustedHop = '198.51.100.4';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createForwardedForOnlyRequest(`10.0.0.${i}, ${trustedHop}`));
+      await send(createForwardedForOnlyRequest(`10.0.0.${i}, ${trustedHop}`));
     }
-    const blocked = await proxy(createForwardedForOnlyRequest(`10.0.0.250, ${trustedHop}`));
+    const blocked = await send(createForwardedForOnlyRequest(`10.0.0.250, ${trustedHop}`));
     expect(blocked.status).toBe(429);
   });
 
@@ -112,31 +118,31 @@ describe('Rate Limiting System Tests (proxy.ts)', () => {
     for (let i = 1; i <= 30; i++) {
       const request = createApiRequest(realIp);
       request.headers.set('x-vercel-forwarded-for', `10.1.0.${i}`);
-      await proxy(request);
+      await send(request);
     }
     const blocked = createApiRequest(realIp);
     blocked.headers.set('x-vercel-forwarded-for', '10.1.0.250');
-    expect((await proxy(blocked)).status).toBe(429);
+    expect((await send(blocked)).status).toBe(429);
   });
 
-  it('should apply rate limit to /api/documents/ and /api/auth/verify-otp endpoints as well', async () => {
+  it('should apply rate limit to /api/documents and /api/auth/verify-otp as well', async () => {
     const docIp = '192.168.2.1';
     const otpIp = '192.168.2.2';
     for (let i = 1; i <= 30; i++) {
-      await proxy(createApiRequest(docIp, '/api/documents/upload'));
-      await proxy(createApiRequest(otpIp, '/api/auth/verify-otp'));
+      await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'));
+      await send(createApiRequest(otpIp, '/api/auth/verify-otp'));
     }
-    expect((await proxy(createApiRequest(docIp, '/api/documents/upload'))).status).toBe(429);
-    expect((await proxy(createApiRequest(otpIp, '/api/auth/verify-otp'))).status).toBe(429);
+    expect((await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'))).status).toBe(429);
+    expect((await send(createApiRequest(otpIp, '/api/auth/verify-otp'))).status).toBe(429);
   });
 
   it('should put every caller in one shared bucket when no header is trusted', async () => {
     delete process.env.CLIENT_IP_HEADER;
     for (let i = 1; i <= 30; i++) {
-      const request = createApiRequest(`192.0.2.${i}`, '/api/convert/compress-pdf', `198.18.0.${i}`);
+      const request = createApiRequest(`192.0.2.${i}`, '/api/auth/request-otp', `198.18.0.${i}`);
       request.headers.set('x-vercel-forwarded-for', `198.19.0.${i}`);
-      expect((await proxy(request)).status).not.toBe(429);
+      expect((await send(request)).status).not.toBe(429);
     }
-    expect((await proxy(createApiRequest('192.0.2.250'))).status).toBe(429);
+    expect((await send(createApiRequest('192.0.2.250'))).status).toBe(429);
   });
 });

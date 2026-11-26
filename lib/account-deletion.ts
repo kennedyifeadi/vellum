@@ -1,4 +1,5 @@
 import User from '@/models/user';
+import { forgetSessions } from '@/lib/auth/session';
 import { getStorage, type StorageDriver } from '@/lib/storage';
 import { deleteExpiredFiles, expireFilesOf, STORED_FILE_KINDS } from '@/lib/stored-files';
 import { deleteVideoJobsOf, discardVideoJobsOf } from '@/lib/video/video-job-service';
@@ -32,6 +33,7 @@ export async function deleteAccount(userId: string): Promise<DeletedAccount> {
   const storage = getStorage();
   await expireEverything(userId);
   await User.findByIdAndDelete(userId);
+  forgetSessions(userId);
 
   try {
     await expireEverything(userId);

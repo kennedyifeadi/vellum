@@ -1,7 +1,6 @@
 import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 
-jest.mock('next-auth/jwt', () => ({ getToken: jest.fn().mockResolvedValue(null) }));
-jest.mock('@/lib/auth/jwt', () => ({ verifyToken: jest.fn().mockResolvedValue(null) }));
+jest.mock('@/lib/auth/jwt', () => ({ getAuthSession: jest.fn().mockResolvedValue(null) }));
 
 import { config } from '../proxy';
 import nextConfig from '../next.config';
@@ -9,8 +8,16 @@ import nextConfig from '../next.config';
 const matches = (path: string) => unstable_doesMiddlewareMatch({ config, url: `http://localhost:3000${path}` });
 
 // Next reads and holds the whole body of every request proxy.ts matches before the route
-// runs, so an upload route behind it buffers an over-cap body however early it refuses.
-const UPLOAD_ROUTES = [
+// runs, so an API route behind it buffers an over-cap body however early it refuses.
+const API_ROUTES = [
+  '/api/auth/request-otp',
+  '/api/auth/verify-otp',
+  '/api/auth/complete-profile',
+  '/api/auth/logout',
+  '/api/documents',
+  '/api/documents/652f1c0e9b1e8a3d4c5b6a71',
+  '/api/documents/download/652f1c0e9b1e8a3d4c5b6a71',
+  '/api/documents/uploads-history',
   '/api/convert/compress-pdf',
   '/api/convert/docx-to-pdf',
   '/api/convert/find-pdf',
@@ -27,7 +34,7 @@ const UPLOAD_ROUTES = [
 ];
 
 describe('proxy.ts matcher', () => {
-  it.each(UPLOAD_ROUTES)('leaves the upload route %s to read its own body', (path) => {
+  it.each(API_ROUTES)('leaves the API route %s to read its own body', (path) => {
     expect(matches(path)).toBe(false);
   });
 
@@ -37,12 +44,6 @@ describe('proxy.ts matcher', () => {
     '/login',
     '/verify',
     '/signup-details',
-    '/api/documents',
-    '/api/documents/652f1c0e9b1e8a3d4c5b6a71',
-    '/api/documents/download/652f1c0e9b1e8a3d4c5b6a71',
-    '/api/documents/uploads-history',
-    '/api/auth/verify-otp',
-    '/api/auth/request-otp',
   ])('still guards %s', (path) => {
     expect(matches(path)).toBe(true);
   });

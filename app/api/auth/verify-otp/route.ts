@@ -3,15 +3,18 @@ import { verifyOtp } from '@/lib/auth/verifyOtp';
 import { readBrowserId, setKnownDevice } from '@/lib/auth/signInCookies';
 import { isJsonRequest, isValidEmail, parseOtpCode } from '@/lib/auth/signInInput';
 import { createToken } from '@/lib/auth/jwt';
-import { buildSessionEntry } from '@/lib/auth/session';
+import { buildSessionEntry, recordSession } from '@/lib/auth/session';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
 import { ClientError } from '@/lib/convert/errors';
 import { readJsonRequest } from '@/lib/http/read-upload';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     if (!isJsonRequest(req)) {
       return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
     }
@@ -51,15 +54,14 @@ export async function POST(req: NextRequest) {
       isNewUser = true;
     }
 
+    const session = buildSessionEntry(req);
+    await recordSession(user._id.toString(), session);
     const token = await createToken({
       userId: user._id.toString(),
+      sessionId: session.id,
       email: user.email,
       isProfileComplete: user.isProfileComplete,
       tokenVersion: user.tokenVersion,
-    });
-
-    await User.findByIdAndUpdate(user._id, {
-      $push: { activeSessions: buildSessionEntry(req) },
     });
 
     setKnownDevice(cookieStore, email, deviceId);

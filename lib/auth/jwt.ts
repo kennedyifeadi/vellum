@@ -1,24 +1,18 @@
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import dbConnect from '@/lib/db/mongoose';
-import User from '@/models/user';
+import { EMAIL_SESSION_COOKIE, isLiveSession } from '@/lib/auth/session';
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 
-// verifyToken runs on every authenticated request (including proxy.ts, which
-// runs on every matched page/API request), so a naive implementation would
-// mean a tokenVersion lookup hits the DB on every single request. Instead we
-// cache each user's tokenVersion in-process for a short window: a revocation
-// clears that user's entry immediately (see invalidateTokenVersionCache), so
-// the instance that handled the revoke-all request enforces it right away,
-// and every other instance picks it up within TOKEN_VERSION_CACHE_TTL_MS.
-// The tradeoff is a bounded staleness window across other instances/processes
-// in exchange for avoiding a DB round trip per request; if this ever needs to
-// be instant everywhere (multi-instance deployment with no shared cache),
-// swap this for a shared cache like Redis.
-const TOKEN_VERSION_CACHE_TTL_MS = 60_000;
-const tokenVersionCache = new Map<string, { version: number; expiresAt: number }>();
+/** A sign-in session the request holds, still live on its account. */
+export interface AuthSession {
+  userId: string;
+  sessionId: string;
+  isProfileComplete: boolean;
+}
+
+type SessionClaims = Record<string, unknown>;
 
 export async function createToken(payload: JWTPayload) {
   return new SignJWT(payload)
@@ -28,62 +22,46 @@ export async function createToken(payload: JWTPayload) {
     .sign(secret);
 }
 
-export function invalidateTokenVersionCache(userId: string) {
-  tokenVersionCache.delete(userId);
+// A signature alone is not enough: the token must also name a session its account still has,
+// at the account's current tokenVersion, so revoking a session, signing out, signing out of all
+// devices and deleting the account each end the sessions they name.
+async function liveSession({ userId, sessionId, tokenVersion, isProfileComplete }: SessionClaims): Promise<AuthSession | null> {
+  if (typeof userId !== 'string' || typeof sessionId !== 'string') return null;
+  if (!(await isLiveSession(userId, sessionId, tokenVersion))) return null;
+  return { userId, sessionId, isProfileComplete: !!isProfileComplete };
 }
 
-async function getCurrentTokenVersion(userId: string): Promise<number | null> {
-  const cached = tokenVersionCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.version;
-  }
-
-  await dbConnect();
-  const user = await User.findById(userId).select('tokenVersion').lean<{ tokenVersion: number }>();
-  if (!user) {
-    tokenVersionCache.delete(userId);
-    return null;
-  }
-
-  tokenVersionCache.set(userId, { version: user.tokenVersion, expiresAt: Date.now() + TOKEN_VERSION_CACHE_TTL_MS });
-  return user.tokenVersion;
-}
-
-export async function verifyToken(token: string) {
+async function verifiedPayload(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
-
-    const userId = payload.userId;
-    if (typeof userId !== 'string') {
-      return null;
-    }
-
-    // Reject tokens whose tokenVersion doesn't match the user's current one.
-    // This is what makes "sign out of all devices" actually revoke tokens:
-    // bumping tokenVersion invalidates every previously issued token at once,
-    // regardless of the JWT's own signature/expiry.
-    const currentVersion = await getCurrentTokenVersion(userId);
-    if (currentVersion === null || payload.tokenVersion !== currentVersion) {
-      return null;
-    }
-
-    return payload;
+    return (await jwtVerify(token, secret)).payload;
   } catch (error) {
     console.error('JWT verification failed:', error);
     return null;
   }
 }
 
-export async function getAuthUserId(req: NextRequest): Promise<string | null> {
-  const token = req.cookies.get('auth-token')?.value;
-  if (token) {
-    const payload = await verifyToken(token);
-    if (payload?.userId) return payload.userId as string;
-  }
-  
-  const nextAuthToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (nextAuthToken?.id) return nextAuthToken.id as string;
-  if (nextAuthToken?.sub) return nextAuthToken.sub as string;
+async function emailSession(req: NextRequest): Promise<AuthSession | null> {
+  const token = req.cookies.get(EMAIL_SESSION_COOKIE)?.value;
+  const payload = token ? await verifiedPayload(token) : null;
+  return payload && liveSession(payload);
+}
 
-  return null;
+async function googleSession(req: NextRequest): Promise<AuthSession | null> {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  return token && liveSession({ ...token, userId: token.id ?? token.sub });
+}
+
+/** The request's session: its email sign-in cookie's, or else its Google sign-in cookie's. */
+export async function getAuthSession(req: NextRequest): Promise<AuthSession | null> {
+  return (await emailSession(req)) ?? (await googleSession(req));
+}
+
+/** Every live session the request's cookies hold, for signing all of them out. */
+export async function getAuthSessions(req: NextRequest): Promise<AuthSession[]> {
+  const sessions = await Promise.all([emailSession(req), googleSession(req)]);
+  return sessions.filter((session) => session !== null);
+}
+
+export async function getAuthUserId(req: NextRequest): Promise<string | null> {
+  return (await getAuthSession(req))?.userId ?? null;
 }

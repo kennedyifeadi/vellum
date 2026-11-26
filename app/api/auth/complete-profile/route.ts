@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken, createToken } from '@/lib/auth/jwt';
+import { createToken, getAuthSession } from '@/lib/auth/jwt';
 import User from '@/models/user';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db/mongoose';
@@ -9,7 +9,6 @@ import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send'
 import { getWelcomeEmailHtml } from '@/lib/email/templates/welcomeEmail';
 import { readJsonRequest } from '@/lib/http/read-upload';
 import { MAX_NAME_LENGTH, requiredLine } from '@/lib/http/text-input';
-import { getToken } from 'next-auth/jwt';
 
 async function sendWelcomeEmail(userId: string, name: string, email: string) {
   if (!hasEmailApiKey()) {
@@ -39,32 +38,11 @@ async function sendWelcomeEmail(userId: string, name: string, email: string) {
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const cookieStore = await cookies();
-    const customToken = cookieStore.get('auth-token')?.value;
-    let userId: string | null = null;
-
-    // 1. Try custom JWT auth (OTP flow)
-    if (customToken) {
-      const payload = await verifyToken(customToken);
-      if (payload?.userId) {
-        userId = payload.userId as string;
-      }
-    }
-
-    // 2. Fallback: NextAuth session (Google OAuth)
-    if (!userId) {
-      const nextAuthToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-      if (nextAuthToken?.email) {
-        const existingUser = await User.findOne({ email: nextAuthToken.email });
-        if (existingUser) {
-          userId = existingUser._id.toString();
-        }
-      }
-    }
-
-    if (!userId) {
+    const session = await getAuthSession(req);
+    if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const { userId, sessionId } = session;
 
     const { name: submittedName, role, currentGoal } = await readJsonRequest(req, 'Failed to complete profile');
 
@@ -91,11 +69,13 @@ export async function POST(req: NextRequest) {
     // This ensures the middleware works seamlessly for all auth flows
     const newToken = await createToken({
       userId: user._id.toString(),
+      sessionId,
       email: user.email,
       isProfileComplete: true,
       tokenVersion: user.tokenVersion,
     });
 
+    const cookieStore = await cookies();
     cookieStore.set('auth-token', newToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

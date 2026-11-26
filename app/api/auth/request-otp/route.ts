@@ -8,6 +8,7 @@ import { formatOtpCode, isJsonRequest, isValidEmail } from '@/lib/auth/signInInp
 import dbConnect from '@/lib/db/mongoose';
 import { ClientError } from '@/lib/convert/errors';
 import { readJsonRequest } from '@/lib/http/read-upload';
+import { assertWithinRateLimit } from '@/lib/http/rate-limit';
 
 function isBrevoConfigured() {
   return !!process.env.BREVO_API_KEY && process.env.BREVO_API_KEY !== "YOUR_BREVO_API_KEY";
@@ -44,6 +45,8 @@ async function deliverCode(email: string, otpCode: string, canSendEmail: boolean
 
 export async function POST(req: NextRequest) {
   try {
+    assertWithinRateLimit(req);
+
     if (!isJsonRequest(req)) {
       return NextResponse.json({ error: 'Content-Type must be application/json.' }, { status: 415 });
     }
