@@ -4,7 +4,7 @@ import { STORAGE_LIMITS } from '@/lib/storage-limits';
 
 export const metadata = {
   title: "Trust & Security | Vellum",
-  description: "Learn how Vellum protects your documents, images, and videos with bank-level encryption and automatic file deletion.",
+  description: "How Vellum handles your documents, images and videos: encrypted in transit, and deleted automatically after a few days.",
 };
 
 export default function SecurityPage() {

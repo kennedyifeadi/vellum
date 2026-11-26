@@ -12,9 +12,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Link previews need the image's absolute URL, so it is resolved against the app's public URL.
 export const metadata: Metadata = {
+  metadataBase: process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL) : undefined,
   title: "Vellum",
   description: "PDF Converter",
+  openGraph: {
+    siteName: "Vellum",
+    images: [{ url: "/vellum.png", width: 1024, height: 1024, alt: "Vellum" }],
+  },
 };
 
 import ClientProviders from "@/components/shared/ClientProviders";

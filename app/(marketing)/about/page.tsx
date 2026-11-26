@@ -1,3 +1,10 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'About | Vellum',
+  description: 'Why Vellum exists: simple tools for converting, compressing and organising documents, images and videos.',
+};
+
 export default function AboutPage() {
   return (
     <div className="pt-20 pb-32">

@@ -39,6 +39,8 @@ FROM deps AS build
 # stay readable in the image's build history.
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
 ARG NEXT_PUBLIC_GOOGLE_API_KEY
+# The public URL, which link previews on prerendered pages are resolved against.
+ARG NEXTAUTH_URL
 COPY . .
 RUN npm run build && rm -rf .next/cache
 

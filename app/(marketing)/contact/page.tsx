@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import ContactFormSection from "@/components/marketing/ContactFormSection";
 import ToolsCarousel from "@/components/marketing/ToolsCarousel";
+
+export const metadata: Metadata = {
+  title: "Contact | Vellum",
+  description: "Ask a question, report a bug or suggest a feature, and the Vellum team will reply by email.",
+};
 
 export default function ContactPage() {
   return (
