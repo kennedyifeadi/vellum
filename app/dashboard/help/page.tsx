@@ -307,11 +307,6 @@ export default function HelpPage() {
                   Send Message
                 </button>
               </form>
-
-              <div className="mt-8 pt-8 border-t border-[#eaedf3] text-center">
-                <p className="text-[11px] text-[#6b7280]">Prefer email? Contact us directly at</p>
-                <a href="mailto:support@vellum.com" className="text-xs font-bold text-[#6366f1] hover:underline mt-1 block">support@vellum.com</a>
-              </div>
             </div>
           </section>
         </div>

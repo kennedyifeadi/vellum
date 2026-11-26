@@ -11,10 +11,8 @@ const FOOTER_COLS = [
   {
     heading: 'Product',
     links: [
-      { label: 'All Tools',      href: '/dashboard' },
+      { label: 'All Tools',      href: '/solutions' },
       { label: 'Pricing',        href: '/pricing' },
-      { label: 'Changelog',      href: '/changelog' },
-      { label: 'Roadmap',        href: '/roadmap' },
     ],
   },
   {
@@ -48,17 +46,9 @@ const FOOTER_COLS = [
     heading: 'Company',
     links: [
       { label: 'About',          href: '/about' },
-      { label: 'Blog',           href: '/blog' },
       { label: 'Contact',        href: '/contact' },
-      { label: 'Careers',        href: '/careers' },
     ],
   },
-];
-
-const LEGAL_LINKS = [
-  { label: 'Privacy',          href: '/privacy' },
-  { label: 'Terms',            href: '/terms' },
-  { label: 'Cookie Policy',    href: '/cookies' },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -161,18 +151,6 @@ export default function Footer() {
           <p className="text-xs text-gray-400">
             © {year} Vellum. All rights reserved.
           </p>
-
-          <nav className="flex items-center gap-6">
-            {LEGAL_LINKS.map((l) => (
-              <Link
-                key={l.label}
-                href={l.href}
-                className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
-              >
-                {l.label}
-              </Link>
-            ))}
-          </nav>
         </div>
       </div>
       

@@ -118,6 +118,10 @@ describe('pricing', () => {
 
 describe('SecurityPage', () => {
   it('states the retention of every paid plan', () => {
-    expect(renderToStaticMarkup(<SecurityPage />)).toContain('Basic, Pro and Enterprise plans, files are automatically wiped from our servers after 3 to 7 days');
+    expect(renderToStaticMarkup(<SecurityPage />)).toContain('On Basic, Pro and Enterprise, stored documents and conversion history are deleted automatically after 3, 5 or 7 days');
+  });
+
+  it('says guests keep only a compressed video, and for 24 hours', () => {
+    expect(renderToStaticMarkup(<SecurityPage />)).toContain('Without an account, nothing you convert is stored, except Compress Video results, which you can download for 24 hours.');
   });
 });

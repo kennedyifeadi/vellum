@@ -94,13 +94,6 @@ export default function LoginPage() {
               }
             />
           </div>
-
-          <p className="text-center text-[11px] text-[#9ca3af] mt-8 leading-relaxed">
-            By clicking continue, you agree to our{" "}
-            <a href="#" className="text-[#6366f1] hover:underline">Terms of Service</a>
-            <br />
-            and <a href="#" className="text-[#6366f1] hover:underline">Privacy Policy</a>.
-          </p>
         </div>
       </AuthCard>
     </AuthLayout>

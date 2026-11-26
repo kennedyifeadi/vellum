@@ -51,14 +51,6 @@ const compareData = [
       storageRow("File Retention", retentionLabel),
       { name: "Access Anywhere", free: "No", basic: "Yes", pro: "Yes", enterprise: "Yes" },
     ]
-  },
-  {
-    category: "Support & Security",
-    features: [
-      { name: "Customer Support", free: "Community", basic: "Standard", pro: "Priority", enterprise: "Dedicated" },
-      { name: "Uptime Guarantee", free: "No", basic: "No", pro: "No", enterprise: "Yes" },
-      { name: "API Access", free: "No", basic: "No", pro: "No", enterprise: "Yes" },
-    ]
   }
 ];
 

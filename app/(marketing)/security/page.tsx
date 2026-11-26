@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { STORAGE_LIMITS } from '@/lib/storage-limits';
+import { STORAGE_LIMITS, formatQuota } from '@/lib/storage-limits';
 
 export const metadata = {
   title: "Trust & Security | Vellum",
@@ -19,7 +19,7 @@ export default function SecurityPage() {
             <span className="text-brand-strong">Keeping them safe is ours.</span>
           </h1>
           <p className="text-lg text-gray-600 leading-relaxed max-w-2xl mx-auto">
-            Whether you are converting personal PDFs or compressing corporate videos, Vellum employs enterprise-grade security to ensure your data remains completely private.
+            What Vellum does with the files you convert, and how long it keeps them.
           </p>
         </div>
 
@@ -34,7 +34,7 @@ export default function SecurityPage() {
             </div>
             <h3 className="text-xl font-bold mb-3">Automatic Deletion</h3>
             <p className="text-gray-600 text-sm leading-relaxed">
-              We process your files temporarily. For unauthenticated users (Guests), processed files are deleted immediately after download. For our Basic, Pro and Enterprise plans, files are automatically wiped from our servers after {STORAGE_LIMITS.Basic.retentionDays} to {STORAGE_LIMITS.Enterprise.retentionDays} days, guaranteeing zero lingering data.
+              We process your files temporarily. Without an account, nothing you convert is stored, except Compress Video results, which you can download for 24 hours. On Basic, Pro and Enterprise, stored documents and conversion history are deleted automatically after {STORAGE_LIMITS.Basic.retentionDays}, {STORAGE_LIMITS.Pro.retentionDays} or {STORAGE_LIMITS.Enterprise.retentionDays} days, and with auto-delete turned on a conversion stores no file at all. Deleting your account deletes your conversions, documents and video jobs.
             </p>
           </div>
 
@@ -44,9 +44,9 @@ export default function SecurityPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
               </svg>
             </div>
-            <h3 className="text-xl font-bold mb-3">End-to-End Encryption</h3>
+            <h3 className="text-xl font-bold mb-3">Encrypted in Transit</h3>
             <p className="text-gray-600 text-sm leading-relaxed">
-              Every file you upload and download is protected by bank-level 256-bit SSL/TLS encryption. We protect your data in transit and at rest, ensuring that no third party can intercept or access your documents.
+              Every file you upload and download travels over HTTPS, so it is encrypted between your browser and our servers.
             </p>
           </div>
 
@@ -68,9 +68,9 @@ export default function SecurityPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
               </svg>
             </div>
-            <h3 className="text-xl font-bold mb-3">Enterprise Compliance</h3>
+            <h3 className="text-xl font-bold mb-3">Enterprise</h3>
             <p className="text-gray-600 text-sm leading-relaxed">
-              For teams requiring stricter controls, Vellum offers custom Enterprise workflows. Benefit from custom data retention policies, advanced hosting setups, SSO, and a dedicated Uptime Guarantee.
+              Enterprise has the highest limits: {formatQuota(STORAGE_LIMITS.Enterprise.quotaBytes)} of storage, with files kept {STORAGE_LIMITS.Enterprise.retentionDays} days. If your team needs more, <Link href="/contact" className="text-brand-strong hover:underline">tell us what you need</Link>.
             </p>
           </div>
 
