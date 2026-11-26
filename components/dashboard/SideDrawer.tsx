@@ -3,6 +3,7 @@
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
 import { useToolHost } from '@/components/shared/ToolHost';
+import { ALL_TOOLS, TOOL_CATEGORY_COLORS } from '@/lib/tools';
 import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import Image from 'next/image';
@@ -104,22 +105,6 @@ type SideDrawerProps = {
   toolId: string | null;
   options?: { startWithGooglePicker?: boolean };
 };
-
-// Define available tools for dropdown selection (General Layout)
-const availableTools = [
-  { id: 'image-to-pdf', name: 'Image to PDF', color: 'bg-[#FFEDD5] text-[#ef4444]' },
-  { id: 'merge-pdf', name: 'Merge PDF', color: 'bg-[#DBEAFE] text-[#22c55e]' },
-  { id: 'split-pdf', name: 'Split PDF', color: 'bg-[#F3E8FF] text-[#d946ef]' },
-  { id: 'docx-to-pdf', name: 'DOCX to PDF', color: 'bg-[#E0E7FF] text-[#3b82f6]' },
-  { id: 'lock-pdf', name: 'Lock PDF', color: 'bg-[#D1FAE5] text-[#eab308]' },
-  { id: 'find-pdf', name: 'Find in PDF', color: 'bg-[#FFEDD5] text-[#ea580c]' },
-  { id: 'html-to-pdf', name: 'HTML to PDF', color: 'bg-[#F3F4F6] text-[#6366f1]' },
-  { id: 'jpg-to-png', name: 'JPEG to PNG', color: 'bg-[#FFF7ED] text-[#f97316]' },
-  { id: 'compress-pdf', name: 'Compress PDF', color: 'bg-[#E0E7FF] text-[#4f46e5]' },
-  { id: 'image-compress', name: 'Compress Image', color: 'bg-[#F0FDF4] text-[#16a34a]' },
-  { id: 'video-compress', name: 'Compress Video', color: 'bg-[#FDF2F8] text-[#db2777]' },
-  { id: 'pdf-to-docx', name: 'PDF to DOCX', color: 'bg-[#EFF6FF] text-[#2563eb]' },
-];
 
 export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawerProps) {
   const [selectedTool, setSelectedTool] = useState<string>('');
@@ -477,8 +462,11 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     e.target.value = '';
   };
 
-  const currentToolInfo = availableTools.find(t => t.id === selectedTool);
-  const toolName = currentToolInfo?.name ?? 'This tool';
+  const currentToolInfo = ALL_TOOLS.find(t => t.id === selectedTool);
+  const toolIconColors = currentToolInfo
+    ? `${TOOL_CATEGORY_COLORS[currentToolInfo.category].well} ${TOOL_CATEGORY_COLORS[currentToolInfo.category].icon}`
+    : 'bg-[#eef2ff] text-[#6366f1]';
+  const toolName = currentToolInfo?.title ?? 'This tool';
   const limitLabel = uploadLimitLabel(selectedTool, plan);
   const processLabel = isWaitingForSlot
     ? 'Waiting for a free slot…'
@@ -878,7 +866,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
               showToast('PDF optimised! File was already well-compressed.', 'success');
             }
           } else {
-            showToast(`${currentToolInfo?.name || 'File'} processed successfully!`, 'success');
+            showToast(`${currentToolInfo?.title || 'File'} processed successfully!`, 'success');
           }
         }
         
@@ -1069,16 +1057,14 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
 
   const renderToolTitle = () => (
     <div className="flex items-center gap-2">
-      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${
-        currentToolInfo?.color || 'bg-[#eef2ff] text-[#6366f1]'
-      }`}>
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm ${toolIconColors}`}>
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
         </svg>
       </div>
       <div>
         <h2 className="text-sm font-bold text-[#111827]">
-          {currentToolInfo ? `${currentToolInfo.name}` : 'Process File'}
+          {currentToolInfo ? `${currentToolInfo.title}` : 'Process File'}
         </h2>
         <p className="text-[10px] text-[#6b7280]">{limitLabel}</p>
       </div>
@@ -1109,8 +1095,8 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
           className="w-full h-10 bg-white border border-[#eaedf3] rounded-xl pl-3 pr-8 text-xs text-[#1f2937] focus:outline-none focus:ring-1 focus:ring-[#6366f1] cursor-pointer appearance-none"
         >
           <option value="" disabled>Choose a tool to perform...</option>
-          {availableTools.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
+          {ALL_TOOLS.map((t) => (
+            <option key={t.id} value={t.id}>{t.title}</option>
           ))}
         </select>
         <svg className="absolute right-3 top-3 w-4 h-4 text-[#9ca3af] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1140,7 +1126,7 @@ export default function SideDrawer({ isOpen, onClose, file, toolId }: SideDrawer
     >
       <p className="text-xs font-semibold text-[#0369a1]">Processing Action Available</p>
       <p className="text-[11px] text-[#0c4a6e] leading-relaxed">
-        You have selected **{currentToolInfo?.name}**. This action will execute right away when tapping the Process button below.
+        You have selected **{currentToolInfo?.title}**. This action will execute right away when tapping the Process button below.
       </p>
     </motion.div>
   );

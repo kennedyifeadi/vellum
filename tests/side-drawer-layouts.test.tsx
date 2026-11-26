@@ -467,3 +467,20 @@ describe.each(['mobile', 'desktop'] as const)('Process button look at %s width',
     expectLook(await screen.findByRole('button', { name: 'Queued (2 ahead)…' }), 'disabled');
   });
 });
+
+describe('the drawer header icon', () => {
+  beforeEach(() => useLayout('desktop'));
+
+  it.each([
+    ['merge-pdf', 'bg-cat-pdf-tint', 'text-cat-pdf'],
+    ['image-to-pdf', 'bg-cat-image-tint', 'text-cat-image'],
+    ['video-compress', 'bg-cat-video-tint', 'text-cat-video'],
+    ['docx-to-pdf', 'bg-cat-doc-tint', 'text-cat-doc'],
+  ])("draws %s's icon in its category colours", (toolId, well, icon) => {
+    renderDrawer(toolId);
+
+    const iconWell = screen.getByRole('heading', { level: 2 }).parentElement!.previousElementSibling!;
+    expect(iconWell.classList).toContain(well);
+    expect(iconWell.classList).toContain(icon);
+  });
+});
