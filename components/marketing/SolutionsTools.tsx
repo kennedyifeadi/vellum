@@ -5,11 +5,7 @@ import Link from 'next/link';
 import SideDrawer from '@/components/dashboard/SideDrawer';
 import ToolIcon from '@/components/shared/ToolIcon';
 import { ALL_TOOLS } from '@/lib/tools';
-import { SOLUTIONS_TITLE, toolPageTitle } from '@/lib/solutions-pages';
-
-const SOLUTIONS_PATH = '/solutions';
-
-const toolPath = (id: string) => `${SOLUTIONS_PATH}/${id}`;
+import { SOLUTIONS_PATH, SOLUTIONS_TITLE, toolPageTitle, toolPath } from '@/lib/solutions-pages';
 
 function toolAt(pathname: string): string | null {
   const id = pathname.startsWith(`${SOLUTIONS_PATH}/`) ? pathname.slice(SOLUTIONS_PATH.length + 1) : null;
