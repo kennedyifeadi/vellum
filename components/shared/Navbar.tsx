@@ -12,36 +12,36 @@ const MEGA_NAV_CATEGORIES = [
     label: 'PDF Solutions',
     description: 'Work with PDF files effortlessly',
     tools: [
-      { name: 'Merge PDF',      desc: 'Combine multiple PDFs into one',   href: '/dashboard?tool=merge-pdf' },
-      { name: 'Split PDF',      desc: 'Extract or separate PDF pages',    href: '/dashboard?tool=split-pdf' },
-      { name: 'Compress PDF',   desc: 'Reduce PDF file size instantly',   href: '/dashboard?tool=compress-pdf' },
-      { name: 'Lock PDF',       desc: 'Password-protect your PDFs',       href: '/dashboard?tool=lock-pdf' },
-      { name: 'Find in PDF',    desc: 'Search text across PDF documents', href: '/dashboard?tool=find-pdf' },
+      { name: 'Merge PDF',      desc: 'Combine multiple PDFs into one',   href: '/solutions/merge-pdf' },
+      { name: 'Split PDF',      desc: 'Extract or separate PDF pages',    href: '/solutions/split-pdf' },
+      { name: 'Compress PDF',   desc: 'Reduce PDF file size instantly',   href: '/solutions/compress-pdf' },
+      { name: 'Lock PDF',       desc: 'Password-protect your PDFs',       href: '/solutions/lock-pdf' },
+      { name: 'Find in PDF',    desc: 'Search text across PDF documents', href: '/solutions/find-pdf' },
     ],
   },
   {
     label: 'Image Solutions',
     description: 'Transform and optimise images',
     tools: [
-      { name: 'Image to PDF',   desc: 'Convert JPG/PNG to a PDF',        href: '/dashboard?tool=image-to-pdf' },
-      { name: 'JPEG to PNG',    desc: 'Swap image formats with ease',     href: '/dashboard?tool=jpg-to-png' },
-      { name: 'Compress Image', desc: 'Shrink images without quality loss', href: '/dashboard?tool=image-compress' },
+      { name: 'Image to PDF',   desc: 'Convert JPG/PNG to a PDF',        href: '/solutions/image-to-pdf' },
+      { name: 'JPEG to PNG',    desc: 'Swap image formats with ease',     href: '/solutions/jpg-to-png' },
+      { name: 'Compress Image', desc: 'Shrink images without quality loss', href: '/solutions/image-compress' },
     ],
   },
   {
     label: 'Video Solutions',
     description: 'Optimise and process video files',
     tools: [
-      { name: 'Compress Video', desc: 'Reduce video size while preserving quality', href: '/dashboard?tool=video-compress' },
+      { name: 'Compress Video', desc: 'Reduce video size while preserving quality', href: '/solutions/video-compress' },
     ],
   },
   {
     label: 'Document Solutions',
     description: 'Convert docs across all formats',
     tools: [
-      { name: 'DOCX to PDF',   desc: 'Turn Word docs into polished PDFs', href: '/dashboard?tool=docx-to-pdf' },
-      { name: 'HTML to PDF',   desc: 'Render any webpage as a PDF',       href: '/dashboard?tool=html-to-pdf' },
-      { name: 'PDF to DOCX',   desc: 'Convert PDF back to editable Word', href: '/dashboard?tool=pdf-to-docx' },
+      { name: 'DOCX to PDF',   desc: 'Turn Word docs into polished PDFs', href: '/solutions/docx-to-pdf' },
+      { name: 'HTML to PDF',   desc: 'Render any webpage as a PDF',       href: '/solutions/html-to-pdf' },
+      { name: 'PDF to DOCX',   desc: 'Convert PDF back to editable Word', href: '/solutions/pdf-to-docx' },
     ],
   },
 ];
