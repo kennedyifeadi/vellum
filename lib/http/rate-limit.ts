@@ -1,5 +1,5 @@
 import { ClientError } from '@/lib/convert/errors';
-import { getClientIp } from '@/lib/http/client-ip';
+import { countedClientAddress } from '@/lib/http/client-ip';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS = 30;
@@ -29,7 +29,7 @@ const supportRateLimits = (globalForRateLimits.vellumSupportRateLimits ??= new M
 
 /** The key a caller's address is counted under, here and by the per-caller job limit. */
 export function clientAddressKey(headers: Headers): string {
-  return getClientIp(headers) ?? SHARED_RATE_LIMIT_KEY;
+  return countedClientAddress(headers) ?? SHARED_RATE_LIMIT_KEY;
 }
 
 function isOverBudget(

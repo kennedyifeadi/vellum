@@ -8,6 +8,8 @@ jest.mock('@/lib/auth/jwt', () => ({
 import { POST as requestOtp } from '../app/api/auth/request-otp/route';
 import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
 import { GET as listDocuments } from '../app/api/documents/route';
+import { isRateLimited } from '@/lib/http/rate-limit';
+import { callerKeyOf } from '@/lib/convert/caller-jobs';
 
 // Each of these routes counts a request against its caller's budget before anything else.
 const ROUTES: Record<string, (req: NextRequest) => Promise<Response>> = {
@@ -144,5 +146,38 @@ describe('rate limiting of the routes that read a body', () => {
       expect((await send(request)).status).not.toBe(429);
     }
     expect((await send(createApiRequest('192.0.2.250'))).status).toBe(429);
+  });
+});
+
+describe('IPv6 callers', () => {
+  const from = (address: string) => new Headers({ 'x-real-ip': address });
+
+  beforeEach(() => {
+    process.env.CLIENT_IP_HEADER = 'x-real-ip';
+  });
+
+  afterEach(() => {
+    delete process.env.CLIENT_IP_HEADER;
+  });
+
+  it('share one budget across a /64', () => {
+    for (let i = 1; i <= 30; i++) {
+      expect(isRateLimited(from(`2001:db8:1:2::${i.toString(16)}`))).toBe(false);
+    }
+    expect(isRateLimited(from('2001:0db8:0001:0002:ffff:ffff:ffff:ffff'))).toBe(true);
+  });
+
+  it('have a budget of their own in each /64', () => {
+    for (let i = 1; i <= 30; i++) isRateLimited(from(`2001:db8:1:3::${i.toString(16)}`));
+    expect(isRateLimited(from('2001:db8:1:3::1'))).toBe(true);
+    expect(isRateLimited(from('2001:db8:1:4::1'))).toBe(false);
+  });
+
+  it('hold one running guest job per /64', () => {
+    const guest = { userId: null, plan: 'Free' };
+    const key = (address: string) => callerKeyOf(from(address), guest);
+
+    expect(key('2001:db8:5:6::1')).toBe(key('2001:db8:5:6:abcd::9'));
+    expect(key('2001:db8:5:6::1')).not.toBe(key('2001:db8:5:7::1'));
   });
 });

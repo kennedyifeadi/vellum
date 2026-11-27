@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { signInAddress } from '@/lib/auth/clientAddress';
+import { countedClientAddress } from '@/lib/http/client-ip';
 import { generateOtp } from '@/lib/auth/otp';
 import { sendWithinOtpLimits } from '@/lib/auth/otpRequestLimit';
 import { createBrowserId, readBrowserId, readKnownDevice, setBrowserId } from '@/lib/auth/signInCookies';
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     const knownDeviceId = readKnownDevice(cookieStore, email);
 
     await dbConnect();
-    const sender = { email, address: signInAddress(req.headers), knownDeviceId };
+    const sender = { email, address: countedClientAddress(req.headers), knownDeviceId };
     const sent = await sendWithinOtpLimits(sender, async () => {
       const code = await generateOtp(browserId, email, knownDeviceId);
       await deliverCode(email, formatOtpCode(code), canSendEmail);
