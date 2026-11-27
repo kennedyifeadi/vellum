@@ -4,6 +4,7 @@ import sharp from 'sharp';
 
 const OWNER_ID = '507f1f77bcf86cd799439011';
 const CONVERSION_ID = '9b2f4c1e-6d3a-4e8b-a5f7-0c1d2e3f4a5b';
+const DOCUMENT_ID = '65a0000000000000000000d1';
 
 let mockResolvedFiles: File[] = [];
 const mockConversionCreate = jest.fn().mockResolvedValue(true);
@@ -196,9 +197,9 @@ describe.each([
   [
     'documents/download/[id]',
     (fileName: string) => {
-      mockDocument = { _id: 'doc1', diskFileName: 'abc.pdf', fileName, mimeType: 'application/pdf' };
-      return downloadDocument(new NextRequest('http://localhost:3000/api/documents/download/doc1'), {
-        params: Promise.resolve({ id: 'doc1' }),
+      mockDocument = { _id: DOCUMENT_ID, diskFileName: 'abc.pdf', fileName, mimeType: 'application/pdf' };
+      return downloadDocument(new NextRequest(`http://localhost:3000/api/documents/download/${DOCUMENT_ID}`), {
+        params: Promise.resolve({ id: DOCUMENT_ID }),
       });
     },
   ],

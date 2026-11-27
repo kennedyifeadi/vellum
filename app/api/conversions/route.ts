@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import Conversion from '@/models/conversion';
 import dbConnect from '@/lib/db/mongoose';
 import { CONVERSION_FILES, removeStoredFile, unexpired } from '@/lib/stored-files';
+import { isObjectId } from '@/lib/db/object-id';
 import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 export async function GET(req: NextRequest) {
@@ -46,6 +47,9 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get('id');
     if (!id) {
       return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
+    }
+    if (!isObjectId(id)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
     await dbConnect();

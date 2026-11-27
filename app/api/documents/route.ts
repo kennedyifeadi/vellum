@@ -4,6 +4,7 @@ import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { DOCUMENT_FILES, removeStoredFile, unexpired } from '@/lib/stored-files';
 import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
+import { isObjectId } from '@/lib/db/object-id';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,7 @@ export async function DELETE(req: NextRequest) {
 
   const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isObjectId(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await dbConnect();
   const doc = await UserDocumentModel.findOne({ _id: id, userId, ...unexpired() });

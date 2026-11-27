@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import type { TrackedFile } from './helpers/storedFileStreams';
 
 const OWNER_ID = '507f1f77bcf86cd799439011';
+const DOCUMENT_ID = '65a0000000000000000000d1';
 const STORED_BYTES = Buffer.from('<script>alert(1)</script>');
 
 let mockDocument: Record<string, unknown> | null = null;
@@ -41,9 +42,9 @@ jest.mock('@/lib/storage', () => ({
 import { GET as downloadDocument } from '../app/api/documents/download/[id]/route';
 
 function download(mimeType: unknown, { ownerId = OWNER_ID, signal }: { ownerId?: string; signal?: AbortSignal } = {}) {
-  mockDocument = { _id: 'doc1', userId: ownerId, diskFileName: 'abc.bin', fileName: 'upload.bin', mimeType };
-  return downloadDocument(new NextRequest('http://localhost:3000/api/documents/download/doc1', { signal }), {
-    params: Promise.resolve({ id: 'doc1' }),
+  mockDocument = { _id: DOCUMENT_ID, userId: ownerId, diskFileName: 'abc.bin', fileName: 'upload.bin', mimeType };
+  return downloadDocument(new NextRequest(`http://localhost:3000/api/documents/download/${DOCUMENT_ID}`, { signal }), {
+    params: Promise.resolve({ id: DOCUMENT_ID }),
   });
 }
 
