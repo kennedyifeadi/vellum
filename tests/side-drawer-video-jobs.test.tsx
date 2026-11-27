@@ -7,8 +7,8 @@ const mockShowToast = jest.fn();
 const mockAddNotification = jest.fn();
 let mockUser: { plan: string } | null = { plan: 'Basic' };
 
-jest.mock('@/app/dashboard/layout', () => ({
-  useDashboard: () => ({ showToast: mockShowToast, addNotification: mockAddNotification, user: mockUser }),
+jest.mock('@/components/shared/ToolHost', () => ({
+  useToolHost: () => ({ showToast: mockShowToast, addNotification: mockAddNotification, user: mockUser }),
 }));
 
 jest.mock('next/script', () => ({ __esModule: true, default: () => null }));

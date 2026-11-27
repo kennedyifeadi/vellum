@@ -18,28 +18,28 @@ const FOOTER_COLS = [
   {
     heading: 'PDF Tools',
     links: [
-      { label: 'Merge PDF',      href: '/dashboard?tool=merge-pdf' },
-      { label: 'Split PDF',      href: '/dashboard?tool=split-pdf' },
-      { label: 'Compress PDF',   href: '/dashboard?tool=compress-pdf' },
-      { label: 'Lock PDF',       href: '/dashboard?tool=lock-pdf' },
-      { label: 'Find in PDF',    href: '/dashboard?tool=find-pdf' },
+      { label: 'Merge PDF',      href: '/solutions/merge-pdf' },
+      { label: 'Split PDF',      href: '/solutions/split-pdf' },
+      { label: 'Compress PDF',   href: '/solutions/compress-pdf' },
+      { label: 'Lock PDF',       href: '/solutions/lock-pdf' },
+      { label: 'Find in PDF',    href: '/solutions/find-pdf' },
     ],
   },
   {
     heading: 'Image & Video',
     links: [
-      { label: 'Image to PDF',   href: '/dashboard?tool=image-to-pdf' },
-      { label: 'JPEG to PNG',    href: '/dashboard?tool=jpg-to-png' },
-      { label: 'Compress Image', href: '/dashboard?tool=image-compress' },
-      { label: 'Compress Video', href: '/dashboard?tool=video-compress' },
+      { label: 'Image to PDF',   href: '/solutions/image-to-pdf' },
+      { label: 'JPEG to PNG',    href: '/solutions/jpg-to-png' },
+      { label: 'Compress Image', href: '/solutions/image-compress' },
+      { label: 'Compress Video', href: '/solutions/video-compress' },
     ],
   },
   {
     heading: 'Documents',
     links: [
-      { label: 'DOCX to PDF',    href: '/dashboard?tool=docx-to-pdf' },
-      { label: 'HTML to PDF',    href: '/dashboard?tool=html-to-pdf' },
-      { label: 'PDF to DOCX',    href: '/dashboard?tool=pdf-to-docx' },
+      { label: 'DOCX to PDF',    href: '/solutions/docx-to-pdf' },
+      { label: 'HTML to PDF',    href: '/solutions/html-to-pdf' },
+      { label: 'PDF to DOCX',    href: '/solutions/pdf-to-docx' },
     ],
   },
   {

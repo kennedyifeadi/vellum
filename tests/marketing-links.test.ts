@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ALL_TOOLS } from '@/lib/tools';
+import { toolPath } from '@/lib/solutions-pages';
 
 const ROOT = path.resolve(__dirname, '..');
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
@@ -29,31 +30,47 @@ function listSourceFiles(entry: string): string[] {
   });
 }
 
-/** Each page route under app/ as its URL segments, with route groups dropped. */
-function pageRoutes(): string[][] {
-  return listSourceFiles('app')
-    .filter((file) => path.basename(file) === 'page.tsx')
-    .map((file) =>
-      path
-        .relative(path.join(ROOT, 'app'), path.dirname(file))
-        .split(path.sep)
-        .filter((segment) => segment !== '' && !/^\(.*\)$/.test(segment)),
-    );
+const DYNAMIC_SEGMENT = /^\[([^.\]]+)\]$/;
+
+/** A page route's URL segments, with route groups dropped, and the values each dynamic one takes. */
+interface PageRoute {
+  segments: string[];
+  values: Map<string, Set<string>>;
 }
 
-function isPageRoute(pathname: string, routes: string[][]): boolean {
-  const segments = pathname.split('/').filter(Boolean);
-  return routes.some(
-    (route) =>
-      route.length === segments.length &&
-      route.every((part, i) => /^\[[^.\]]+\]$/.test(part) || part === segments[i]),
+type DynamicPage = { generateStaticParams?: () => Record<string, string>[] | Promise<Record<string, string>[]> };
+
+// A dynamic segment resolves only to the values its page's generateStaticParams lists. A dynamic
+// page without one could answer any value, so a link to it cannot be checked and counts as broken.
+async function pageRoutes(): Promise<PageRoute[]> {
+  const pages = listSourceFiles('app').filter((file) => path.basename(file) === 'page.tsx');
+  return Promise.all(
+    pages.map(async (file) => {
+      const segments = path
+        .relative(path.join(ROOT, 'app'), path.dirname(file))
+        .split(path.sep)
+        .filter((segment) => segment !== '' && !/^\(.*\)$/.test(segment));
+      const values = new Map<string, Set<string>>();
+      if (segments.some((segment) => DYNAMIC_SEGMENT.test(segment))) {
+        const page: DynamicPage = await import(file);
+        const params = (await page.generateStaticParams?.()) ?? [];
+        for (const segment of segments) {
+          const name = DYNAMIC_SEGMENT.exec(segment)?.[1];
+          if (name) values.set(segment, new Set(params.map((param) => param[name])));
+        }
+      }
+      return { segments, values };
+    }),
   );
 }
 
-// The tool sheets live at /solutions/<tool id>, which may land before or after these pages.
-function isToolSheet(pathname: string): boolean {
-  const match = /^\/solutions\/([^/]+)$/.exec(pathname);
-  return !!match && ALL_TOOLS.some((tool) => tool.id === match[1]);
+function isPageRoute(pathname: string, routes: PageRoute[]): boolean {
+  const parts = pathname.split('/').filter(Boolean);
+  return routes.some(
+    ({ segments, values }) =>
+      segments.length === parts.length &&
+      segments.every((segment, i) => values.get(segment)?.has(parts[i]) ?? segment === parts[i]),
+  );
 }
 
 interface FoundLink {
@@ -61,17 +78,28 @@ interface FoundLink {
   value: string;
 }
 
-function linksIn(file: string): { links: FoundLink[]; dynamic: string[] } {
-  const source = fs.readFileSync(file, 'utf8');
-  const relative = path.relative(ROOT, file);
+// A tool page's link is built with toolPath. A quoted id is checked as written; `<tool>.id`
+// stands for every tool in lib/tools.tsx, the list the Solutions pages are built from.
+function toolPathLinks(argument: string): string[] | null {
+  const quoted = /^(?:"([^"]*)"|'([^']*)')$/.exec(argument);
+  if (quoted) return [toolPath(quoted[1] ?? quoted[2])];
+  if (/^\w+\.id$/.test(argument)) return ALL_TOOLS.map((tool) => toolPath(tool.id));
+  return null;
+}
+
+function linksInSource(source: string, relative: string): { links: FoundLink[]; dynamic: string[] } {
   const links: FoundLink[] = [];
   const dynamic: string[] = [];
 
   for (const match of source.matchAll(/\bhref=(?:"([^"]*)"|'([^']*)'|\{\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^}]*))\s*\})/g)) {
     const [, dq, sq, bdq, bsq, template, expression] = match;
     const literal = dq ?? sq ?? bdq ?? bsq ?? template;
+    const toolCall = expression === undefined ? null : /^toolPath\((.*)\)$/.exec(expression.trim());
+    const toolLinks = toolCall ? toolPathLinks(toolCall[1].trim()) : null;
     if (literal !== undefined && !literal.includes('${')) {
       links.push({ file: relative, value: literal });
+    } else if (toolLinks) {
+      links.push(...toolLinks.map((value) => ({ file: relative, value })));
     } else if (literal !== undefined || !/^[\w.]+$/.test(expression.trim())) {
       dynamic.push(`${relative}: href=${match[0].slice(5)}`);
     } else if (!LINK_PROPERTIES.includes(expression.trim().split('.').pop()!)) {
@@ -89,10 +117,13 @@ function linksIn(file: string): { links: FoundLink[]; dynamic: string[] } {
   return { links, dynamic };
 }
 
-function brokenLink(value: string, routes: string[][]): boolean {
+function linksIn(file: string) {
+  return linksInSource(fs.readFileSync(file, 'utf8'), path.relative(ROOT, file));
+}
+
+function brokenLink(value: string, routes: PageRoute[]): boolean {
   if (!value.startsWith('/') || value.startsWith('//')) return true;
-  const pathname = value.split(/[?#]/)[0];
-  return !isPageRoute(pathname, routes) && !isToolSheet(pathname);
+  return !isPageRoute(value.split(/[?#]/)[0], routes);
 }
 
 const files = MARKETING_SOURCES.flatMap(listSourceFiles);
@@ -100,7 +131,10 @@ const scanned = files.map(linksIn);
 const allLinks = scanned.flatMap((result) => result.links);
 
 describe('marketing links', () => {
-  const routes = pageRoutes();
+  let routes: PageRoute[];
+  beforeAll(async () => {
+    routes = await pageRoutes();
+  }, 60_000);
 
   it('finds the links it checks', () => {
     for (const file of ['components/shared/Navbar.tsx', 'components/shared/Footer.tsx', 'app/(marketing)/pricing/page.tsx']) {
@@ -124,6 +158,29 @@ describe('marketing links', () => {
     expect(brokenLink('/signup', routes)).toBe(true);
     expect(brokenLink('#', routes)).toBe(true);
     expect(brokenLink('mailto:someone@example.com', routes)).toBe(true);
+  });
+
+  it('checks a tool link built with toolPath against the tool pages', () => {
+    const one = linksInSource('<Link href={toolPath("merge-pdf")} />', 'x.tsx');
+    expect(one).toEqual({ links: [{ file: 'x.tsx', value: '/solutions/merge-pdf' }], dynamic: [] });
+
+    const missing = linksInSource("<Link href={toolPath('not-a-tool')} />", 'x.tsx').links[0].value;
+    expect(brokenLink(missing, routes)).toBe(true);
+
+    const everyTool = linksInSource('<Link href={toolPath(tool.id)} />', 'x.tsx').links.map((link) => link.value);
+    expect(everyTool).toEqual(ALL_TOOLS.map((tool) => `/solutions/${tool.id}`));
+    expect(everyTool.filter((value) => brokenLink(value, routes))).toEqual([]);
+
+    expect(linksInSource('<Link href={toolPath(someId)} />', 'x.tsx').dynamic).toEqual(['x.tsx: href={toolPath(someId)}']);
+  });
+
+  it('resolves a dynamic page only to the values it generates', () => {
+    const generated: PageRoute = { segments: ['solutions', '[tool]'], values: new Map([['[tool]', new Set(['merge-pdf'])]]) };
+    expect(isPageRoute('/solutions/merge-pdf', [generated])).toBe(true);
+    expect(isPageRoute('/solutions/split-pdf', [generated])).toBe(false);
+
+    const ungenerated: PageRoute = { segments: ['docs', '[slug]'], values: new Map([['[slug]', new Set()]]) };
+    expect(isPageRoute('/docs/anything', [ungenerated])).toBe(false);
   });
 });
 
@@ -163,6 +220,9 @@ describe('marketing copy', () => {
     ['links to terms that do not exist', /terms of service/i],
     ['links to a privacy policy that does not exist', /privacy policy/i],
     ['a setup guide that does not exist', /read our guide/i],
+    ['lossless image compression, which is lossy', /without quality loss/i],
+    ['video compression that keeps the quality', /while preserving quality/i],
+    ['instant PDF compression', /file size instantly/i],
   ])('no longer claims %s', (_claim, pattern) => {
     expect(filesContaining(pattern)).toEqual([]);
   });

@@ -8,8 +8,8 @@ import { BUSY_RETRY_POLICY } from '@/lib/busy-retry';
 const mockShowToast = jest.fn();
 const mockAddNotification = jest.fn();
 
-jest.mock('@/app/dashboard/layout', () => ({
-  useDashboard: () => ({
+jest.mock('@/components/shared/ToolHost', () => ({
+  useToolHost: () => ({
     showToast: mockShowToast,
     addNotification: mockAddNotification,
     user: { plan: 'Basic' },
@@ -54,6 +54,10 @@ Blob.prototype.arrayBuffer ??= function (this: Blob) {
 };
 
 const MOBILE_QUERY = '(max-width: 767px)';
+
+// jsdom has no PointerEvent, and the Event it falls back to drops clientY.
+class TestPointerEvent extends MouseEvent {}
+(window as unknown as { PointerEvent: typeof TestPointerEvent }).PointerEvent ??= TestPointerEvent;
 
 type FakeAnswer = {
   status?: number;
@@ -230,6 +234,28 @@ describe('SideDrawer at mobile width', () => {
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
     expect(screen.getByText('report.pdf')).toBeTruthy();
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('goes from full to half, and from half to closed, when dragged down, even while processing', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const onClose = jest.fn();
+    const { container } = render(<SideDrawer isOpen onClose={onClose} file={null} toolId="compress-pdf" />);
+    const drag = (by: number) => {
+      fireEvent.pointerDown(screen.getByTestId('sheet-drag-handle'), { clientY: 300 });
+      fireEvent.pointerMove(window, { clientY: 300 + by });
+      fireEvent.pointerUp(window, { clientY: 300 + by });
+    };
+    chooseFiles(container, [pdf()]);
+    fireEvent.click(processButton());
+    expect(await screen.findByText('Processing...')).toBeTruthy();
+
+    drag(-120);
+    expect(screen.getByTitle('Collapse')).toBeTruthy();
+    drag(200);
+    expect(screen.getByTitle('Expand')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    drag(200);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows the Find in PDF matches', async () => {
@@ -465,5 +491,22 @@ describe.each(['mobile', 'desktop'] as const)('Process button look at %s width',
     fireEvent.click(processButton());
 
     expectLook(await screen.findByRole('button', { name: 'Queued (2 ahead)…' }), 'disabled');
+  });
+});
+
+describe('the drawer header icon', () => {
+  beforeEach(() => useLayout('desktop'));
+
+  it.each([
+    ['merge-pdf', 'bg-cat-pdf-tint', 'text-cat-pdf'],
+    ['image-to-pdf', 'bg-cat-image-tint', 'text-cat-image'],
+    ['video-compress', 'bg-cat-video-tint', 'text-cat-video'],
+    ['docx-to-pdf', 'bg-cat-doc-tint', 'text-cat-doc'],
+  ])("draws %s's icon in its category colours", (toolId, well, icon) => {
+    renderDrawer(toolId);
+
+    const iconWell = screen.getByRole('heading', { level: 2 }).parentElement!.previousElementSibling!;
+    expect(iconWell.classList).toContain(well);
+    expect(iconWell.classList).toContain(icon);
   });
 });
