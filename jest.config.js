@@ -5,6 +5,7 @@ const config = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^puppeteer$': '<rootDir>/tests/helpers/puppeteer-node.cjs',
   },
   transform: {
     '^.+\\.(ts|tsx)$': [

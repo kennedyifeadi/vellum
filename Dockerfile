@@ -4,9 +4,11 @@ FROM node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e
 
 # Shared libraries for the Chrome that puppeteer downloads (HTML/DOCX to PDF), fonts for it
 # to render text with, and tini to forward SIGTERM to Node and reap Chromium's children.
+# unzip because puppeteer 25 bundles no zip extractor: it unpacks the Chrome download with
+# the `unzip` command, and without one it installs no Chrome and only warns.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tini \
+      ca-certificates tini unzip \
       fonts-liberation fonts-dejavu-core \
       libasound2 libatk-bridge2.0-0 libatk1.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
       libexpat1 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 \
@@ -27,9 +29,12 @@ COPY package.json package-lock.json ./
 # 7.0.2 on Linux but 6.1.1 on Windows; the checksum pins the Linux binary's exact bytes.
 # puppeteer would also fetch chrome-headless-shell, which only `headless: 'shell'` runs;
 # lib/puppeteer/launch.ts launches Chrome itself with `headless: true`.
+# puppeteer's postinstall only warns when it cannot install Chrome, so `npm ci` still
+# succeeds; the check after it fails the build instead of shipping an image without one.
 RUN PUPPETEER_CHROME_HEADLESS_SHELL_SKIP_DOWNLOAD=true npm ci \
  && echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  node_modules/ffmpeg-static/ffmpeg" \
-    | sha256sum --check -
+    | sha256sum --check - \
+ && node --input-type=module -e 'import { existsSync } from "node:fs"; import puppeteer from "puppeteer"; const chrome = await puppeteer.executablePath(); if (!existsSync(chrome)) { console.error(`Chrome is missing at ${chrome}: puppeteer could not install it`); process.exit(1); }'
 
 # Has the full dependency tree and sources: CI runs the test suite in this stage.
 FROM deps AS build

@@ -68,7 +68,6 @@ const nextConfig: NextConfig = {
     'sharp',
     'mongoose',
     '@getbrevo/brevo',
-    'nodemailer',
     'pdf-lib',
     'pdf-parse',
   ],

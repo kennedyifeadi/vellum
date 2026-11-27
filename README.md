@@ -265,6 +265,12 @@ The ffmpeg that ffmpeg-static installs differs by platform: FFmpeg 6.1.1 on Wind
 FFmpeg 7.0.2 on Linux (the Dockerfile checks the Linux binary's checksum). CI runs the
 whole test suite against the Linux one.
 
+The image installs `unzip` because puppeteer unpacks its Chrome download with it (Windows
+uses its built-in `tar`). Without it `npm ci` still succeeds, with only a warning and no
+Chrome, so the Dockerfile checks right after `npm ci` that Chrome is where puppeteer looks
+for it and fails the build if not. A Linux or macOS machine running `npm ci` outside Docker
+needs `unzip` too.
+
 `GET /api/health` answers `{"status":"ok"}` when the process is serving. It does not touch
 the database, so a database outage cannot block or roll back a deployment.
 
