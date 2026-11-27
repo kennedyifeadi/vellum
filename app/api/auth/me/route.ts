@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/db/mongoose";
 import { getAuthUserId } from "@/lib/auth/jwt";
 import User from "@/models/user";
+import { isReadRateLimited, tooManyRequests } from "@/lib/http/rate-limit";
 
 export async function GET(req: NextRequest) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

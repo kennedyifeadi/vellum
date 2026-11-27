@@ -9,6 +9,7 @@ import { emailFailureReason, hasEmailApiKey, sendEmail } from '@/lib/email/send'
 import { getWelcomeEmailHtml } from '@/lib/email/templates/welcomeEmail';
 import { readJsonRequest } from '@/lib/http/read-upload';
 import { MAX_NAME_LENGTH, requiredLine } from '@/lib/http/text-input';
+import { isRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 async function sendWelcomeEmail(userId: string, name: string, email: string) {
   if (!hasEmailApiKey()) {
@@ -36,6 +37,8 @@ async function sendWelcomeEmail(userId: string, name: string, email: string) {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const session = await getAuthSession(req);

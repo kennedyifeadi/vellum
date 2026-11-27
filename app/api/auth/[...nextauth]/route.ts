@@ -6,6 +6,7 @@ import { getMongoClient } from "@/lib/db/mongodb";
 import { buildSessionEntry, recordSession } from "@/lib/auth/session";
 import { ClientError } from "@/lib/convert/errors";
 import { readBoundedBody, requestTooLarge } from "@/lib/http/read-upload";
+import { isRateLimited, tooManyRequests } from "@/lib/http/rate-limit";
 import User from "@/models/user"; // Your existing User model
 
 // Sign-in and sign-out forms carry a CSRF token and a callback URL.
@@ -104,4 +105,11 @@ async function handler(req: NextRequest, ctx: RouteContext) {
   return NextAuth(bounded, ctx, authOptionsFor(req));
 }
 
-export { handler as GET, handler as POST };
+// Sign-in and sign-out count as writes. GET stays unlimited: the client checks the session
+// through it on every page load and whenever a window regains focus.
+async function POST(req: NextRequest, ctx: RouteContext) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+  return handler(req, ctx);
+}
+
+export { handler as GET, POST };

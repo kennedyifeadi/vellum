@@ -5,8 +5,11 @@ import User from "@/models/user";
 import { ClientError } from "@/lib/convert/errors";
 import { readJsonRequest } from "@/lib/http/read-upload";
 import { optionalName } from "@/lib/http/text-input";
+import { isRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 export async function PATCH(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

@@ -4,12 +4,15 @@ import { getAuthUserId } from "@/lib/auth/jwt";
 import User from "@/models/user";
 import { ClientError } from "@/lib/convert/errors";
 import { JSON_BODY_LIMIT_BYTES, readJsonRequest } from "@/lib/http/read-upload";
+import { isRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 const MAX_IMAGE_LENGTH = 3 * 1024 * 1024;
 // The image and room for the rest of the object around it.
 const MAX_BODY_BYTES = MAX_IMAGE_LENGTH + JSON_BODY_LIMIT_BYTES;
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

@@ -4,9 +4,12 @@ import dbConnect from '@/lib/db/mongoose';
 import User from '@/models/user';
 import { ClientError } from '@/lib/convert/errors';
 import { readJsonRequest } from '@/lib/http/read-upload';
+import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 // GET — return the user's starred tool IDs
 export async function GET(req: NextRequest) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);
@@ -22,6 +25,8 @@ export async function GET(req: NextRequest) {
 
 // PATCH — toggle a tool ID in the starred list
 export async function PATCH(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

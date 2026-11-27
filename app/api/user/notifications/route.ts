@@ -5,9 +5,12 @@ import User from '@/models/user';
 import { pushNotification, type NewNotification } from '@/lib/notifications';
 import { ClientError } from '@/lib/convert/errors';
 import { readJsonRequest } from '@/lib/http/read-upload';
+import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 // GET — return the user's notifications (newest first)
 export async function GET(req: NextRequest) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);
@@ -24,6 +27,8 @@ export async function GET(req: NextRequest) {
 
 // POST — add a new notification (keeps last 50)
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);
@@ -48,6 +53,8 @@ export async function POST(req: NextRequest) {
 
 // PATCH — mark all notifications as read
 export async function PATCH(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

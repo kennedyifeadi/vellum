@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cancelVideoJob, videoJobStore } from '@/lib/video/video-job-service';
 import { findOwnedVideoJob, savedPercent, videoJobNotFound } from '@/lib/video/video-job-access';
 import type { VideoJob } from '@/lib/video/video-job-store';
+import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 type JobRoute = { params: Promise<{ id: string }> };
 
@@ -25,6 +26,8 @@ async function statusOf(job: VideoJob) {
 }
 
 export async function GET(req: NextRequest, { params }: JobRoute) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     const job = await findOwnedVideoJob(req, (await params).id);
     if (!job) return videoJobNotFound();
@@ -37,6 +40,8 @@ export async function GET(req: NextRequest, { params }: JobRoute) {
 
 /** Cancels a queued or running job. A job that has already ended is left as it is. */
 export async function DELETE(req: NextRequest, { params }: JobRoute) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     const job = await findOwnedVideoJob(req, (await params).id);
     if (!job) return videoJobNotFound();

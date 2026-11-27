@@ -7,7 +7,7 @@ jest.mock('@/lib/auth/jwt', () => ({
 
 import { POST as requestOtp } from '../app/api/auth/request-otp/route';
 import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
-import { GET as listDocuments } from '../app/api/documents/route';
+import { DELETE as deleteDocument } from '../app/api/documents/route';
 import { isRateLimited } from '@/lib/http/rate-limit';
 import { callerKeyOf } from '@/lib/convert/caller-jobs';
 
@@ -15,7 +15,7 @@ import { callerKeyOf } from '@/lib/convert/caller-jobs';
 const ROUTES: Record<string, (req: NextRequest) => Promise<Response>> = {
   '/api/auth/request-otp': requestOtp,
   '/api/auth/verify-otp': verifyOtp,
-  '/api/documents': listDocuments,
+  '/api/documents': deleteDocument,
 };
 
 const send = (request: NextRequest) => ROUTES[request.nextUrl.pathname](request);
@@ -131,10 +131,10 @@ describe('rate limiting of the routes that read a body', () => {
     const docIp = '192.168.2.1';
     const otpIp = '192.168.2.2';
     for (let i = 1; i <= 30; i++) {
-      await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'));
+      await send(createApiRequest(docIp, '/api/documents', undefined, 'DELETE'));
       await send(createApiRequest(otpIp, '/api/auth/verify-otp'));
     }
-    expect((await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'))).status).toBe(429);
+    expect((await send(createApiRequest(docIp, '/api/documents', undefined, 'DELETE'))).status).toBe(429);
     expect((await send(createApiRequest(otpIp, '/api/auth/verify-otp'))).status).toBe(429);
   });
 
