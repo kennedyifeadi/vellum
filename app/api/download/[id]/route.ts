@@ -7,6 +7,7 @@ import { STORED_EXTENSIONS, storedContentType } from '@/lib/conversions';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
 import { unexpired } from '@/lib/stored-files';
+import { isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 // saveConversionRecord names stored files after crypto.randomUUID(), which is lowercase.
 const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -14,6 +15,8 @@ const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const notFound = () => NextResponse.json({ error: 'File not found or unauthorized' }, { status: 404 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     const userId = await getAuthUserId(req);
     if (!userId) {

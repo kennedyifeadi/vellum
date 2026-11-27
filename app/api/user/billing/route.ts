@@ -4,8 +4,11 @@ import dbConnect from '@/lib/db/mongoose';
 import Conversion from '@/models/conversion';
 import User from '@/models/user';
 import { unexpired } from '@/lib/stored-files';
+import { isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 export async function GET(req: NextRequest) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

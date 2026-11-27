@@ -10,6 +10,7 @@ process.env.MONGODB_URI = 'mongodb://localhost:27017/test_vellum';
 // test does not count as the next test's caller's active job.
 beforeEach(() => {
   (globalThis as { vellumRateLimits?: Map<string, unknown> }).vellumRateLimits?.clear();
+  (globalThis as { vellumReadRateLimits?: Map<string, unknown> }).vellumReadRateLimits?.clear();
   (globalThis as { vellumSupportRateLimits?: Map<string, unknown> }).vellumSupportRateLimits?.clear();
   (globalThis as { vellumCallerJobs?: Map<symbol, unknown> }).vellumCallerJobs?.clear();
   delete (globalThis as { vellumVideoJobs?: unknown }).vellumVideoJobs;

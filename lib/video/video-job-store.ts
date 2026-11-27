@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/db/mongoose';
+import { isObjectId } from '@/lib/db/object-id';
 import VideoJobModel from '@/models/videoJob';
 
 // The state of Compress Video's background jobs, kept in MongoDB so that a worker in another
@@ -129,10 +130,8 @@ export interface VideoJobStore {
   keepUndeleted(job: NewVideoJob, field: VideoJobFileField, key: string, now: Date): Promise<void>;
 }
 
-const OBJECT_ID = /^[0-9a-f]{24}$/i;
-
 export function isVideoJobId(id: string): boolean {
-  return OBJECT_ID.test(id);
+  return isObjectId(id);
 }
 
 export function newVideoJobId(): string {

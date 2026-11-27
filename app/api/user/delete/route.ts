@@ -4,12 +4,15 @@ import dbConnect from '@/lib/db/mongoose';
 import { cookies } from 'next/headers';
 import { deleteAccount } from '@/lib/account-deletion';
 import { clearSessionCookies } from '@/lib/auth/session';
+import { isRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 const DELETED_MESSAGE = 'Account deleted, with its conversion history, stored documents and compressed videos';
 const FILES_PENDING_MESSAGE =
   'Account deleted. Some of its files could not be deleted yet, so deleting them will be retried.';
 
 export async function DELETE(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

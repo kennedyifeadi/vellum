@@ -10,7 +10,7 @@ jest.mock('@/lib/auth/jwt', () => ({
 import { POST as compressPdf } from '../app/api/convert/compress-pdf/route';
 import { POST as htmlToPdf } from '../app/api/convert/html-to-pdf/route';
 import { POST as uploadDocuments } from '../app/api/documents/upload/route';
-import { GET as listDocuments } from '../app/api/documents/route';
+import { DELETE as deleteDocument } from '../app/api/documents/route';
 import { POST as requestOtp } from '../app/api/auth/request-otp/route';
 import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
 import { RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
@@ -59,8 +59,11 @@ describe('upload routes outside proxy.ts', () => {
   it("counts against the same budget as the other API routes", async () => {
     const ip = freshIp();
     for (let i = 0; i < LIMIT; i++) {
-      const listed = new NextRequest('http://localhost:3000/api/documents', { headers: { 'x-real-ip': ip } });
-      expect((await listDocuments(listed)).status).not.toBe(429);
+      const deleted = new NextRequest('http://localhost:3000/api/documents?id=507f1f77bcf86cd799439011', {
+        method: 'DELETE',
+        headers: { 'x-real-ip': ip },
+      });
+      expect((await deleteDocument(deleted)).status).not.toBe(429);
     }
 
     await expectRateLimited(await compressPdf(upload('/api/convert/compress-pdf', ip).request));

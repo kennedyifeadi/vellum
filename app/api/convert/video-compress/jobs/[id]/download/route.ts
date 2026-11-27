@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { attachmentDisposition } from '@/lib/http/content-disposition';
+import { isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
 import { getStorage } from '@/lib/storage';
 import { findOwnedVideoJob, resultExpired, savedPercent, videoJobNotFound } from '@/lib/video/video-job-access';
@@ -7,6 +8,8 @@ import { findOwnedVideoJob, resultExpired, savedPercent, videoJobNotFound } from
 const EXPIRED_MESSAGE = 'This compressed video is no longer available. Results are kept for 24 hours.';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     const job = await findOwnedVideoJob(req, (await params).id);
     if (!job) return videoJobNotFound();

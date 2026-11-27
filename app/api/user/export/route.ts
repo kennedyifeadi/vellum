@@ -5,8 +5,11 @@ import User from '@/models/user';
 import Conversion from '@/models/conversion';
 import JSZip from 'jszip';
 import { unexpired } from '@/lib/stored-files';
+import { isRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req.headers)) return tooManyRequests();
+
   try {
     await dbConnect();
     const userId = await getAuthUserId(req);

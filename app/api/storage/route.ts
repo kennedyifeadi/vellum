@@ -4,10 +4,13 @@ import User from '@/models/user';
 import dbConnect from '@/lib/db/mongoose';
 import { storageLimits } from '@/lib/storage-limits';
 import { usedStorageBytes } from '@/lib/storage-usage';
+import { isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
+
   try {
     console.debug(`[API/Storage] Fetching storage: ${req.url}`);
     const userId = await getAuthUserId(req);

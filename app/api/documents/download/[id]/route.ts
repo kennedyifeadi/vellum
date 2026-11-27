@@ -7,7 +7,8 @@ import { attachmentDisposition } from '@/lib/http/content-disposition';
 import { storedFileResponse } from '@/lib/http/stored-file-response';
 import { unexpired } from '@/lib/stored-files';
 import { ClientError } from '@/lib/convert/errors';
-import { assertWithinRateLimit } from '@/lib/http/rate-limit';
+import { assertWithinReadRateLimit } from '@/lib/http/rate-limit';
+import { isObjectId } from '@/lib/db/object-id';
 
 // A stored document's type is whatever its uploader claimed, so it is only passed on for
 // types a browser will not run as a page or script; anything else is served as bytes.
@@ -36,12 +37,14 @@ function servedContentType(claimedType: unknown): string {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    assertWithinRateLimit(req);
+    assertWithinReadRateLimit(req);
 
     const userId = await getAuthUserId(req);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
+    if (!isObjectId(id)) return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+
     await dbConnect();
     
     const doc = await UserDocumentModel.findOne({ _id: id, userId, ...unexpired() });

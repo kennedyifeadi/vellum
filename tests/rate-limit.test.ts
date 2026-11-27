@@ -7,13 +7,15 @@ jest.mock('@/lib/auth/jwt', () => ({
 
 import { POST as requestOtp } from '../app/api/auth/request-otp/route';
 import { POST as verifyOtp } from '../app/api/auth/verify-otp/route';
-import { GET as listDocuments } from '../app/api/documents/route';
+import { DELETE as deleteDocument } from '../app/api/documents/route';
+import { isRateLimited } from '@/lib/http/rate-limit';
+import { callerKeyOf } from '@/lib/convert/caller-jobs';
 
 // Each of these routes counts a request against its caller's budget before anything else.
 const ROUTES: Record<string, (req: NextRequest) => Promise<Response>> = {
   '/api/auth/request-otp': requestOtp,
   '/api/auth/verify-otp': verifyOtp,
-  '/api/documents': listDocuments,
+  '/api/documents': deleteDocument,
 };
 
 const send = (request: NextRequest) => ROUTES[request.nextUrl.pathname](request);
@@ -129,10 +131,10 @@ describe('rate limiting of the routes that read a body', () => {
     const docIp = '192.168.2.1';
     const otpIp = '192.168.2.2';
     for (let i = 1; i <= 30; i++) {
-      await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'));
+      await send(createApiRequest(docIp, '/api/documents', undefined, 'DELETE'));
       await send(createApiRequest(otpIp, '/api/auth/verify-otp'));
     }
-    expect((await send(createApiRequest(docIp, '/api/documents', undefined, 'GET'))).status).toBe(429);
+    expect((await send(createApiRequest(docIp, '/api/documents', undefined, 'DELETE'))).status).toBe(429);
     expect((await send(createApiRequest(otpIp, '/api/auth/verify-otp'))).status).toBe(429);
   });
 
@@ -144,5 +146,83 @@ describe('rate limiting of the routes that read a body', () => {
       expect((await send(request)).status).not.toBe(429);
     }
     expect((await send(createApiRequest('192.0.2.250'))).status).toBe(429);
+  });
+});
+
+describe('the records the limiter keeps', () => {
+  const MAX_TRACKED_CALLERS = 10_000;
+  const records = () => (globalThis as { vellumRateLimits?: Map<string, unknown> }).vellumRateLimits!;
+  const from = (address: string) => new Headers({ 'x-real-ip': address });
+  const addressNumber = (n: number) => `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}`;
+
+  function useUp(address: string) {
+    for (let i = 0; i < 30; i++) isRateLimited(from(address));
+    expect(isRateLimited(from(address))).toBe(true);
+  }
+
+  beforeEach(() => {
+    process.env.CLIENT_IP_HEADER = 'x-real-ip';
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    delete process.env.CLIENT_IP_HEADER;
+  });
+
+  it("forgets a caller's record once its window has passed", () => {
+    jest.useFakeTimers();
+    for (let n = 1; n <= 5; n++) isRateLimited(from(addressNumber(n)));
+    expect(records().size).toBe(5);
+
+    jest.advanceTimersByTime(61 * 1000);
+    isRateLimited(from('192.0.2.1'));
+
+    expect(records().size).toBe(1);
+  });
+
+  it('keeps the newest callers counted when it is full, forgetting only the oldest', () => {
+    useUp('192.0.2.10');
+    for (let n = 1; n <= MAX_TRACKED_CALLERS - 2; n++) isRateLimited(from(addressNumber(n)));
+    useUp('192.0.2.20');
+    expect(records().size).toBe(MAX_TRACKED_CALLERS);
+
+    isRateLimited(from('192.0.2.30'));
+
+    expect(records().size).toBe(MAX_TRACKED_CALLERS);
+    expect(isRateLimited(from('192.0.2.20'))).toBe(true);
+    expect(isRateLimited(from('192.0.2.10'))).toBe(false);
+  });
+});
+
+describe('IPv6 callers', () => {
+  const from = (address: string) => new Headers({ 'x-real-ip': address });
+
+  beforeEach(() => {
+    process.env.CLIENT_IP_HEADER = 'x-real-ip';
+  });
+
+  afterEach(() => {
+    delete process.env.CLIENT_IP_HEADER;
+  });
+
+  it('share one budget across a /64', () => {
+    for (let i = 1; i <= 30; i++) {
+      expect(isRateLimited(from(`2001:db8:1:2::${i.toString(16)}`))).toBe(false);
+    }
+    expect(isRateLimited(from('2001:0db8:0001:0002:ffff:ffff:ffff:ffff'))).toBe(true);
+  });
+
+  it('have a budget of their own in each /64', () => {
+    for (let i = 1; i <= 30; i++) isRateLimited(from(`2001:db8:1:3::${i.toString(16)}`));
+    expect(isRateLimited(from('2001:db8:1:3::1'))).toBe(true);
+    expect(isRateLimited(from('2001:db8:1:4::1'))).toBe(false);
+  });
+
+  it('hold one running guest job per /64', () => {
+    const guest = { userId: null, plan: 'Free' };
+    const key = (address: string) => callerKeyOf(from(address), guest);
+
+    expect(key('2001:db8:5:6::1')).toBe(key('2001:db8:5:6:abcd::9'));
+    expect(key('2001:db8:5:6::1')).not.toBe(key('2001:db8:5:7::1'));
   });
 });

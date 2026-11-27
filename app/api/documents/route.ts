@@ -3,14 +3,13 @@ import { getAuthUserId } from '@/lib/auth/jwt';
 import UserDocumentModel from '@/models/userDocument';
 import dbConnect from '@/lib/db/mongoose';
 import { DOCUMENT_FILES, removeStoredFile, unexpired } from '@/lib/stored-files';
-import { isRateLimited, RATE_LIMITED_MESSAGE } from '@/lib/http/rate-limit';
+import { isRateLimited, isReadRateLimited, tooManyRequests } from '@/lib/http/rate-limit';
+import { isObjectId } from '@/lib/db/object-id';
 
 export const dynamic = 'force-dynamic';
 
-const rateLimited = () => NextResponse.json({ error: RATE_LIMITED_MESSAGE }, { status: 429 });
-
 export async function GET(req: NextRequest) {
-  if (isRateLimited(req.headers)) return rateLimited();
+  if (isReadRateLimited(req.headers)) return tooManyRequests();
 
   const userId = await getAuthUserId(req);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -24,13 +23,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (isRateLimited(req.headers)) return rateLimited();
+  if (isRateLimited(req.headers)) return tooManyRequests();
 
   const userId = await getAuthUserId(req);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isObjectId(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await dbConnect();
   const doc = await UserDocumentModel.findOne({ _id: id, userId, ...unexpired() });
