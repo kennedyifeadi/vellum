@@ -7,6 +7,8 @@ const MAX_REQUESTS = 30;
 const SUPPORT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_SUPPORT_SUBMISSIONS = 5;
 
+const MAX_TRACKED_CALLERS = 10_000;
+
 // Next.js does not expose the connection's address to the proxy, so without a trusted
 // header every caller shares this one bucket: the limit becomes site-wide, never bypassable.
 const SHARED_RATE_LIMIT_KEY = 'unknown';
@@ -32,6 +34,23 @@ export function clientAddressKey(headers: Headers): string {
   return countedClientAddress(headers) ?? SHARED_RATE_LIMIT_KEY;
 }
 
+// A record is inserted afresh whenever its window starts, so a map runs from the oldest
+// window to the newest: the expired records, and the oldest one, are at its front.
+function forgetExpired(records: Map<string, RateLimitRecord>, now: number, windowMs: number): void {
+  for (const [key, record] of records) {
+    if (now - record.timestamp <= windowMs) return;
+    records.delete(key);
+  }
+}
+
+function startWindow(records: Map<string, RateLimitRecord>, key: string, now: number): void {
+  records.delete(key);
+  records.set(key, { count: 1, timestamp: now });
+  if (records.size > MAX_TRACKED_CALLERS) {
+    records.delete(records.keys().next().value!);
+  }
+}
+
 function isOverBudget(
   records: Map<string, RateLimitRecord>,
   headers: Headers,
@@ -40,21 +59,16 @@ function isOverBudget(
 ): boolean {
   const key = clientAddressKey(headers);
   const now = Date.now();
+  forgetExpired(records, now, windowMs);
   const record = records.get(key);
   if (!record || now - record.timestamp > windowMs) {
-    records.set(key, { count: 1, timestamp: now });
+    startWindow(records, key, now);
     return false;
   }
   if (record.count >= maxRequests) {
     return true;
   }
   record.count += 1;
-
-  // Basic cleanup to prevent memory leaks in long-running instances
-  if (records.size > 10000) {
-    records.clear();
-  }
-
   return false;
 }
 

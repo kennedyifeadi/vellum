@@ -149,6 +149,51 @@ describe('rate limiting of the routes that read a body', () => {
   });
 });
 
+describe('the records the limiter keeps', () => {
+  const MAX_TRACKED_CALLERS = 10_000;
+  const records = () => (globalThis as { vellumRateLimits?: Map<string, unknown> }).vellumRateLimits!;
+  const from = (address: string) => new Headers({ 'x-real-ip': address });
+  const addressNumber = (n: number) => `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}`;
+
+  function useUp(address: string) {
+    for (let i = 0; i < 30; i++) isRateLimited(from(address));
+    expect(isRateLimited(from(address))).toBe(true);
+  }
+
+  beforeEach(() => {
+    process.env.CLIENT_IP_HEADER = 'x-real-ip';
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    delete process.env.CLIENT_IP_HEADER;
+  });
+
+  it("forgets a caller's record once its window has passed", () => {
+    jest.useFakeTimers();
+    for (let n = 1; n <= 5; n++) isRateLimited(from(addressNumber(n)));
+    expect(records().size).toBe(5);
+
+    jest.advanceTimersByTime(61 * 1000);
+    isRateLimited(from('192.0.2.1'));
+
+    expect(records().size).toBe(1);
+  });
+
+  it('keeps the newest callers counted when it is full, forgetting only the oldest', () => {
+    useUp('192.0.2.10');
+    for (let n = 1; n <= MAX_TRACKED_CALLERS - 2; n++) isRateLimited(from(addressNumber(n)));
+    useUp('192.0.2.20');
+    expect(records().size).toBe(MAX_TRACKED_CALLERS);
+
+    isRateLimited(from('192.0.2.30'));
+
+    expect(records().size).toBe(MAX_TRACKED_CALLERS);
+    expect(isRateLimited(from('192.0.2.20'))).toBe(true);
+    expect(isRateLimited(from('192.0.2.10'))).toBe(false);
+  });
+});
+
 describe('IPv6 callers', () => {
   const from = (address: string) => new Headers({ 'x-real-ip': address });
 
